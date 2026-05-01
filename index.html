@@ -184,6 +184,10 @@
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
         <span class="nav-label">Credit Card Tracker</span>
       </button>
+      <button onclick="navigate('bank-accounts')" data-page="bank-accounts" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="16 3 12 7 8 3"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+        <span class="nav-label">Bank Account Tracker</span>
+      </button>
 
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
       <button onclick="navigate('transactions')" data-page="transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
@@ -1072,6 +1076,30 @@ function startApp() {
     )`);
   } catch(e) { console.warn('TransactionLink init:', e.message); }
 
+  // Ensure ScratchPad table exists
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS ScratchPad (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('ScratchPad init:', e.message); }
+
+  // Ensure BankAccount table exists
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS BankAccount (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT,
+      assetAccountId TEXT,
+      status TEXT NOT NULL DEFAULT 'Active',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('BankAccount init:', e.message); }
+
   navigate('dashboard');
 }
 
@@ -1190,6 +1218,7 @@ function navigate(page) {
   else if (page === 'account-inquiry')     renderAI(container);
   else if (page === 'settings')            renderSettings(container);
   else if (page === 'credit-cards')        renderCreditCards(container);
+  else if (page === 'bank-accounts')       renderBankAccounts(container);
   else if (page === 'duplicates')          renderDuplicates(container);
   else if (page === 'accruals')            renderAccruals(container);
   else if (page === 'equity')              renderEquity(container);
@@ -2486,8 +2515,7 @@ function _renderPLPage(container) {
           <td class="px-3 py-1.5 text-sm font-bold text-slate-800 text-right">${fmtCurrency(rA,2)}</td>
           <td class="px-3 py-1.5 text-sm font-bold text-slate-500 text-right">${fmtCurrency(rB,2)}</td>
           <td class="px-3 py-1.5 text-sm font-bold ${vb>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(vb,2)}</td>
-          ${showProj?`<td class="px-3 py-1.5 text-sm font-bold text-slate-500 text-right">${fmtCurrency(rP,2)}</td>
-            <td class="px-3 py-1.5 text-sm font-bold ${vp>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(vp,2)}</td>`:''}
+          ${showProj?`<td class="px-3 py-1.5 text-sm font-bold text-slate-500 text-right">${fmtCurrency(rP,2)}</td>`:''}
         </tr>`;
         rA=0;rB=0;rP=0;
         continue;
@@ -2520,8 +2548,7 @@ function _renderPLPage(container) {
           onclick="plEditProj('${item.id}',${projRSafe},${+bgt||0})"
           title="Click to edit projected close">
           ${fmtCurrency(proj,2)}${isDefault?'<span class="text-slate-300 text-xs ml-1">bgt</span>':''}
-        </td>
-        <td class="px-3 py-1.5 text-sm ${vp>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(vp,2)}</td>`:''}
+        </td>`:''}
       </tr>`;
     }
 
@@ -2533,8 +2560,7 @@ function _renderPLPage(container) {
       <td class="px-3 py-2 text-sm font-bold text-slate-800 text-right">${fmtCurrency(gA,2)}</td>
       <td class="px-3 py-2 text-sm font-bold text-slate-500 text-right">${fmtCurrency(gB,2)}</td>
       <td class="px-3 py-2 text-sm font-bold ${gvb>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(gvb,2)}</td>
-      ${showProj?`<td class="px-3 py-2 text-sm font-bold text-slate-500 text-right">${fmtCurrency(gP,2)}</td>
-        <td class="px-3 py-2 text-sm font-bold ${gvp>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(gvp,2)}</td>`:''}
+      ${showProj?`<td class="px-3 py-2 text-sm font-bold text-slate-500 text-right">${fmtCurrency(gP,2)}</td>`:''}
     </tr>`;
 
     return {html,gA,gB,gP};
@@ -2555,8 +2581,7 @@ function _renderPLPage(container) {
     <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Budget</th>
     <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Var to Budget</th>`;
   const thProj=showProj?`
-    <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Proj to Close <span class="text-slate-400 normal-case font-normal">(click ✎)</span></th>
-    <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Var to Proj</th>`:'';
+    <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Proj to Close <span class="text-slate-400 normal-case font-normal">(click ✎)</span></th>`:'';
 
   function sCard(title,data) {
     return `<div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -3294,9 +3319,13 @@ function _renderAIPage(container) {
         onclick="aiTileClick('${a.id}')">
         ${_showAcctCode?`<div class="text-xs text-slate-400 font-mono mb-1">${escHtml(a.code)}</div>`:''}
         <div class="text-sm font-medium text-slate-700 leading-snug mb-2 min-h-[2rem]">${escHtml(a.name)}</div>
-        <div class="text-xs text-slate-500 mb-0.5">${isSingle ? periodLabel(pFrom) : periodLabel(pFrom)+' – '+periodLabel(pTo)}</div>
-        <div class="text-base font-bold ${act===0?'text-slate-400':act>0?'text-slate-900':'text-red-600'}">${fmtCurrency(act,2)}</div>
-        ${cumBal !== null ? `<div class="text-xs ${g.tileAccentCls} mt-1 font-medium">Bal: ${fmtCurrency(cumBal,2)}</div>` : ''}
+        ${cumBal !== null
+          ? `<div class="text-base font-bold ${cumBal===0?'text-slate-400':cumBal>0?g.tileAccentCls:'text-red-600'}">${fmtCurrency(cumBal,2)}</div>
+             <div class="text-xs text-slate-500 mt-0.5">${isSingle ? periodLabel(pFrom) : periodLabel(pFrom)+' – '+periodLabel(pTo)}</div>
+             <div class="text-xs ${act===0?'text-slate-400':act>0?'text-slate-600':'text-red-500'} mt-0.5">Activity: ${act>=0?'+':''}${fmtCurrency(act,2)}</div>`
+          : `<div class="text-xs text-slate-500 mb-0.5">${isSingle ? periodLabel(pFrom) : periodLabel(pFrom)+' – '+periodLabel(pTo)}</div>
+             <div class="text-base font-bold ${act===0?'text-slate-400':act>0?'text-slate-900':'text-red-600'}">${fmtCurrency(act,2)}</div>`
+        }
       </div>`;
     }).join('');
 
@@ -3427,6 +3456,7 @@ function aiInjectPanel(accountId) {
           : (isDR ? -(+tx.amount) :  +tx.amount);
         const sideLbl = isDR ? 'DR' : 'CR';
         const sideCls = isDR ? 'text-blue-600 bg-blue-50' : 'text-orange-600 bg-orange-50';
+        const ownSub  = isDR ? (tx.drSub || '') : (tx.crSub || '');
         const counterpart = isDR
           ? escHtml((tx.crName||'') + (tx.crSub ? ' \u00b7 '+tx.crSub : ''))
           : escHtml((tx.drName||'') + (tx.drSub ? ' \u00b7 '+tx.drSub : ''));
@@ -3439,6 +3469,7 @@ function aiInjectPanel(accountId) {
           <td class="px-3 py-1.5">
             <span class="text-xs font-semibold px-1 py-0.5 rounded ${sideCls}">${sideLbl}</span>
           </td>
+          <td class="px-3 py-1.5 text-xs text-slate-400 whitespace-nowrap">${escHtml(ownSub)}</td>
           <td class="px-3 py-1.5 text-sm text-slate-500 max-w-[160px] truncate" title="${counterpart}">${counterpart}</td>
           <td class="px-3 py-1.5 text-center">
             <input type="checkbox" ${tx.isReconciled ? 'checked' : ''}
@@ -3472,21 +3503,22 @@ function aiInjectPanel(accountId) {
           class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
       </div>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full min-w-[500px]">
-        <thead class="border-b border-slate-100 bg-slate-50">
-          <tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
-            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Effect</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
-            <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Rec</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-    </div>`;
+     <div class="overflow-x-auto">
+       <table class="w-full min-w-[640px]">
+         <thead class="border-b border-slate-100 bg-slate-50">
+           <tr>
+             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
+             <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Effect</th>
+             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
+             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Sub-Account</th>
+             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
+             <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Rec</th>
+           </tr>
+         </thead>
+         <tbody>${rowsHtml}</tbody>
+       </table>
+     </div>`;
 
   // Insert panel after the anchor tile's row in the parent group container
   anchor.after(panel);
@@ -3531,6 +3563,8 @@ function _renderSettingsPage(container) {
     { id:'dashboard',   label:'Dashboard Tiles' },
     { id:'display',     label:'Display' },
     { id:'stats',       label:'Stats' },
+    { id:'scratchpad',  label:'Scratch Pad' },
+    { id:'bankaccounts',label:'Bank Accounts' },
   ];
 
   const tabBar = TABS.map(t =>
@@ -4021,6 +4055,153 @@ function _renderSettingsPage(container) {
     </div>`;
   }
 
+  // ── SCRATCH PAD TAB ───────────────────────────────────────
+  function scratchPadTab() {
+    const sheets = query(`SELECT id, title, updatedAt FROM ScratchPad ORDER BY updatedAt DESC`);
+    const activeId = _spActiveId || (sheets[0]?.id || null);
+    const active   = activeId ? query(`SELECT * FROM ScratchPad WHERE id='${activeId}'`)[0] : null;
+
+    let gridHtml = '';
+    if (active) {
+      let data = [];
+      try { data = JSON.parse(active.data || '[]'); } catch(e) {}
+      const ROWS = 100, COLS = 12;
+      const colLetters = Array.from({length:COLS},(_,i)=>String.fromCharCode(65+i));
+      const headerCells = colLetters.map(c=>`<th class="px-1 py-1 text-center text-xs font-semibold text-slate-400 uppercase w-24 sticky top-0 bg-slate-50 border-b border-slate-200">${c}</th>`).join('');
+      const rowsHtml = Array.from({length:ROWS},(_,r)=>{
+        const cells = colLetters.map((_,c)=>{
+          const val = (data[r]||[])[c] ?? '';
+          return `<td class="border border-slate-100 p-0">
+            <input type="text" value="${escHtml(String(val))}"
+              class="w-full h-7 px-1.5 text-sm text-slate-700 focus:outline-none focus:bg-blue-50 bg-transparent"
+              onblur="spCellBlur(\`${activeId}\`,${r},${c},this.value)"
+              onkeydown="spCellKey(event,${r},${c})">
+          </td>`;
+        }).join('');
+        return `<tr><td class="px-2 py-0.5 text-xs text-slate-300 text-right select-none w-8 border-r border-slate-100 sticky left-0 bg-white">${r+1}</td>${cells}</tr>`;
+      }).join('');
+      gridHtml = `<div class="overflow-auto border border-slate-200 rounded" style="max-height:65vh;">
+        <table class="border-collapse text-sm" style="min-width:max-content;">
+          <thead class="bg-slate-50"><tr>
+            <th class="w-8 border-r border-slate-200 sticky top-0 bg-slate-50 left-0 z-20"></th>
+            ${headerCells}
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>`;
+    }
+
+    const sheetTabs = sheets.map(s=>`
+      <button onclick="spSetActive(\`${s.id}\`)"
+        class="px-3 py-1.5 text-sm border-b-2 whitespace-nowrap transition-colors
+          ${s.id===activeId?'border-slate-900 text-slate-900 font-medium':'border-transparent text-slate-500 hover:text-slate-700'}">
+        ${escHtml(s.title)}
+      </button>`).join('');
+
+    return `<div class="space-y-3">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <h2 class="text-sm font-semibold text-slate-700">Scratch Pad</h2>
+        <button onclick="spNewSheet()" class="gc-btn text-xs">+ New Sheet</button>
+      </div>
+      ${sheets.length ? `<div class="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+        ${sheetTabs}
+        ${active?`<button onclick="spRenameSheet(\`${active.id}\`)" class="ml-2 text-xs text-slate-400 hover:text-slate-600" title="Rename">✎</button>
+        <button onclick="spDeleteSheet(\`${active.id}\`)" class="ml-1 text-xs text-slate-400 hover:text-red-500" title="Delete">✕</button>`:''}
+      </div>
+      <p class="text-xs text-slate-400">Enter values or formulas starting with <code>=</code>. Supported: SUM, AVERAGE, MIN, MAX, COUNT and cell refs like A1+B2.</p>
+      ${gridHtml}` : `<p class="text-sm text-slate-400">No sheets yet. Click "+ New Sheet" to start.</p>`}
+    </div>`;
+  }
+
+  // ── BANK ACCOUNTS TAB ─────────────────────────────────────
+  function bankAccountsTab() {
+    const accounts = query(`
+      SELECT ba.id, ba.name, ba.type, ba.status, ba.assetAccountId, a.name AS assetName
+      FROM BankAccount ba
+      LEFT JOIN Account a ON ba.assetAccountId = a.id
+      ORDER BY ba.status ASC, ba.name ASC`);
+
+    const assetAccts = query(`SELECT id, code, name FROM Account WHERE type='ASSET' AND isActive=1 ORDER BY code`);
+    const assetOpts  = assetAccts.map(a=>`<option value="${a.id}">${_showAcctCode?a.code+' · ':''  }${escHtml(a.name)}</option>`).join('');
+
+    const rows = accounts.map(ba=>`<tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-2 text-sm text-slate-700 font-medium">${escHtml(ba.name)}</td>
+      <td class="px-3 py-2 text-sm text-slate-500">${escHtml(ba.type||'')}</td>
+      <td class="px-3 py-2 text-sm text-slate-500">${escHtml(ba.assetName||'—')}</td>
+      <td class="px-3 py-2">
+        <span class="text-xs px-2 py-0.5 rounded-full font-medium ${ba.status==='Active'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${escHtml(ba.status)}</span>
+      </td>
+      <td class="px-3 py-2 text-right">
+        <button onclick="baEditModal(\`${ba.id}\`)" class="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+        <button onclick="baDelete(\`${ba.id}\`)" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+      </td>
+    </tr>`).join('');
+
+    return `<div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">Bank Accounts</h2>
+        <button onclick="baNewModal()" class="gc-btn text-xs">+ New Account</button>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table class="w-full">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Name</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Type</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Asset Account</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
+              <th class="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>${rows||'<tr><td colspan="5" class="px-3 py-8 text-sm text-slate-400 text-center">No bank accounts configured.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <div id="baModal" style="display:none"
+        onclick="if(event.target===this)this.style.display='none'"
+        class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 id="baModalTitle" class="text-base font-semibold text-slate-900">Bank Account</h2>
+            <button onclick="document.getElementById('baModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+          </div>
+          <input type="hidden" id="baModalId">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Account Name</label>
+            <input id="baName" type="text" class="${IC}" placeholder="e.g. Chase Checking">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Type</label>
+            <select id="baType" class="${IC}">
+              <option value="Checking">Checking</option>
+              <option value="Savings">Savings</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Asset Account</label>
+            <select id="baAssetAcct" class="${IC}">
+              <option value="">— select —</option>
+              ${assetOpts}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Status</label>
+            <select id="baStatus" class="${IC}">
+              <option value="Active">Active</option>
+              <option value="Closed">Closed</option>
+            </select>
+          </div>
+          <p id="baErr" style="display:none" class="text-xs text-red-500"></p>
+          <div class="flex gap-3 pt-1">
+            <button onclick="baSave()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save</button>
+            <button onclick="document.getElementById('baModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   let tabContent = '';
   if      (settingsTab==='coa')         tabContent = coaTab();
   else if (settingsTab==='repeatable')  tabContent = repeatableTab();
@@ -4031,6 +4212,8 @@ function _renderSettingsPage(container) {
   else if (settingsTab==='dashboard')   tabContent = dashboardTilesTab();
   else if (settingsTab==='display')     tabContent = displayTab();
   else if (settingsTab==='stats')       tabContent = statsTab();
+  else if (settingsTab==='scratchpad')  tabContent = scratchPadTab();
+  else if (settingsTab==='bankaccounts') tabContent = bankAccountsTab();
 
   container.innerHTML = `
     <div class="space-y-4">
@@ -4255,6 +4438,166 @@ function _renderSettingsPage(container) {
 }
 
 function settingsGoTab(tab) { settingsTab=tab; _renderSettingsPage(); }
+
+// ════════════════════════════════════════════════════════════
+// SCRATCH PAD
+// ════════════════════════════════════════════════════════════
+let _spActiveId = null;
+
+// Minimal formula evaluator: supports =SUM/AVERAGE/MIN/MAX/COUNT(range), =A1+B2*3, etc.
+function _spEval(expr, data) {
+  try {
+    // Strip leading =
+    let e = expr.trim().slice(1).trim();
+
+    // Resolve cell refs like A1, B12 to numeric values
+    e = e.replace(/\b([A-L])(\d+)\b/gi, (_, col, row) => {
+      const c = col.toUpperCase().charCodeAt(0) - 65;
+      const r = parseInt(row) - 1;
+      const v = (data[r]||[])[c];
+      if (v === undefined || v === '') return '0';
+      if (!isNaN(+v)) return +v;
+      if (String(v).startsWith('=')) return _spEval(String(v), data) || 0;
+      return '0';
+    });
+
+    // Range functions: SUM(A1:B3) etc.
+    e = e.replace(/\b(SUM|AVERAGE|MIN|MAX|COUNT)\(([A-L]\d+):([A-L]\d+)\)/gi, (_, fn, from, to) => {
+      const c1 = from[0].toUpperCase().charCodeAt(0)-65, r1 = parseInt(from.slice(1))-1;
+      const c2 = to[0].toUpperCase().charCodeAt(0)-65,   r2 = parseInt(to.slice(1))-1;
+      const vals = [];
+      for (let r=r1;r<=r2;r++) for (let c=c1;c<=c2;c++) {
+        const v = (data[r]||[])[c];
+        if (v !== undefined && v !== '' && !isNaN(+v)) vals.push(+v);
+      }
+      if (!vals.length) return '0';
+      fn = fn.toUpperCase();
+      if (fn==='SUM')     return vals.reduce((a,b)=>a+b,0);
+      if (fn==='AVERAGE') return vals.reduce((a,b)=>a+b,0)/vals.length;
+      if (fn==='MIN')     return Math.min(...vals);
+      if (fn==='MAX')     return Math.max(...vals);
+      if (fn==='COUNT')   return vals.length;
+      return '0';
+    });
+
+    // Safe eval via Function
+    const result = new Function('return (' + e + ')')();
+    return isFinite(result) ? result : '#ERR';
+  } catch(e) { return '#ERR'; }
+}
+
+function spCellBlur(sheetId, row, col, rawVal) {
+  // Load existing data, update cell, save
+  const sheet = query(`SELECT data FROM ScratchPad WHERE id='${sheetId}'`)[0];
+  let data = [];
+  try { data = JSON.parse(sheet?.data || '[]'); } catch(e) {}
+  if (!data[row]) data[row] = [];
+  // Store raw value; display evaluated result on re-render
+  data[row][col] = rawVal;
+  const json = JSON.stringify(data).replace(/'/g,"''");
+  const now  = new Date().toISOString();
+  db.run(`UPDATE ScratchPad SET data='${json}', updatedAt='${now}' WHERE id='${sheetId}'`);
+  syncAfterWrite();
+  // Update just this cell display (re-evaluate formula if needed)
+  const input = document.querySelector(`[onblur*="spCellBlur('${sheetId}',${row},${col},"]`);
+  if (input && rawVal.startsWith('=')) {
+    const display = _spEval(rawVal, data);
+    input.value = rawVal; // keep raw in input
+    input.title = String(display);
+    input.style.color = String(display)==='#ERR' ? '#dc2626' : '';
+  }
+}
+
+function spCellKey(event, row, col) {
+  if (event.key === 'Enter') { event.preventDefault(); event.target.blur(); }
+  if (event.key === 'Tab')   { event.preventDefault(); event.target.blur(); }
+}
+
+function spNewSheet() {
+  const title = prompt('Sheet name:', 'Sheet ' + (query('SELECT COUNT(*) AS n FROM ScratchPad')[0]?.n+1||1));
+  if (!title) return;
+  const id  = genId();
+  const now = new Date().toISOString();
+  db.run(`INSERT INTO ScratchPad (id,title,data,createdAt,updatedAt) VALUES ('${id}','${title.replace(/'/g,"''")}','[]','${now}','${now}')`);
+  syncAfterWrite();
+  _spActiveId = id;
+  _renderSettingsPage();
+}
+
+function spSetActive(id) { _spActiveId = id; _renderSettingsPage(); }
+
+function spRenameSheet(id) {
+  const sheet = query(`SELECT title FROM ScratchPad WHERE id='${id}'`)[0];
+  const title = prompt('New name:', sheet?.title||'');
+  if (!title) return;
+  db.run(`UPDATE ScratchPad SET title='${title.replace(/'/g,"''")}', updatedAt='${new Date().toISOString()}' WHERE id='${id}'`);
+  syncAfterWrite();
+  _renderSettingsPage();
+}
+
+function spDeleteSheet(id) {
+  if (!confirm('Delete this sheet? This cannot be undone.')) return;
+  db.run(`DELETE FROM ScratchPad WHERE id='${id}'`);
+  syncAfterWrite();
+  _spActiveId = null;
+  _renderSettingsPage();
+}
+
+// ════════════════════════════════════════════════════════════
+// BANK ACCOUNTS (Settings)
+// ════════════════════════════════════════════════════════════
+function baNewModal() {
+  document.getElementById('baModalTitle').textContent = 'New Bank Account';
+  document.getElementById('baModalId').value  = '';
+  document.getElementById('baName').value     = '';
+  document.getElementById('baType').value     = 'Checking';
+  document.getElementById('baAssetAcct').value= '';
+  document.getElementById('baStatus').value   = 'Active';
+  document.getElementById('baErr').style.display = 'none';
+  document.getElementById('baModal').style.display = 'flex';
+}
+
+function baEditModal(id) {
+  const ba = query(`SELECT * FROM BankAccount WHERE id='${id}'`)[0];
+  if (!ba) return;
+  document.getElementById('baModalTitle').textContent  = 'Edit Bank Account';
+  document.getElementById('baModalId').value           = ba.id;
+  document.getElementById('baName').value              = ba.name || '';
+  document.getElementById('baType').value              = ba.type || 'Checking';
+  document.getElementById('baAssetAcct').value         = ba.assetAccountId || '';
+  document.getElementById('baStatus').value            = ba.status || 'Active';
+  document.getElementById('baErr').style.display       = 'none';
+  document.getElementById('baModal').style.display     = 'flex';
+}
+
+function baSave() {
+  const id      = document.getElementById('baModalId').value;
+  const name    = document.getElementById('baName').value.trim();
+  const type    = document.getElementById('baType').value;
+  const assetId = document.getElementById('baAssetAcct').value;
+  const status  = document.getElementById('baStatus').value;
+  const errEl   = document.getElementById('baErr');
+  if (!name) { errEl.textContent='Name is required.'; errEl.style.display='block'; return; }
+  const now = new Date().toISOString();
+  const nE  = name.replace(/'/g,"''");
+  try {
+    if (id) {
+      db.run(`UPDATE BankAccount SET name='${nE}', type='${type}', assetAccountId=${assetId?`'${assetId}'`:'NULL'}, status='${status}', updatedAt='${now}' WHERE id='${id}'`);
+    } else {
+      db.run(`INSERT INTO BankAccount (id,name,type,assetAccountId,status,createdAt,updatedAt) VALUES ('${genId()}','${nE}','${type}',${assetId?`'${assetId}'`:'NULL'},'${status}','${now}','${now}')`);
+    }
+    syncAfterWrite();
+    document.getElementById('baModal').style.display = 'none';
+    _renderSettingsPage();
+  } catch(e) { errEl.textContent='Error: '+e.message; errEl.style.display='block'; }
+}
+
+function baDelete(id) {
+  if (!confirm('Delete this bank account?')) return;
+  db.run(`DELETE FROM BankAccount WHERE id='${id}'`);
+  syncAfterWrite();
+  _renderSettingsPage();
+}
 function coaSetSearch(v)    { coaSearchVal=v;  _renderSettingsPage(); }
 function coaSetType(v)      { coaTypeFilter=v; _renderSettingsPage(); }
 function coaToggleSubs(id)  { coaExpandedId = coaExpandedId===id ? null : id; _renderSettingsPage(); }
@@ -4689,7 +5032,16 @@ function ftDeleteRow(id) {
 // CREDIT CARDS PAGE
 // ════════════════════════════════════════════════════════════
 
+let ccOpenId = null;
+
 function renderCreditCards(container) {
+  ccOpenId = null;
+  _renderCCPage(container);
+}
+
+function _renderCCPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+
   const cards = query(`
     SELECT cc.id, cc.name, cc.creditLimit, cc.paymentDueDay, cc.status,
       cc.liabilityAccountId, la.name AS liabilityName
@@ -4709,66 +5061,271 @@ function renderCreditCards(container) {
   }
 
   const cardsHtml = cards.map(cc => {
-    // Current balance = cumulative CR - DR on the liability account
     const cr  = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE crAccountId='${cc.liabilityAccountId}'`) || 0;
     const dr  = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE drAccountId='${cc.liabilityAccountId}'`) || 0;
-    const bal = cr - dr; // positive = money owed
+    const bal = cr - dr;
     const lim = +cc.creditLimit || 0;
     const utilPct = lim > 0 ? Math.min(100, (bal/lim)*100) : 0;
     const utilCls = utilPct >= 90 ? 'bg-red-500' : utilPct >= 70 ? 'bg-amber-500' : 'bg-green-500';
 
-    // Next due date
     const now = new Date();
     const dom = +cc.paymentDueDay;
     let due = new Date(now.getFullYear(), now.getMonth(), dom);
     if (due <= now) due = new Date(now.getFullYear(), now.getMonth()+1, dom);
     const daysUntil = Math.ceil((due - now) / 86400000);
     const dueCls = daysUntil <= 5 ? 'text-red-600' : daysUntil <= 10 ? 'text-amber-600' : 'text-slate-700';
-
     const available = Math.max(0, lim - bal);
+    const isOpen = ccOpenId === cc.id;
 
-    return `<div class="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-      <div class="flex items-start justify-between">
+    return `<div class="cc-tile bg-white border-2 ${isOpen?'border-blue-400':'border-slate-200'} rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+      data-ccid="${cc.id}" onclick="ccTileClick('${cc.id}')">
+      <div class="p-5 space-y-4">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="text-base font-semibold text-slate-900">${escHtml(cc.name)}</div>
+            <div class="text-xs text-slate-400 mt-0.5">${escHtml(cc.liabilityName)}</div>
+          </div>
+          <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="text-xs text-slate-500 mb-0.5">Current Balance</div>
+            <div class="text-xl font-bold ${bal>lim*0.9?'text-red-600':'text-slate-800'}">${fmtCurrency(bal,2)}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-0.5">Credit Limit</div>
+            <div class="text-xl font-bold text-slate-800">${fmtCurrency(lim,2)}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-0.5">Available</div>
+            <div class="text-base font-semibold text-green-700">${fmtCurrency(available,2)}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500 mb-0.5">Next Due</div>
+            <div class="text-base font-semibold ${dueCls}">${due.toLocaleDateString('en-US',{month:'short',day:'numeric'})} <span class="text-xs font-normal text-slate-400">(${daysUntil}d)</span></div>
+          </div>
+        </div>
         <div>
-          <div class="text-base font-semibold text-slate-900">${escHtml(cc.name)}</div>
-          <div class="text-xs text-slate-400 mt-0.5">${escHtml(cc.liabilityName)}</div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-500">Utilization</span>
+            <span class="text-xs font-semibold ${utilPct>=90?'text-red-600':utilPct>=70?'text-amber-600':'text-slate-700'}">${utilPct.toFixed(1)}%</span>
+          </div>
+          <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div class="${utilCls} h-full rounded-full transition-all" style="width:${utilPct}%"></div>
+          </div>
         </div>
-        <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <div class="text-xs text-slate-500 mb-0.5">Current Balance</div>
-          <div class="text-xl font-bold ${bal>lim*0.9?'text-red-600':'text-slate-800'}">${fmtCurrency(bal,2)}</div>
-        </div>
-        <div>
-          <div class="text-xs text-slate-500 mb-0.5">Credit Limit</div>
-          <div class="text-xl font-bold text-slate-800">${fmtCurrency(lim,2)}</div>
-        </div>
-        <div>
-          <div class="text-xs text-slate-500 mb-0.5">Available</div>
-          <div class="text-base font-semibold text-green-700">${fmtCurrency(available,2)}</div>
-        </div>
-        <div>
-          <div class="text-xs text-slate-500 mb-0.5">Next Due</div>
-          <div class="text-base font-semibold ${dueCls}">${due.toLocaleDateString('en-US',{month:'short',day:'numeric'})} <span class="text-xs font-normal text-slate-400">(${daysUntil}d)</span></div>
-        </div>
-      </div>
-      <div>
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-xs text-slate-500">Utilization</span>
-          <span class="text-xs font-semibold ${utilPct>=90?'text-red-600':utilPct>=70?'text-amber-600':'text-slate-700'}">${utilPct.toFixed(1)}%</span>
-        </div>
-        <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div class="${utilCls} h-full rounded-full transition-all" style="width:${utilPct}%"></div>
-        </div>
+        <div class="text-xs text-slate-400 text-center pt-1">${isOpen?'▲ Hide transactions':'▼ Show last 50 transactions'}</div>
       </div>
     </div>`;
   }).join('');
 
   container.innerHTML = `<div class="space-y-4">
     <h1 class="text-xl font-bold text-slate-900">Credit Card Tracker</h1>
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${cardsHtml}</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="ccGrid">${cardsHtml}</div>
   </div>`;
+
+  if (ccOpenId) ccInjectPanel(ccOpenId);
+}
+
+function ccTileClick(ccId) {
+  if (ccOpenId === ccId) {
+    ccOpenId = null;
+  } else {
+    ccOpenId = ccId;
+  }
+  _renderCCPage();
+}
+
+function ccInjectPanel(ccId) {
+  const card = query(`SELECT cc.id, cc.name, cc.liabilityAccountId, la.name AS liabilityName
+    FROM CreditCard cc JOIN Account la ON cc.liabilityAccountId = la.id WHERE cc.id='${ccId}'`)[0];
+  if (!card) return;
+
+  const txs = query(`
+    SELECT t.trxDate, t.description, t.amount,
+      da.name AS drName, ca.name AS crName, t.isReconciled
+    FROM "Transaction" t
+    LEFT JOIN Account da ON t.drAccountId = da.id
+    LEFT JOIN Account ca ON t.crAccountId = ca.id
+    WHERE t.drAccountId='${card.liabilityAccountId}' OR t.crAccountId='${card.liabilityAccountId}'
+    ORDER BY t.trxDate DESC
+    LIMIT 50`);
+
+  const rowsHtml = txs.length ? txs.map(tx => {
+    const isCharge = tx.crName === card.liabilityName; // CR = charge to card
+    const signed   = isCharge ? +tx.amount : -(+tx.amount);
+    const signCls  = signed >= 0 ? 'text-red-600' : 'text-green-700';
+    return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-1.5 text-sm text-slate-500 whitespace-nowrap">${fmtDate(tx.trxDate)}</td>
+      <td class="px-3 py-1.5 text-sm text-slate-700">${escHtml(tx.description)}</td>
+      <td class="px-3 py-1.5 text-sm font-medium text-right ${signCls} whitespace-nowrap">
+        ${signed>=0?'+':''}${fmtCurrency(Math.abs(signed),2)}
+      </td>
+      <td class="px-3 py-1.5 text-xs text-slate-400">${isCharge?'Charge':'Payment'}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4" class="px-3 py-6 text-sm text-slate-400 text-center">No transactions found</td></tr>`;
+
+  const panel = document.createElement('div');
+  panel.id = 'ccDetailPanel';
+  panel.className = 'md:col-span-2 xl:col-span-3 bg-white border-2 border-blue-300 rounded-xl overflow-hidden';
+  panel.innerHTML = `
+    <div class="flex items-center justify-between px-4 py-2.5 bg-blue-50 border-b border-blue-200">
+      <span class="text-sm font-semibold text-slate-800">${escHtml(card.name)} — Last 50 Transactions</span>
+      <button onclick="ccTileClick('${ccId}')" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+    </div>
+    <div class="overflow-x-auto" style="max-height:400px;overflow-y:auto;">
+      <table class="w-full min-w-[480px]">
+        <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
+            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Type</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+
+  const grid = document.getElementById('ccGrid');
+  if (grid) grid.appendChild(panel);
+}
+
+// ════════════════════════════════════════════════════════════
+// BANK ACCOUNT TRACKER PAGE
+// ════════════════════════════════════════════════════════════
+let baOpenId = null;
+
+function renderBankAccounts(container) {
+  baOpenId = null;
+  _renderBAPage(container);
+}
+
+function _renderBAPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+
+  const accounts = query(`
+    SELECT ba.id, ba.name, ba.type, ba.assetAccountId, a.name AS assetName, a.code AS assetCode
+    FROM BankAccount ba
+    LEFT JOIN Account a ON ba.assetAccountId = a.id
+    WHERE ba.status = 'Active'
+    ORDER BY ba.name`);
+
+  if (!accounts.length) {
+    container.innerHTML = `<div class="space-y-4">
+      <h1 class="text-xl font-bold text-slate-900">Bank Account Tracker</h1>
+      <div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-400 text-sm">
+        No active bank accounts configured.<br>
+        <span class="text-xs text-slate-300 mt-1 block">Go to Settings → Bank Accounts to add accounts.</span>
+      </div></div>`;
+    return;
+  }
+
+  const tilesHtml = accounts.map(ba => {
+    const acctId = ba.assetAccountId;
+    let balance = 0;
+    if (acctId) {
+      const dr = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE drAccountId='${acctId}'`) || 0;
+      const cr = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE crAccountId='${acctId}'`) || 0;
+      balance = dr - cr; // ASSET: normal DR balance
+    }
+    const isOpen = baOpenId === ba.id;
+    const balCls = balance < 0 ? 'text-red-600' : 'text-slate-800';
+
+    return `<div class="ba-tile bg-white border-2 ${isOpen?'border-blue-400':'border-slate-200'} rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+      data-baid="${ba.id}" onclick="baTileClick('${ba.id}')">
+      <div class="p-5 space-y-3">
+        <div class="flex items-start justify-between">
+          <div>
+            <div class="text-base font-semibold text-slate-900">${escHtml(ba.name)}</div>
+            <div class="text-xs text-slate-400 mt-0.5">${escHtml(ba.type||'')}${ba.assetName?' · '+escHtml(ba.assetName):''}</div>
+          </div>
+          <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
+        </div>
+        <div>
+          <div class="text-xs text-slate-500 mb-0.5">Current Balance</div>
+          <div class="text-2xl font-bold ${balCls}">${fmtCurrency(balance, 2)}</div>
+        </div>
+        <div class="text-xs text-slate-400 text-center pt-1">${isOpen?'▲ Hide transactions':'▼ Show last 50 transactions'}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900">Bank Account Tracker</h1>
+        <p class="text-sm text-slate-500">Click a tile to see recent transactions.</p>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" id="baGrid">${tilesHtml}</div>
+  </div>`;
+
+  if (baOpenId) baInjectPanel(baOpenId);
+}
+
+function baTileClick(baId) {
+  baOpenId = (baOpenId === baId) ? null : baId;
+  _renderBAPage();
+}
+
+function baInjectPanel(baId) {
+  const ba = query(`
+    SELECT ba.id, ba.name, ba.assetAccountId, a.name AS assetName
+    FROM BankAccount ba LEFT JOIN Account a ON ba.assetAccountId = a.id
+    WHERE ba.id='${baId}'`)[0];
+  if (!ba || !ba.assetAccountId) return;
+
+  const txs = query(`
+    SELECT t.trxDate, t.description, t.amount,
+      da.name AS drName, ca.name AS crName, t.isReconciled,
+      t.drAccountId, t.crAccountId
+    FROM "Transaction" t
+    LEFT JOIN Account da ON t.drAccountId = da.id
+    LEFT JOIN Account ca ON t.crAccountId = ca.id
+    WHERE t.drAccountId='${ba.assetAccountId}' OR t.crAccountId='${ba.assetAccountId}'
+    ORDER BY t.trxDate DESC
+    LIMIT 50`);
+
+  const rowsHtml = txs.length ? txs.map(tx => {
+    const isDR   = tx.drAccountId === ba.assetAccountId;
+    const signed = isDR ? +tx.amount : -(+tx.amount); // ASSET: DR = increase
+    const signCls = signed >= 0 ? 'text-green-700' : 'text-red-600';
+    const counterpart = isDR ? escHtml(tx.crName||'') : escHtml(tx.drName||'');
+    return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-1.5 text-sm text-slate-500 whitespace-nowrap">${fmtDate(tx.trxDate)}</td>
+      <td class="px-3 py-1.5 text-sm text-slate-700">${escHtml(tx.description)}</td>
+      <td class="px-3 py-1.5 text-sm font-medium text-right ${signCls} whitespace-nowrap">
+        ${signed>=0?'+':''}${fmtCurrency(Math.abs(signed),2)}
+      </td>
+      <td class="px-3 py-1.5 text-sm text-slate-400">${counterpart}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="4" class="px-3 py-6 text-sm text-slate-400 text-center">No transactions found</td></tr>`;
+
+  const panel = document.createElement('div');
+  panel.id = 'baDetailPanel';
+  panel.className = 'md:col-span-2 xl:col-span-3 bg-white border-2 border-blue-300 rounded-xl overflow-hidden';
+  panel.innerHTML = `
+    <div class="flex items-center justify-between px-4 py-2.5 bg-blue-50 border-b border-blue-200">
+      <span class="text-sm font-semibold text-slate-800">${escHtml(ba.name)} — Last 50 Transactions</span>
+      <button onclick="baTileClick('${baId}')" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+    </div>
+    <div class="overflow-x-auto" style="max-height:400px;overflow-y:auto;">
+      <table class="w-full min-w-[480px]">
+        <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
+          <tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
+            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+
+  const grid = document.getElementById('baGrid');
+  if (grid) grid.appendChild(panel);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -4778,6 +5335,8 @@ function renderCreditCards(container) {
 let dupTab       = 'pending';
 let dupDayRange  = 3;
 let dupDollarTol = 0;
+let dupFromDate  = '';  // YYYY-MM-DD — empty = no lower bound
+let dupToDate    = '';  // YYYY-MM-DD — empty = no upper bound
 
 function renderDuplicates(container) {
   dupTab = 'pending';
@@ -4909,6 +5468,16 @@ function _renderDupPage(container) {
         <div class="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-3 flex-wrap">
           <span class="text-sm text-slate-600 font-medium flex-shrink-0">Scan:</span>
           <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500">From</label>
+            <input id="dupFromDate" type="date" value="${dupFromDate}"
+              class="${ic} w-36">
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500">To</label>
+            <input id="dupToDate" type="date" value="${dupToDate}"
+              class="${ic} w-36">
+          </div>
+          <div class="flex items-center gap-2">
             <label class="text-xs text-slate-500">Within</label>
             <input id="dupDays" type="number" min="0" max="30" value="${dupDayRange}"
               class="${ic} w-16 text-center">
@@ -4940,8 +5509,20 @@ function dupSetTab(t) { dupTab = t; _renderDupPage(); }
 function dupRunScan() {
   const days   = Math.max(0, +document.getElementById('dupDays')?.value   || 0);
   const dollar = Math.max(0, +document.getElementById('dupDollar')?.value || 0);
+  const fromD  = (document.getElementById('dupFromDate')?.value  || '').trim();
+  const toD    = (document.getElementById('dupToDate')?.value    || '').trim();
   dupDayRange  = days;
   dupDollarTol = dollar;
+  dupFromDate  = fromD;
+  dupToDate    = toD;
+
+  // Build optional date-range clause
+  const dateFilter = (fromD || toD)
+    ? `AND substr(a.trxDate,1,10) >= '${fromD || '0000-01-01'}'
+       AND substr(a.trxDate,1,10) <= '${toD   || '9999-12-31'}'
+       AND substr(b.trxDate,1,10) >= '${fromD || '0000-01-01'}'
+       AND substr(b.trxDate,1,10) <= '${toD   || '9999-12-31'}'`
+    : '';
 
   // Find transaction pairs: same or similar amount, within N days,
   // at least one matching DR or CR account, not already reviewed
@@ -4955,6 +5536,7 @@ function dupRunScan() {
         a.drAccountId = b.drAccountId OR
         a.crAccountId = b.crAccountId
       )
+      ${dateFilter}
       AND NOT EXISTS (
         SELECT 1 FROM DuplicateReview dr
         WHERE (dr.txARef='tx:'||a.id AND dr.txBRef='tx:'||b.id)
@@ -5755,8 +6337,8 @@ function _renderEquityPage(container) {
 
   // ── Summary tab ────────────────────────────────────────────
   function summaryTab() {
-    const realizedGL = +queryVal(`SELECT COALESCE(SUM(CAST(gainLoss AS REAL)),0) FROM EquityLotSale`) || 0;
-    const totalDivs  = +queryVal(`SELECT COALESCE(SUM(CAST(amount AS REAL)),0) FROM EquityDividend`)  || 0;
+    const realizedGL  = +queryVal(`SELECT COALESCE(SUM(CAST(gainLoss AS REAL)),0) FROM EquityLotSale`) || 0;
+    const totalCostBasis = positions.reduce((s,p)=>s+p.costBasis,0);
 
     if (!positions.length) return `
       <div class="p-8 text-center text-slate-400 text-sm">No open equity positions.</div>`;
@@ -5783,8 +6365,8 @@ function _renderEquityPage(container) {
           <div class="text-lg font-bold ${realizedGL>=0?'text-green-700':'text-red-600'}">${realizedGL>=0?'+':''}${fmtCurrency(realizedGL,2)}</div>
         </div>
         <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
-          <div class="text-xs text-slate-500 mb-0.5">Total Dividends</div>
-          <div class="text-lg font-bold text-slate-800">${fmtCurrency(totalDivs,2)}</div>
+          <div class="text-xs text-slate-500 mb-0.5">Total Cost Basis</div>
+          <div class="text-lg font-bold text-slate-800">${fmtCurrency(totalCostBasis,2)}</div>
         </div>
       </div>`;
 
@@ -5803,7 +6385,12 @@ function _renderEquityPage(container) {
           title="Click to set price manually">
           ${noPrice
             ? '<span class="text-xs bg-amber-50 text-amber-600 border border-amber-200 rounded px-1.5 py-0.5">No price — click to set</span>'
-            : `<span class="font-medium text-slate-800">${fmtCurrency(p._mp,2)}</span>`}
+            : `<span class="font-medium text-slate-800">${fmtCurrency(p._mp,2)}</span>
+               <span class="ml-1 text-slate-300 text-xs" title="Manually entered">✎</span>`}
+          <button onclick="event.stopPropagation();eqFetchOneTicker('${escHtml(p.ticker)}')"
+            id="eqfetch-${escHtml(p.ticker)}"
+            class="ml-1 text-slate-300 hover:text-blue-500 text-xs leading-none align-middle"
+            title="Fetch latest price for ${escHtml(p.ticker)}">&#x21BB;</button>
         </td>
         <td class="px-4 py-3 text-sm text-right font-medium text-slate-800">${p._mp?fmtCurrency(p._mktVal,2):'&mdash;'}</td>
         <td class="px-4 py-3 text-sm text-right">
@@ -5864,10 +6451,14 @@ function _renderEquityPage(container) {
         ${sTr(fmtCurrency(rem*lot.price,2),'text-slate-700')}
         ${sTr(mp?fmtCurrency(mktVal,2):'&mdash;',mp?'text-slate-700':'text-slate-300')}
         ${sTr(mp?`<span class="${glCls}">${unreal>=0?'+':''}${fmtCurrency(unreal,2)}</span>`:'&mdash;','')}
-        <td class="px-3 py-2 text-right">
+        <td class="px-3 py-2 text-right whitespace-nowrap">
           <button onclick="eqOpenSellModal('${escHtml(lot.ticker)}')"
             class="text-xs border border-slate-200 hover:border-slate-400 rounded px-2 py-0.5 text-slate-500 hover:text-slate-800">
             Sell
+          </button>
+          <button onclick="eqOpenSplitModal('${escHtml(lot.id)}','${escHtml(lot.ticker)}')"
+            class="text-xs border border-slate-200 hover:border-amber-400 rounded px-2 py-0.5 text-slate-500 hover:text-amber-700 ml-1">
+            Split
           </button>
         </td>
       </tr>
@@ -6010,39 +6601,6 @@ function _renderEquityPage(container) {
     </table></div>`;
   }
 
-  // ── Dividends tab ──────────────────────────────────────────
-  function dividendsTab() {
-    const divs = query(`SELECT id, ticker, trxDate, CAST(amount AS REAL) AS amount, notes FROM EquityDividend ORDER BY trxDate DESC`);
-    const sorted = [...divs].sort((a,b) => {
-      const av=a[equitySortCol], bv=b[equitySortCol];
-      if (typeof av==='string') return equitySortDir*av.localeCompare(bv);
-      return equitySortDir*((+av||0)-(+bv||0));
-    });
-    const total = divs.reduce((s,d)=>s+(+d.amount||0), 0);
-    const rows = sorted.map(d=>`
-      <tr class="border-t border-slate-100 hover:bg-slate-50">
-        ${sTr(escHtml(d.ticker||'—'),'font-semibold text-slate-800','left')}
-        ${sTr(fmtDate(d.trxDate),'text-slate-600 whitespace-nowrap','left')}
-        ${sTr(fmtCurrency(d.amount,2),'font-medium text-slate-800')}
-        <td class="px-3 py-2 text-sm text-slate-400">${escHtml(d.notes||'')}</td>
-      </tr>`).join('');
-    return `<div class="overflow-x-auto"><table class="w-full min-w-[420px]">
-      <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
-        <tr>
-          ${sTh('ticker','Ticker','left')}
-          ${sTh('trxDate','Date','left')}
-          ${sTh('amount','Amount')}
-          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Notes</th>
-        </tr>
-      </thead>
-      <tbody>${rows||'<tr><td colspan="4" class="px-3 py-6 text-center text-sm text-slate-400">No dividends recorded yet</td></tr>'}</tbody>
-      ${divs.length?`<tfoot class="border-t-2 border-slate-400 bg-slate-50"><tr>
-        <td colspan="2" class="px-3 py-2 text-sm font-bold text-slate-800">Total</td>
-        <td class="px-3 py-2 text-sm font-bold text-slate-800 text-right">${fmtCurrency(total,2)}</td><td></td>
-      </tr></tfoot>`:''}
-    </table></div>`;
-  }
-
   // ── Helper: plain cell ─────────────────────────────────────
   function sTr(html, cls='', align='right') {
     return `<td class="px-3 py-2 text-sm text-${align} ${cls}">${html}</td>`;
@@ -6050,18 +6608,15 @@ function _renderEquityPage(container) {
 
   // ── Assemble ───────────────────────────────────────────────
   const salesCount  = queryVal(`SELECT COUNT(*) FROM EquityLotSale`) || 0;
-  const divCount    = queryVal(`SELECT COUNT(*) FROM EquityDividend`) || 0;
   const closedCount = closedLots.length;
   const onHandCount = openLots.length;
   const realizedGL  = +(queryVal(`SELECT COALESCE(SUM(CAST(gainLoss AS REAL)),0) FROM EquityLotSale`)||0);
   const realGLStr   = (realizedGL>=0?'+':'')+fmtCurrency(realizedGL,2);
   const realGLCls   = realizedGL>=0?'text-green-700':'text-red-600';
-
   let tabContent = '';
   if      (equityTab==='summary')    tabContent = summaryTab();
   else if (equityTab==='lots')       tabContent = lotsOnHandTab();
   else if (equityTab==='closedlots') tabContent = closedLotsTab();
-  else if (equityTab==='dividends')  tabContent = dividendsTab();
 
   const tabBtn = (id, label) =>
     `<button onclick="equitySetTab('${id}')"
@@ -6090,7 +6645,6 @@ function _renderEquityPage(container) {
             <div class="text-xs ${totalUnreal>=0?'text-green-600':'text-red-600'} mt-0.5">${totalUnreal>=0?'+':''}${fmtCurrency(totalUnreal,2)} unrealized</div>
           </div>`:''}
           <button onclick="eqOpenBuyModal('')" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ Buy / Vest</button>
-          <button onclick="eqOpenDivModal()"  class="border border-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50">+ Dividend</button>
           <button onclick="eqRefreshPrices()" id="eqRefreshBtn" class="border border-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50 flex items-center gap-1.5" title="Fetch latest prices from Yahoo Finance for all open positions">&#x21BB; Prices</button>
         </div>
       </div>
@@ -6100,7 +6654,6 @@ function _renderEquityPage(container) {
           ${tabBtn('summary','Summary')}
           ${tabBtn('lots','Lots with On Hand ('+onHandCount+')')}
           ${tabBtn('closedlots','Closed Lots ('+closedCount+')')}
-          ${tabBtn('dividends','Dividends ('+divCount+')')}
         </div>
         <div class="overflow-x-auto" style="max-height:65vh;overflow-y:auto;">${tabContent}</div>
       </div>
@@ -6218,51 +6771,37 @@ function _renderEquityPage(container) {
       </div>
     </div>
 
-    <!-- Dividend modal -->
-    <div id="eqDivModal" style="display:none"
+    <!-- Stock Split modal -->
+    <div id="eqSplitModal" style="display:none"
       onclick="if(event.target===this)this.style.display='none'"
       class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-3">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
         <div class="flex items-center justify-between">
-          <h2 class="text-base font-semibold text-slate-900">Add Dividend</h2>
-          <button onclick="document.getElementById('eqDivModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+          <h2 class="text-base font-semibold text-slate-900">Stock Split</h2>
+          <button onclick="document.getElementById('eqSplitModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
         </div>
-        <div class="space-y-3">
+        <p class="text-xs text-slate-500">Adjusts all open lots for this ticker: multiplies share quantity and divides cost/share by the split ratio.</p>
+        <div id="eqSplitInfo" class="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm text-slate-700"></div>
+        <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-slate-500 mb-1">Ticker <span class="text-slate-400">(optional)</span></label>
-            <select id="eqDivTicker" class="${MC}">
-              <option value="">None (general)</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs text-slate-500 mb-1">Date</label>
-              <input id="eqDivDate" type="date" class="${MC}">
-            </div>
-            <div>
-              <label class="block text-xs text-slate-500 mb-1">Amount</label>
-              <input id="eqDivAmount" type="number" min="0" step="0.01" class="${MC}" placeholder="0.00">
-            </div>
+            <label class="block text-xs text-slate-500 mb-1">New Shares (numerator)</label>
+            <input id="eqSplitNum" type="number" min="1" step="1" value="2" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" oninput="eqSplitPreview()">
           </div>
           <div>
-            <label class="block text-xs text-slate-500 mb-1">DR Account <span class="text-slate-400">(cash received)</span></label>
-            <div id="eqDivDrWrap"></div>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">CR Account <span class="text-slate-400">(dividend income)</span></label>
-            <div id="eqDivCrWrap"></div>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Notes</label>
-            <input id="eqDivNotes" type="text" class="${MC}" placeholder="optional">
+            <label class="block text-xs text-slate-500 mb-1">Old Shares (denominator)</label>
+            <input id="eqSplitDen" type="number" min="1" step="1" value="1" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" oninput="eqSplitPreview()">
           </div>
         </div>
-        <p id="eqDivErr" style="display:none" class="text-xs text-red-500"></p>
+        <div id="eqSplitPreview" class="text-xs text-slate-500 bg-blue-50 border border-blue-100 rounded px-3 py-2"></div>
+        <p id="eqSplitErr" style="display:none" class="text-xs text-red-500"></p>
         <div class="flex gap-3 pt-1">
-          <button onclick="eqSaveDiv()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save</button>
-          <button onclick="document.getElementById('eqDivModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          <button onclick="eqConfirmSplit()" class="flex-1 bg-amber-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-amber-700">Apply Split</button>
+          <button onclick="document.getElementById('eqSplitModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
         </div>
       </div>
+    </div>
+
+    </div>
     </div>`;
 }
 
@@ -6271,6 +6810,64 @@ function equitySort(col)  {
   if (equitySortCol === col) equitySortDir *= -1;
   else { equitySortCol = col; equitySortDir = 1; }
   _renderEquityPage();
+}
+
+// ── Stock Split ────────────────────────────────────────────
+let _eqSplitLotId   = null; // lotId that triggered the modal (used to derive ticker)
+let _eqSplitTicker  = null;
+
+function eqOpenSplitModal(lotId, ticker) {
+  _eqSplitLotId  = lotId;
+  _eqSplitTicker = ticker;
+  const modal = document.getElementById('eqSplitModal');
+  if (!modal) return;
+  document.getElementById('eqSplitNum').value = '2';
+  document.getElementById('eqSplitDen').value = '1';
+  document.getElementById('eqSplitErr').style.display = 'none';
+  // Show ticker info
+  const openLots = query(`SELECT id, CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS price,
+      COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId=el.id),0) AS soldQty
+    FROM EquityLot el WHERE ticker='${ticker.replace(/'/g,"''")}'`);
+  const totalShares = openLots.reduce((s,l) => s + (l.qty - l.soldQty), 0);
+  document.getElementById('eqSplitInfo').textContent =
+    `${escHtml(ticker)} — ${openLots.length} lot${openLots.length!==1?'s':''}, ${totalShares.toFixed(4)} shares on hand`;
+  eqSplitPreview();
+  modal.style.display = 'flex';
+}
+
+function eqSplitPreview() {
+  const num = parseFloat(document.getElementById('eqSplitNum')?.value) || 0;
+  const den = parseFloat(document.getElementById('eqSplitDen')?.value) || 0;
+  const el  = document.getElementById('eqSplitPreview');
+  if (!el) return;
+  if (num <= 0 || den <= 0) { el.textContent = 'Enter a valid ratio.'; return; }
+  const ratio = num / den;
+  el.textContent = `Ratio ${num}:${den} — shares ×${ratio.toFixed(4)}, cost/share ÷${ratio.toFixed(4)}`;
+}
+
+function eqConfirmSplit() {
+  const num = parseFloat(document.getElementById('eqSplitNum')?.value) || 0;
+  const den = parseFloat(document.getElementById('eqSplitDen')?.value) || 0;
+  const errEl = document.getElementById('eqSplitErr');
+  const showErr = msg => { errEl.textContent=msg; errEl.style.display='block'; };
+  if (num <= 0 || den <= 0) return showErr('Both ratio values must be positive.');
+  if (num === den) return showErr('Ratio 1:1 has no effect.');
+  const ratio = num / den;
+  const tE    = _eqSplitTicker.replace(/'/g,"''");
+  try {
+    // Fetch all lots for this ticker (open and closed — split affects cost basis on all)
+    const lots = query(`SELECT id, CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS price FROM EquityLot WHERE ticker='${tE}'`);
+    if (!lots.length) return showErr('No lots found for this ticker.');
+    for (const lot of lots) {
+      const newQty   = lot.qty   * ratio;
+      const newPrice = lot.price / ratio;
+      db.run(`UPDATE EquityLot SET qty=${newQty}, price=${newPrice}, updatedAt='${new Date().toISOString()}' WHERE id='${lot.id}'`);
+    }
+    syncAfterWrite();
+    document.getElementById('eqSplitModal').style.display = 'none';
+    equityTab = 'lots';
+    _renderEquityPage();
+  } catch(e) { showErr('Error: ' + e.message); }
 }
 
 // Unwind a sale — deletes the EquityLotSale record, restoring the lot's remaining qty
@@ -6357,7 +6954,25 @@ async function eqRefreshPrices() {
   if (updated > 0) _renderEquityPage();
 }
 
-function eqUnwindSale(saleId, ticker) {
+// Fetch price for a single ticker — called from per-row ↻ button in Summary
+async function eqFetchOneTicker(ticker) {
+  const btn = document.getElementById('eqfetch-' + ticker);
+  if (btn) { btn.innerHTML = '<span class="spin-anim inline-block">&#x21BB;</span>'; btn.disabled = true; }
+  const price = await _eqFetchTickerPrice(ticker);
+  if (price !== null && price > 0) {
+    const now = new Date().toISOString();
+    const tE  = ticker.replace(/'/g,"''");
+    try {
+      const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
+      if (exists) db.run(`UPDATE MarketPrice SET price=${price}, updatedAt='${now}' WHERE ticker='${tE}'`);
+      else         db.run(`INSERT INTO MarketPrice (ticker,price,updatedAt) VALUES ('${tE}',${price},'${now}')`);
+      syncAfterWrite();
+    } catch(e) { console.error('Price save:', e.message); }
+    _renderEquityPage();
+  } else {
+    if (btn) { btn.innerHTML = '&#x21BB;'; btn.disabled = false; btn.title = 'Fetch failed — try again'; btn.classList.add('text-red-400'); }
+  }
+}
   if (!confirm(`Unwind this sale of ${ticker}? The lot will return to "Lots with On Hand".`)) return;
   try {
     // Find the linked Transaction and delete it too if it exists
@@ -6855,26 +7470,6 @@ function eqOpenSellModal(prefillTicker) {
   modalDiv.style.display = 'flex';
 }
 
-function eqOpenDivModal() {
-  window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
-  window._txSubs = {};
-
-  const allTickers = query(`SELECT DISTINCT ticker FROM EquityLot ORDER BY ticker`).map(r=>r.ticker);
-  const tickerOpts = allTickers.map(t=>`<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
-
-  const modalDiv = document.getElementById('eqDivModal');
-  if (!modalDiv) return;
-  modalDiv.querySelector('#eqDivTicker').innerHTML = '<option value="">None (general)</option>' + tickerOpts;
-  modalDiv.querySelector('#eqDivDate').value   = new Date().toISOString().slice(0,10);
-  modalDiv.querySelector('#eqDivAmount').value = '';
-  modalDiv.querySelector('#eqDivNotes').value  = '';
-
-  document.getElementById('eqDivDrWrap').innerHTML = acctPickerHtml('eqDivDr','','DR account (cash received)\u2026',{isFilter:true});
-  document.getElementById('eqDivCrWrap').innerHTML = acctPickerHtml('eqDivCr','','CR account (dividend income)\u2026',{isFilter:true});
-
-  modalDiv.style.display = 'flex';
-}
-
 // ── Field change handlers ──────────────────────────────────
 let _eqTickerLookupTimer = null;
 
@@ -7140,56 +7735,6 @@ function eqSaveSell() {
       const lotGL       = lotProceeds - a.costBasis;
       db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,proceeds,costBasis,gainLoss,drAccountId,crAccountId,notes,linkedTxId,createdAt)
         VALUES ('${genId()}','${a.lotId}','${trxDate}','${period}',${a.qty},${price},${lotProceeds},${a.costBasis},${lotGL},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
-    }
-    syncAfterWrite();
-    modal.style.display='none';
-    _renderEquityPage();
-  } catch(e) { showErr('Error: '+e.message); }
-}
-
-function eqSaveDiv() {
-  const modal  = document.getElementById('eqDivModal');
-  const ticker = modal.querySelector('#eqDivTicker').value || null;
-  const date   = modal.querySelector('#eqDivDate').value;
-  const amount = parseFloat(modal.querySelector('#eqDivAmount').value);
-  const notes  = modal.querySelector('#eqDivNotes').value.trim() || null;
-  const drId   = acctPickerGetValue('eqDivDr');
-  const crId   = acctPickerGetValue('eqDivCr');
-
-  const errEl  = modal.querySelector('#eqDivErr');
-  const showErr= msg => { if(errEl){errEl.textContent=msg;errEl.style.display='block';} };
-  if (!date)                  return showErr('Date is required.');
-  if (isNaN(amount)||amount<=0) return showErr('Amount must be positive.');
-  if (!drId)                  return showErr('DR account is required.');
-  if (!crId)                  return showErr('CR account is required.');
-
-  const now      = new Date().toISOString();
-  const period   = date.slice(0,4)+date.slice(5,7);
-  const trxDate  = date+'T12:00:00.000Z';
-  const tickerE  = ticker ? ticker.replace(/'/g,"''") : null;
-  const notesSQL = notes?`'${notes.replace(/'/g,"''")}' `:'NULL';
-  const desc     = tickerE ? `Dividend: ${tickerE}` : 'Dividend income';
-
-  const today = new Date().toLocaleDateString('en-CA'); // local date YYYY-MM-DD (avoids UTC offset skew)
-  const isFutureDiv = date > today;
-
-  try {
-    const txId  = genId();
-    const divId = genId();
-
-    if (isFutureDiv) {
-      // Park in FutureTransaction — will migrate automatically when date arrives
-      db.run(`INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
-        VALUES ('${txId}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',${notesSQL},'${now}','${now}')`);
-    } else {
-      // Confirmed dividend — write to Transaction + EquityDividend
-      db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
-        VALUES ('${txId}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
-      // Insert EquityDividend record if table exists
-      try {
-        db.run(`INSERT INTO EquityDividend (id,ticker,trxDate,period,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt,updatedAt)
-          VALUES ('${divId}',${tickerE?`'${tickerE}'`:'NULL'},'${trxDate}','${period}',${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}','${now}')`);
-      } catch(_) { /* table may not exist — transaction was still created */ }
     }
     syncAfterWrite();
     modal.style.display='none';
