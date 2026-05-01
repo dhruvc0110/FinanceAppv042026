@@ -272,6 +272,7 @@ const DRIVE_FOLDER_NAME = 'FinanceApp';
 const DRIVE_FILE_NAME   = 'finance.sqlite';
 const FIREBASE_DB_URL   = 'https://financeapp-494818-default-rtdb.firebaseio.com';
 const LOCK_STALE_MS     = 5 * 60 * 1000; // 5 minutes
+const ANTHROPIC_API_KEY = ''; // Optional: paste your Anthropic API key here to enable ticker name lookup via Claude
 
 // ════════════════════════════════════════════════════════════
 // STATE
@@ -6696,44 +6697,74 @@ function eqOpenDivModal() {
 // ── Field change handlers ──────────────────────────────────
 let _eqTickerLookupTimer = null;
 
-// Three-attempt Yahoo Finance lookup (query2 v8 chart → query1 v1 search → CORS proxy fallback)
+// Ticker name lookup — four-attempt chain (OpenFIGI → Anthropic Claude → Yahoo proxy → give up)
 async function _eqFetchTickerName(ticker) {
   const t = encodeURIComponent(ticker);
 
-  // Attempt 1: Yahoo Finance v8 chart on query2 — fewest CORS restrictions
+  // ── Attempt 1: OpenFIGI ───────────────────────────────────
+  // Bloomberg's open financial instrument mapping API.
+  // Free, no API key required, CORS-friendly, covers all US equities + ETFs.
   try {
-    const r = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${t}?interval=1d&range=1d`,
-      { signal: AbortSignal.timeout(4000) }
-    );
+    const r = await fetch('https://api.openfigi.com/v3/mapping', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{ idType: 'TICKER', idValue: ticker }]),
+      signal: AbortSignal.timeout(5000)
+    });
     if (r.ok) {
       const d = await r.json();
-      const meta = d?.chart?.result?.[0]?.meta;
-      const name = meta?.longName || meta?.shortName || '';
-      if (name) return name;
+      // Pick the first US equity/ETF result; OpenFIGI returns names in ALL CAPS
+      const hit = (d?.[0]?.data || []).find(x =>
+        x.exchCode && ['US','UA','UF','UR','UV'].includes(x.exchCode)
+      ) || d?.[0]?.data?.[0];
+      if (hit?.name) {
+        // Title-case: keep short words (ETF, Inc, LLC, etc.) as-is, capitalise the rest
+        const name = hit.name.replace(/\b(\w+)\b/g, w =>
+          w.length <= 2 ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()
+        );
+        return name;
+      }
     }
   } catch(_) {}
 
-  // Attempt 2: Yahoo Finance v1 search on query1
-  try {
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${t}&quotesCount=1&newsCount=0&listsCount=0`,
-      { signal: AbortSignal.timeout(4000) }
-    );
-    if (r.ok) {
-      const d = await r.json();
-      const q = d?.quotes?.[0];
-      const name = q?.longname || q?.shortname || '';
-      if (name) return name;
-    }
-  } catch(_) {}
+  // ── Attempt 2: Anthropic Claude (if API key is set) ───────
+  // Paste your key into ANTHROPIC_API_KEY at the top of the file to enable.
+  // Claude knows virtually every global ticker. Cost: ~$0.000025 per lookup.
+  if (ANTHROPIC_API_KEY) {
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 40,
+          messages: [{
+            role: 'user',
+            content: `Stock ticker: ${ticker}. Reply with only the full company name (e.g. "Apple Inc." or "Global X Russell 2000 Covered Call ETF"). If unknown, reply with just the ticker.`
+          }]
+        }),
+        signal: AbortSignal.timeout(8000)
+      });
+      if (r.ok) {
+        const d = await r.json();
+        const name = d?.content?.[0]?.text?.trim() || '';
+        if (name && name !== ticker) return name;
+      }
+    } catch(_) {}
+  }
 
-  // Attempt 3: CORS proxy wrapping the search endpoint (always works)
+  // ── Attempt 3: CORS proxy → Yahoo Finance search ──────────
+  // allorigins.win proxies the request server-side, bypassing Yahoo's CORS block.
   try {
     const target = `https://query1.finance.yahoo.com/v1/finance/search?q=${t}&quotesCount=1&newsCount=0`;
     const r = await fetch(
       `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`,
-      { signal: AbortSignal.timeout(6000) }
+      { signal: AbortSignal.timeout(7000) }
     );
     if (r.ok) {
       const wrapper = await r.json();
@@ -6744,7 +6775,7 @@ async function _eqFetchTickerName(ticker) {
     }
   } catch(_) {}
 
-  return ''; // all attempts failed — user types name manually
+  return ''; // all attempts failed — field stays blank for manual entry
 }
 
 function eqBuyTickerChange(val) {
