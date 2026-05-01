@@ -7170,7 +7170,7 @@ function eqSaveDiv() {
   const notesSQL = notes?`'${notes.replace(/'/g,"''")}' `:'NULL';
   const desc     = tickerE ? `Dividend: ${tickerE}` : 'Dividend income';
 
-  const today = now.slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA'); // local date YYYY-MM-DD (avoids UTC offset skew)
   const isFutureDiv = date > today;
 
   try {
