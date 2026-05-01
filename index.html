@@ -1140,6 +1140,13 @@ function ytdPeriods() {
 // BALANCE ENGINE
 // ════════════════════════════════════════════════════════════
 function buildBalanceMap(periods) {
+  // Guard: empty array would generate invalid SQL "WHERE period IN ()"
+  if (Array.isArray(periods) && periods.length === 0) {
+    const accounts = query("SELECT id, type, grouping, role FROM Account WHERE isActive = 1 AND (role IS NULL OR role != 'EXCLUDED')");
+    const map = {};
+    for (const a of accounts) map[a.id] = { id: a.id, type: a.type, grouping: a.grouping, role: a.role, balance: 0 };
+    return map;
+  }
   let where = '';
   if (periods != null) {
     const list = periods.map(p => "'" + p + "'").join(',');
@@ -2297,11 +2304,10 @@ function migrateFutureTransactions() {
   for (const ft of futures) {
     db.run(`
       INSERT OR IGNORE INTO "Transaction"
-        (id,trxDate,period,type,description,amount,
+        (id,trxDate,period,description,amount,
          drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
       VALUES (
         '${ft.id}','${ft.trxDate}','${ft.period}',
-        ${ft.type?"'"+ft.type+"'":'NULL'},
         '${String(ft.description).replace(/'/g,"''")}',${ft.amount},
         '${ft.drAccountId}','${ft.crAccountId}',
         ${ft.drSubId?"'"+ft.drSubId+"'":'NULL'},
@@ -2366,10 +2372,11 @@ let plLayouts  = { income: [], expense: [] };
 
 function renderPL(container) {
   plEditMode = false;
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  // Source from Period table (Settings → Periods) plus any tx periods not yet registered there
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
-      <p class="text-slate-400 text-sm">No transactions found.</p></div>`;
+      <p class="text-slate-400 text-sm">No periods found. Open a year in Settings &rarr; Periods first.</p></div>`;
     return;
   }
   const cp = currentPeriod();
@@ -2384,7 +2391,7 @@ function _renderPLPage(container) {
   const cp       = currentPeriod();
   const lockRow  = query(`SELECT isLocked FROM Period WHERE period='${plPeriod}'`)[0];
   const isLocked = lockRow ? !!lockRow.isLocked : false;
-  const showProj = (plPeriod === cp) && !isLocked;
+  const showProj = !isLocked;
 
   // Accounts (excluding EXCLUDED and FLUX_PL roles)
   const incAccts = query(`SELECT id,code,name FROM Account WHERE type='INCOME'  AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL')) ORDER BY code`);
@@ -2439,7 +2446,7 @@ function _renderPLPage(container) {
 
       if (item.type==='subtotal') {
         const vb=type==='INCOME'?rA-rB:rB-rA;
-        const vp=showProj?(type==='INCOME'?rP-(rB-rA):(rB-rA)-rP):0;
+        const vp=showProj?(type==='INCOME'?rP-rB:rB-rP):0;
         html+=`<tr class="border-t-2 border-slate-400 bg-amber-50">
           ${plEditMode?`<td class="px-2 py-1.5"><div class="flex gap-0.5">
             <button onclick="plMove('${section}',${i},-1)" class="text-slate-400 hover:text-slate-700 px-1 text-xs">↑</button>
@@ -2464,7 +2471,7 @@ function _renderPLPage(container) {
       const bgt=bd.bgt, projR=bd.projR;
       const proj=(projR!==null&&projR!==undefined)?+projR:bgt;
       const vb=type==='INCOME'?act-bgt:bgt-act;
-      const vp=showProj?(type==='INCOME'?proj-(bgt-act):(bgt-act)-proj):0;
+      const vp=showProj?(type==='INCOME'?proj-bgt:bgt-proj):0;
       const isDefault=projR===null||projR===undefined;
       const projRSafe=isDefault?'null':(+projR||0); // always a JS number literal in onclick
 
@@ -2491,7 +2498,7 @@ function _renderPLPage(container) {
     }
 
     const gvb=type==='INCOME'?gA-gB:gB-gA;
-    const gvp=showProj?(type==='INCOME'?gP-(gB-gA):(gB-gA)-gP):0;
+    const gvp=showProj?(type==='INCOME'?gP-gB:gB-gP):0;
     html+=`<tr class="border-t-2 border-slate-400 bg-slate-50">
       ${plEditMode?'<td></td>':''}
       <td colspan="${_ncs()}" class="px-3 py-2 text-sm font-bold text-slate-800">Total ${type==='INCOME'?'Income':'Expenses'}</td>
@@ -2509,7 +2516,7 @@ function _renderPLPage(container) {
   const exp=buildSection('expense','EXPENSE');
   const netA=inc.gA-exp.gA, netB=inc.gB-exp.gB;
 
-  const periods=query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods=query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   const periodOpts=periods.map(p=>`<option value="${p}"${p===plPeriod?' selected':''}>${periodLabel(p)}</option>`).join('');
 
   const thE=plEditMode?`<th class="px-2 py-2.5 w-20"></th>`:'';
@@ -2677,10 +2684,10 @@ let bsLayouts  = { asset:[], liability:[], belowLine:[] };
 
 function renderBS(container) {
   bsEditMode = false;
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
-      <p class="text-slate-400 text-sm">No transactions found.</p></div>`;
+      <p class="text-slate-400 text-sm">No periods found. Open a year in Settings &rarr; Periods first.</p></div>`;
     return;
   }
   const cp = currentPeriod();
@@ -2800,7 +2807,7 @@ function _renderBSPage(container) {
   const below=buildSection('belowLine');
   const netWorth=asset.gBal-liab.gBal;
 
-  const periods=query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods=query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   const periodOpts=periods.map(p=>`<option value="${p}"${p===bsPeriod?' selected':''}>${periodLabel(p)}</option>`).join('');
 
   // Column headers (the action column only appears in edit mode)
@@ -3025,7 +3032,7 @@ function _renderBudgetPage(container) {
   netHtml += '</tr>';
 
   // All periods for copy-column dropdowns (transactions + existing budgets)
-  const allPeriods = query(`SELECT period FROM (SELECT DISTINCT period FROM "Transaction" UNION SELECT DISTINCT period FROM BudgetPlan) ORDER BY period DESC`)
+  const allPeriods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction" UNION SELECT DISTINCT period FROM BudgetPlan) ORDER BY period DESC`)
     .map(r => r.period);
   const pOpts = allPeriods.map(p => `<option value="${p}">${periodLabel(p)}</option>`).join('');
 
@@ -3165,10 +3172,10 @@ let aiPeriodFrom = '';
 let aiPeriodTo   = '';
 
 function renderAI(container) {
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
-      <p class="text-slate-400 text-sm">No transactions found.</p></div>`;
+      <p class="text-slate-400 text-sm">No periods found. Open a year in Settings &rarr; Periods first.</p></div>`;
     return;
   }
   const cp = currentPeriod();
@@ -3186,7 +3193,7 @@ function _renderAIPage(container) {
   // Accounts flagged for inquiry, with type info
   const accounts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 AND showOnInquiry=1 ORDER BY type, code`);
 
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   const pOpts = periods.map(p=>`<option value="${p}"${p===aiPeriodFrom?' selected':''}>${periodLabel(p)}</option>`).join('');
   const pOptsTo = periods.map(p=>`<option value="${p}"${p===aiPeriodTo?' selected':''}>${periodLabel(p)}</option>`).join('');
 
@@ -3757,7 +3764,7 @@ function _renderSettingsPage(container) {
   function periodsTab() {
     const locked = {};
     query(`SELECT period, isLocked FROM Period`).forEach(r => { locked[r.period] = !!r.isLocked; });
-    const allPeriods = query(`SELECT DISTINCT period FROM "Transaction" UNION SELECT DISTINCT period FROM BudgetPlan ORDER BY period DESC`).map(r=>r.period);
+    const allPeriods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction" UNION SELECT DISTINCT period FROM BudgetPlan) ORDER BY period DESC`).map(r=>r.period);
     const txCounts  = {};
     query(`SELECT period, COUNT(*) AS cnt FROM "Transaction" GROUP BY period`).forEach(r=>{ txCounts[r.period]=r.cnt; });
 
@@ -5116,7 +5123,7 @@ let accrualPeriodTo   = '';
 let accrualOpenSubId  = null; // currently open tile sub-account id
 
 function renderAccruals(container) {
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   const cp = currentPeriod();
   if (!accrualPeriod || !periods.includes(accrualPeriod))
     accrualPeriod = periods.includes(cp) ? cp : (periods[0]||cp);
@@ -5136,7 +5143,7 @@ function _renderAccrualsPage(container) {
     WHERE isActive=1 AND role='ACCRUED_LIABILITY'
     ORDER BY code`);
 
-  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC`).map(r=>r.period);
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
 
   if (!parents.length) {
     container.innerHTML = `<div class="space-y-4">
@@ -6687,12 +6694,49 @@ function eqOpenDivModal() {
 }
 
 // ── Field change handlers ──────────────────────────────────
+let _eqTickerLookupTimer = null;
+
 function eqBuyTickerChange(val) {
   const ticker = val.trim().toUpperCase();
   if (!ticker) return;
+
+  // 1. Check existing lots in DB first (instant, no network)
   const existing = query(`SELECT stockName FROM EquityLot WHERE ticker='${ticker.replace(/'/g,"''")}' AND stockName IS NOT NULL AND stockName!='' LIMIT 1`)[0];
   const snEl = document.querySelector('#eqBuyModal #eqBuyStockName');
-  if (existing && snEl && !snEl.value) snEl.value = existing.stockName;
+  if (existing && snEl && !snEl.value) {
+    snEl.value = existing.stockName;
+    eqBuyCalcAmount();
+    return;
+  }
+
+  // 2. For new tickers (not yet in DB), look up from Yahoo Finance
+  if (snEl && !snEl.value) {
+    snEl.placeholder = 'Looking up\u2026';
+    clearTimeout(_eqTickerLookupTimer);
+    _eqTickerLookupTimer = setTimeout(async () => {
+      try {
+        const res  = await fetch(
+          `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0&listsCount=0`,
+          { headers: { Accept: 'application/json' } }
+        );
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data  = await res.json();
+        const quote = data.quotes && data.quotes[0];
+        const nameEl = document.querySelector('#eqBuyModal #eqBuyStockName');
+        if (quote && nameEl && !nameEl.value) {
+          const name = quote.longname || quote.shortname || '';
+          if (name) nameEl.value = name;
+        }
+      } catch(e) {
+        // Network or CORS error — leave field empty for manual entry
+        console.warn('Ticker lookup failed:', e.message);
+      } finally {
+        const nameEl = document.querySelector('#eqBuyModal #eqBuyStockName');
+        if (nameEl && !nameEl.value) nameEl.placeholder = 'Apple Inc.';
+      }
+    }, 400);
+  }
+
   eqBuyCalcAmount();
 }
 
@@ -6797,8 +6841,8 @@ function eqSaveBuy() {
     db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
       VALUES ('${txId}','${trxDate}','${period}','Buy ${tickerE}',${amount},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
     // Create lot
-    db.run(`INSERT INTO EquityLot (id,ticker,stockName,trxDate,period,qty,price,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt,updatedAt)
-      VALUES ('${lotId}','${tickerE}','${sNameE}','${trxDate}','${period}',${qty},${price},${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}','${now}')`);
+    db.run(`INSERT INTO EquityLot (id,ticker,stockName,trxDate,period,qty,price,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt)
+      VALUES ('${lotId}','${tickerE}','${sNameE}','${trxDate}','${period}',${qty},${price},${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
     syncAfterWrite();
     modal.style.display='none';
     _renderEquityPage();
@@ -6845,8 +6889,8 @@ function eqSaveSell() {
     for (const a of allocations) {
       const lotProceeds = a.qty * price;
       const lotGL       = lotProceeds - a.costBasis;
-      db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,proceeds,costBasis,gainLoss,drAccountId,crAccountId,notes,linkedTxId,createdAt,updatedAt)
-        VALUES ('${genId()}','${a.lotId}','${trxDate}','${period}',${a.qty},${price},${lotProceeds},${a.costBasis},${lotGL},'${drId}','${crId}',${notesSQL},'${txId}','${now}','${now}')`);
+      db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,proceeds,costBasis,gainLoss,drAccountId,crAccountId,notes,linkedTxId,createdAt)
+        VALUES ('${genId()}','${a.lotId}','${trxDate}','${period}',${a.qty},${price},${lotProceeds},${a.costBasis},${lotGL},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
     }
     syncAfterWrite();
     modal.style.display='none';
