@@ -4072,11 +4072,19 @@ function _renderSettingsPage(container) {
       const headerCells = colLetters.map(c=>`<th class="px-1 py-1 text-center text-xs font-semibold text-slate-400 uppercase w-24 sticky top-0 bg-slate-50 border-b border-slate-200">${c}</th>`).join('');
       const rowsHtml = Array.from({length:ROWS},(_,r)=>{
         const cells = colLetters.map((_,c)=>{
-          const val = (data[r]||[])[c] ?? '';
+          const raw = (data[r]||[])[c] ?? '';
+          const isFormula = String(raw).startsWith('=');
+          const display = isFormula ? _spEval(String(raw), data) : raw;
+          const displayStr = (display === '#ERR') ? '#ERR' : (display !== '' ? String(display) : '');
+          const errStyle = display === '#ERR' ? ' style="color:#dc2626"' : '';
           return `<td class="border border-slate-100 p-0">
-            <input type="text" value="${escHtml(String(val))}"
-              class="w-full h-7 px-1.5 text-sm text-slate-700 focus:outline-none focus:bg-blue-50 bg-transparent"
-              onblur="spCellBlur(\`${activeId}\`,${r},${c},this.value)"
+            <input type="text"
+              value="${escHtml(displayStr)}"
+              data-raw="${escHtml(String(raw))}"
+              data-r="${r}" data-c="${c}" data-sid="${activeId}"
+              class="sp-cell w-full h-7 px-1.5 text-sm text-slate-700 focus:outline-none focus:bg-blue-50 bg-transparent"${errStyle}
+              onfocus="spCellFocus(this)"
+              onblur="spCellBlur(this)"
               onkeydown="spCellKey(event,${r},${c})">
           </td>`;
         }).join('');
@@ -4488,26 +4496,59 @@ function _spEval(expr, data) {
   } catch(e) { return '#ERR'; }
 }
 
-function spCellBlur(sheetId, row, col, rawVal) {
+// On focus: show raw formula/value so user can edit it
+function spCellFocus(input) {
+  input.value = input.dataset.raw || '';
+  input.select();
+}
+
+function spCellBlur(input) {
+  const sheetId = input.dataset.sid;
+  const row     = parseInt(input.dataset.r);
+  const col     = parseInt(input.dataset.c);
+  const rawVal  = input.value;
+
   // Load existing data, update cell, save
   const sheet = query(`SELECT data FROM ScratchPad WHERE id='${sheetId}'`)[0];
   let data = [];
   try { data = JSON.parse(sheet?.data || '[]'); } catch(e) {}
   if (!data[row]) data[row] = [];
-  // Store raw value; display evaluated result on re-render
+
+  const prev = (data[row][col] ?? '');
+  if (String(prev) === rawVal) {
+    // No change — just restore display value
+    const isFormula = rawVal.startsWith('=');
+    const display = isFormula ? _spEval(rawVal, data) : rawVal;
+    input.value = (display === '#ERR' || display === '') ? String(display) : String(display);
+    input.dataset.raw = rawVal;
+    input.style.color = display === '#ERR' ? '#dc2626' : '';
+    return;
+  }
+
   data[row][col] = rawVal;
   const json = JSON.stringify(data).replace(/'/g,"''");
   const now  = new Date().toISOString();
   db.run(`UPDATE ScratchPad SET data='${json}', updatedAt='${now}' WHERE id='${sheetId}'`);
   syncAfterWrite();
-  // Update just this cell display (re-evaluate formula if needed)
-  const input = document.querySelector(`[onblur*="spCellBlur('${sheetId}',${row},${col},"]`);
-  if (input && rawVal.startsWith('=')) {
-    const display = _spEval(rawVal, data);
-    input.value = rawVal; // keep raw in input
-    input.title = String(display);
-    input.style.color = String(display)==='#ERR' ? '#dc2626' : '';
-  }
+
+  // Update this cell to show evaluated result
+  input.dataset.raw = rawVal;
+  const isFormula = rawVal.startsWith('=');
+  const display   = isFormula ? _spEval(rawVal, data) : rawVal;
+  input.value      = String(display);
+  input.style.color = display === '#ERR' ? '#dc2626' : '';
+
+  // Re-evaluate any other formula cells that might depend on this cell
+  document.querySelectorAll(`.sp-cell[data-sid="${sheetId}"]`).forEach(inp => {
+    const raw = inp.dataset.raw || '';
+    if (raw.startsWith('=') && inp !== input) {
+      const r = parseInt(inp.dataset.r), c = parseInt(inp.dataset.c);
+      // Reload data to get latest
+      const result = _spEval(raw, data);
+      inp.value = String(result);
+      inp.style.color = result === '#ERR' ? '#dc2626' : '';
+    }
+  });
 }
 
 function spCellKey(event, row, col) {
@@ -6863,7 +6904,7 @@ function eqConfirmSplit() {
     for (const lot of lots) {
       const newQty   = lot.qty   * ratio;
       const newPrice = lot.price / ratio;
-      db.run(`UPDATE EquityLot SET qty=${newQty}, price=${newPrice}, updatedAt='${new Date().toISOString()}' WHERE id='${lot.id}'`);
+      db.run(`UPDATE EquityLot SET qty=${newQty}, price=${newPrice} WHERE id='${lot.id}'`);
     }
     syncAfterWrite();
     document.getElementById('eqSplitModal').style.display = 'none';
@@ -7828,4 +7869,3 @@ init();
 </script>
 </body>
 </html>
-
