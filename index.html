@@ -2280,13 +2280,23 @@ function txSaveForm() {
       const isFuture = (typeof _txSaveToFuture !== 'undefined' && _txSaveToFuture) || date > now.slice(0,10);
       const table    = isFuture ? 'FutureTransaction' : '"Transaction"';
       const id       = genId();
-      db.run(`INSERT INTO ${table}
-        (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
-        VALUES ('${id}','${trxDate}','${period}',
-          '${desc.replace(/'/g,"''")}',${amt},'${drId}','${crId}',
-          ${drSub?"'"+drSub+"'":'NULL'},${crSub?"'"+crSub+"'":'NULL'},
-          ${notes?"'"+notes.replace(/'/g,"''")+"'":'NULL'},
-          0,'${now}','${now}')`);
+      if (isFuture) {
+        db.run(`INSERT INTO FutureTransaction
+          (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,createdAt,updatedAt)
+          VALUES ('${id}','${trxDate}','${period}',
+            '${desc.replace(/'/g,"''")}',${amt},'${drId}','${crId}',
+            ${drSub?"'"+drSub+"'":'NULL'},${crSub?"'"+crSub+"'":'NULL'},
+            ${notes?"'"+notes.replace(/'/g,"''")+"'":'NULL'},
+            '${now}','${now}')`);
+      } else {
+        db.run(`INSERT INTO "Transaction"
+          (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
+          VALUES ('${id}','${trxDate}','${period}',
+            '${desc.replace(/'/g,"''")}',${amt},'${drId}','${crId}',
+            ${drSub?"'"+drSub+"'":'NULL'},${crSub?"'"+crSub+"'":'NULL'},
+            ${notes?"'"+notes.replace(/'/g,"''")+"'":'NULL'},
+            0,'${now}','${now}')`);
+      }
     }
     txHideForm();
     syncAfterWrite();
@@ -2342,20 +2352,37 @@ function generateRepeatables() {
     const txId    = genId();
     const logId   = genId();
 
-    db.run(`
-      INSERT OR IGNORE INTO ${table}
-        (id,trxDate,period,description,amount,
-         drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
-      VALUES (
-        '${txId}','${dateStr}T12:00:00.000Z','${cp}',
-        '${String(r.description).replace(/'/g,"''")}',${r.amount},
-        '${r.drAccountId}','${r.crAccountId}',
-        ${r.drSubId?"'"+r.drSubId+"'":'NULL'},
-        ${r.crSubId?"'"+r.crSubId+"'":'NULL'},
-        ${r.notes?"'"+String(r.notes).replace(/'/g,"''")+"'":'NULL'},
-        0,'${now}','${now}'
-      )
-    `);
+    if (isFut) {
+      db.run(`
+        INSERT OR IGNORE INTO FutureTransaction
+          (id,trxDate,period,description,amount,
+           drAccountId,crAccountId,drSubId,crSubId,notes,createdAt,updatedAt)
+        VALUES (
+          '${txId}','${dateStr}T12:00:00.000Z','${cp}',
+          '${String(r.description).replace(/'/g,"''")}',${r.amount},
+          '${r.drAccountId}','${r.crAccountId}',
+          ${r.drSubId?"'"+r.drSubId+"'":'NULL'},
+          ${r.crSubId?"'"+r.crSubId+"'":'NULL'},
+          ${r.notes?"'"+String(r.notes).replace(/'/g,"''")+"'":'NULL'},
+          '${now}','${now}'
+        )
+      `);
+    } else {
+      db.run(`
+        INSERT OR IGNORE INTO "Transaction"
+          (id,trxDate,period,description,amount,
+           drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
+        VALUES (
+          '${txId}','${dateStr}T12:00:00.000Z','${cp}',
+          '${String(r.description).replace(/'/g,"''")}',${r.amount},
+          '${r.drAccountId}','${r.crAccountId}',
+          ${r.drSubId?"'"+r.drSubId+"'":'NULL'},
+          ${r.crSubId?"'"+r.crSubId+"'":'NULL'},
+          ${r.notes?"'"+String(r.notes).replace(/'/g,"''")+"'":'NULL'},
+          0,'${now}','${now}'
+        )
+      `);
+    }
     db.run(`INSERT OR IGNORE INTO RepeatableGenLog (id,repeatableId,period,generatedAt) VALUES ('${logId}','${r.id}','${cp}','${now}')`);
     didWrite = true;
   }
@@ -4537,6 +4564,58 @@ function _renderFTPage(container) {
           <button onclick="ftNextPage(${tPages})" ${ftPage>=tPages-1?'disabled':''} class="px-3 py-1 border border-slate-300 rounded text-sm hover:bg-slate-50 disabled:opacity-40">Next &rarr;</button>
         </div>
       </div>
+    </div>
+
+    <!-- Transaction Form Modal (shared with Transactions page) -->
+    <div id="txFormModal" style="display:none"
+      onclick="if(event.target===this)txHideForm()"
+      class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 id="txFormTitle" class="text-base font-semibold text-slate-900">New Future Transaction</h2>
+          <button onclick="txHideForm()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="txFormEditId" value="">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Date</label>
+            <input id="txFormDate" type="date" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Amount</label>
+            <input id="txFormAmt" type="number" step="0.01" placeholder="0.00" class="${ic}">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Description</label>
+            <input id="txFormDesc" type="text" placeholder="Description" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">DR Account</label>
+            ${acctPickerHtml('formDrAcct', '', 'Search DR account…', { subPickerId: 'formDrSub' })}
+            ${subPickerHtml('formDrSub', '', 'formDrAcct', '')}
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">CR Account</label>
+            ${acctPickerHtml('formCrAcct', '', 'Search CR account…', { subPickerId: 'formCrSub' })}
+            ${subPickerHtml('formCrSub', '', 'formCrAcct', '')}
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
+            <input id="txFormNotes" type="text" placeholder="Optional" class="${ic}">
+          </div>
+        </div>
+        <p id="txFormErr" style="display:none" class="text-xs text-red-500"></p>
+        <div class="flex gap-3 pt-1">
+          <button onclick="txSaveForm()"
+            class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
+            Save Transaction
+          </button>
+          <button onclick="txHideForm()"
+            class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>`;
 
   if (ftF.drId) { const el=document.getElementById('ftDrId-input')||document.querySelector('[data-wrapper-id="ftDrId"] .acct-picker-input'); }
@@ -6002,6 +6081,7 @@ function _renderEquityPage(container) {
           </div>`:''}
           <button onclick="eqOpenBuyModal('')" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ Buy / Vest</button>
           <button onclick="eqOpenDivModal()"  class="border border-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50">+ Dividend</button>
+          <button onclick="eqRefreshPrices()" id="eqRefreshBtn" class="border border-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50 flex items-center gap-1.5" title="Fetch latest prices from Yahoo Finance for all open positions">&#x21BB; Prices</button>
         </div>
       </div>
 
@@ -6184,6 +6264,89 @@ function equitySort(col)  {
 }
 
 // Unwind a sale — deletes the EquityLotSale record, restoring the lot's remaining qty
+// ── Price refresh ─────────────────────────────────────────
+// Fetches current price for a single ticker.
+// Attempt 1: direct Yahoo Finance v8 (sometimes passes CORS)
+// Attempt 2: allorigins.win CORS proxy → Yahoo Finance v8
+async function _eqFetchTickerPrice(ticker) {
+  const t = encodeURIComponent(ticker);
+  const yUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${t}?interval=1d&range=1d`;
+
+  // Direct attempt
+  try {
+    const r = await fetch(yUrl, { signal: AbortSignal.timeout(4000) });
+    if (r.ok) {
+      const d = await r.json();
+      const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price > 0) return +price;
+    }
+  } catch(_) {}
+
+  // Proxy attempt
+  try {
+    const r = await fetch(
+      `https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`,
+      { signal: AbortSignal.timeout(7000) }
+    );
+    if (r.ok) {
+      const wrapper = await r.json();
+      const d = JSON.parse(wrapper.contents || '{}');
+      const price = d?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price > 0) return +price;
+    }
+  } catch(_) {}
+
+  return null;
+}
+
+// Refresh prices for every open position — called from "↻ Prices" button
+async function eqRefreshPrices() {
+  const btn = document.getElementById('eqRefreshBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin-anim inline-block">&#x21BB;</span> Fetching…'; }
+
+  // Collect tickers with remaining shares
+  const tickers = [...new Set(
+    query(`SELECT el.ticker FROM EquityLot el
+           WHERE (CAST(el.qty AS REAL) -
+                  COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId=el.id),0)
+                 ) > 0.00001`).map(r => r.ticker)
+  )];
+
+  const now = new Date().toISOString();
+  let updated = 0, failed = [];
+
+  for (const ticker of tickers) {
+    const price = await _eqFetchTickerPrice(ticker);
+    if (price !== null && price > 0) {
+      const tE = ticker.replace(/'/g, "''");
+      try {
+        const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
+        if (exists) {
+          db.run(`UPDATE MarketPrice SET price=${price}, updatedAt='${now}' WHERE ticker='${tE}'`);
+        } else {
+          db.run(`INSERT INTO MarketPrice (ticker,price,updatedAt) VALUES ('${tE}',${price},'${now}')`);
+        }
+        updated++;
+      } catch(e) { failed.push(ticker); }
+    } else {
+      failed.push(ticker);
+    }
+  }
+
+  if (updated > 0) syncAfterWrite();
+
+  if (btn) {
+    btn.disabled = false;
+    const msg = failed.length
+      ? `&#x21BB; Prices &mdash; ${updated} updated, ${failed.length} failed (${failed.join(', ')})`
+      : `&#x21BB; Prices &mdash; ${updated} updated`;
+    btn.innerHTML = msg;
+    setTimeout(() => { if (btn) btn.innerHTML = '&#x21BB; Prices'; }, 4000);
+  }
+
+  if (updated > 0) _renderEquityPage();
+}
+
 function eqUnwindSale(saleId, ticker) {
   if (!confirm(`Unwind this sale of ${ticker}? The lot will return to "Lots with On Hand".`)) return;
   try {
@@ -6503,10 +6666,18 @@ function importRun() {
     const table   = dateStr > today ? 'FutureTransaction' : '"Transaction"';
     const notesSQL= notes ? `'${notes.replace(/'/g,"''")}' ` : 'NULL';
     try {
-      db.run(`INSERT INTO ${table}
-        (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
-        VALUES ('${genId()}','${trxDate}','${period}','${desc.replace(/'/g,"''")}',${amt},
-          '${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
+      const isFutureRow = dateStr > today;
+      if (isFutureRow) {
+        db.run(`INSERT INTO FutureTransaction
+          (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
+          VALUES ('${genId()}','${trxDate}','${period}','${desc.replace(/'/g,"''")}',${amt},
+            '${drId}','${crId}',${notesSQL},'${now}','${now}')`);
+      } else {
+        db.run(`INSERT INTO "Transaction"
+          (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
+          VALUES ('${genId()}','${trxDate}','${period}','${desc.replace(/'/g,"''")}',${amt},
+            '${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
+      }
       inserted++;
     } catch(e) { skipped++; }
   }
@@ -6989,16 +7160,27 @@ function eqSaveDiv() {
   const notesSQL = notes?`'${notes.replace(/'/g,"''")}' `:'NULL';
   const desc     = tickerE ? `Dividend: ${tickerE}` : 'Dividend income';
 
+  const today = now.slice(0, 10);
+  const isFutureDiv = date > today;
+
   try {
     const txId  = genId();
     const divId = genId();
-    db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
-      VALUES ('${txId}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
-    // Insert EquityDividend if table exists
-    try {
-      db.run(`INSERT INTO EquityDividend (id,ticker,trxDate,period,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt,updatedAt)
-        VALUES ('${divId}',${tickerE?`'${tickerE}'`:'NULL'},'${trxDate}','${period}',${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}','${now}')`);
-    } catch(_) { /* table may not exist — transaction was still created */ }
+
+    if (isFutureDiv) {
+      // Park in FutureTransaction — will migrate automatically when date arrives
+      db.run(`INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
+        VALUES ('${txId}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',${notesSQL},'${now}','${now}')`);
+    } else {
+      // Confirmed dividend — write to Transaction + EquityDividend
+      db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
+        VALUES ('${txId}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
+      // Insert EquityDividend record if table exists
+      try {
+        db.run(`INSERT INTO EquityDividend (id,ticker,trxDate,period,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt,updatedAt)
+          VALUES ('${divId}',${tickerE?`'${tickerE}'`:'NULL'},'${trxDate}','${period}',${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}','${now}')`);
+      } catch(_) { /* table may not exist — transaction was still created */ }
+    }
     syncAfterWrite();
     modal.style.display='none';
     _renderEquityPage();
