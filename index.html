@@ -3397,7 +3397,7 @@ function aiInjectPanel(accountId) {
     .map(r=>r.period).filter(p=>p>=pFrom&&p<=pTo).map(p=>`'${p}'`).join(',');
 
   const txs = pList ? query(`
-    SELECT t.trxDate, t.description, t.amount, t.isReconciled,
+    SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled,
       t.drAccountId, t.crAccountId,
       da.name AS drName, ca.name AS crName,
       ds.name AS drSub,  cs.name AS crSub
@@ -3440,7 +3440,11 @@ function aiInjectPanel(accountId) {
             <span class="text-xs font-semibold px-1 py-0.5 rounded ${sideCls}">${sideLbl}</span>
           </td>
           <td class="px-3 py-1.5 text-sm text-slate-500 max-w-[160px] truncate" title="${counterpart}">${counterpart}</td>
-          <td class="px-3 py-1.5 text-center">${tx.isReconciled?'<span class="text-green-600">&#10003;</span>':''}</td>
+          <td class="px-3 py-1.5 text-center">
+            <input type="checkbox" ${tx.isReconciled ? 'checked' : ''}
+              onchange="aiToggleReconcile('${tx.id}', this.checked)"
+              class="w-4 h-4 cursor-pointer accent-slate-700">
+          </td>
         </tr>`;
       }).join('')
     : `<tr><td colspan="6" class="px-3 py-6 text-sm text-slate-400 text-center">No transactions in selected period</td></tr>`;
@@ -3488,6 +3492,12 @@ function aiInjectPanel(accountId) {
   anchor.after(panel);
 }
 
+function aiToggleReconcile(txId, checked) {
+  try {
+    db.run(`UPDATE "Transaction" SET isReconciled=${checked?1:0}, updatedAt='${new Date().toISOString()}' WHERE id='${txId}'`);
+    syncAfterWrite();
+  } catch(e) { console.error('Reconcile error:', e.message); }
+}
 
 // ════════════════════════════════════════════════════════════
 // SETTINGS PAGE
