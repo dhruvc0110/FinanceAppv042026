@@ -6973,6 +6973,7 @@ async function eqFetchOneTicker(ticker) {
     if (btn) { btn.innerHTML = '&#x21BB;'; btn.disabled = false; btn.title = 'Fetch failed — try again'; btn.classList.add('text-red-400'); }
   }
 }
+function eqUnwindSale(saleId, ticker) {
   if (!confirm(`Unwind this sale of ${ticker}? The lot will return to "Lots with On Hand".`)) return;
   try {
     // Find the linked Transaction and delete it too if it exists
