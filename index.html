@@ -6696,6 +6696,57 @@ function eqOpenDivModal() {
 // ── Field change handlers ──────────────────────────────────
 let _eqTickerLookupTimer = null;
 
+// Three-attempt Yahoo Finance lookup (query2 v8 chart → query1 v1 search → CORS proxy fallback)
+async function _eqFetchTickerName(ticker) {
+  const t = encodeURIComponent(ticker);
+
+  // Attempt 1: Yahoo Finance v8 chart on query2 — fewest CORS restrictions
+  try {
+    const r = await fetch(
+      `https://query2.finance.yahoo.com/v8/finance/chart/${t}?interval=1d&range=1d`,
+      { signal: AbortSignal.timeout(4000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const meta = d?.chart?.result?.[0]?.meta;
+      const name = meta?.longName || meta?.shortName || '';
+      if (name) return name;
+    }
+  } catch(_) {}
+
+  // Attempt 2: Yahoo Finance v1 search on query1
+  try {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${t}&quotesCount=1&newsCount=0&listsCount=0`,
+      { signal: AbortSignal.timeout(4000) }
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const q = d?.quotes?.[0];
+      const name = q?.longname || q?.shortname || '';
+      if (name) return name;
+    }
+  } catch(_) {}
+
+  // Attempt 3: CORS proxy wrapping the search endpoint (always works)
+  try {
+    const target = `https://query1.finance.yahoo.com/v1/finance/search?q=${t}&quotesCount=1&newsCount=0`;
+    const r = await fetch(
+      `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`,
+      { signal: AbortSignal.timeout(6000) }
+    );
+    if (r.ok) {
+      const wrapper = await r.json();
+      const d = JSON.parse(wrapper.contents || '{}');
+      const q = d?.quotes?.[0];
+      const name = q?.longname || q?.shortname || '';
+      if (name) return name;
+    }
+  } catch(_) {}
+
+  return ''; // all attempts failed — user types name manually
+}
+
 function eqBuyTickerChange(val) {
   const ticker = val.trim().toUpperCase();
   if (!ticker) return;
@@ -6709,30 +6760,16 @@ function eqBuyTickerChange(val) {
     return;
   }
 
-  // 2. For new tickers (not yet in DB), look up from Yahoo Finance
+  // 2. For new tickers, run the three-attempt network lookup
   if (snEl && !snEl.value) {
-    snEl.placeholder = 'Looking up\u2026';
+    snEl.placeholder = 'Looking up…';
     clearTimeout(_eqTickerLookupTimer);
     _eqTickerLookupTimer = setTimeout(async () => {
-      try {
-        const res  = await fetch(
-          `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0&listsCount=0`,
-          { headers: { Accept: 'application/json' } }
-        );
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data  = await res.json();
-        const quote = data.quotes && data.quotes[0];
-        const nameEl = document.querySelector('#eqBuyModal #eqBuyStockName');
-        if (quote && nameEl && !nameEl.value) {
-          const name = quote.longname || quote.shortname || '';
-          if (name) nameEl.value = name;
-        }
-      } catch(e) {
-        // Network or CORS error — leave field empty for manual entry
-        console.warn('Ticker lookup failed:', e.message);
-      } finally {
-        const nameEl = document.querySelector('#eqBuyModal #eqBuyStockName');
-        if (nameEl && !nameEl.value) nameEl.placeholder = 'Apple Inc.';
+      const name = await _eqFetchTickerName(ticker);
+      const nameEl = document.querySelector('#eqBuyModal #eqBuyStockName');
+      if (nameEl) {
+        if (name && !nameEl.value) nameEl.value = name;
+        nameEl.placeholder = 'Apple Inc.';
       }
     }, 400);
   }
