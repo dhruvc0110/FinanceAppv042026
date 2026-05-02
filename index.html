@@ -196,6 +196,10 @@
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
         <span class="nav-label">Transactions</span>
       </button>
+      <button onclick="navigate('import-transactions')" data-page="import-transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M9 10l3-3 3 3"/><path d="M12 7v6"/></svg>
+        <span class="nav-label">Import Transactions</span>
+      </button>
       <button onclick="navigate('future-transactions')" data-page="future-transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <span class="nav-label">Future Transactions</span>
@@ -1258,6 +1262,62 @@ function startApp() {
     )`);
   } catch(e) { console.warn('BankAccount init:', e.message); }
 
+  // Ensure importSource column exists on Transaction (migration for existing DBs)
+  try {
+    db.run(`ALTER TABLE "Transaction" ADD COLUMN importSource TEXT`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
+  // Screenshot import tables
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS ScreenshotTemplate (
+      id TEXT PRIMARY KEY,
+      creditCardId TEXT,
+      cardNickname TEXT NOT NULL,
+      dateFormat TEXT,
+      amountConvention TEXT NOT NULL DEFAULT 'negative-charges',
+      excludePending INTEGER NOT NULL DEFAULT 1,
+      customNotes TEXT,
+      extractionPrompt TEXT,
+      fingerprintData TEXT,
+      sampleImageDataUrl TEXT,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS DraftBatch (
+      id TEXT PRIMARY KEY,
+      templateId TEXT,
+      detectedCardName TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      rowCount INTEGER NOT NULL DEFAULT 0,
+      approvedCount INTEGER NOT NULL DEFAULT 0,
+      rejectedCount INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS DraftTransaction (
+      id TEXT PRIMARY KEY,
+      batchId TEXT NOT NULL,
+      date TEXT,
+      description TEXT,
+      amount REAL,
+      suggestedCrAccountId TEXT,
+      drAccountId TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      rawExtracted TEXT,
+      createdAt TEXT NOT NULL
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS ImportLog (
+      id TEXT PRIMARY KEY,
+      batchId TEXT NOT NULL,
+      cardName TEXT,
+      templateId TEXT,
+      rowCount INTEGER NOT NULL DEFAULT 0,
+      approvedCount INTEGER NOT NULL DEFAULT 0,
+      rejectedCount INTEGER NOT NULL DEFAULT 0,
+      importedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('Screenshot import tables init:', e.message); }
+
   navigate('dashboard');
 }
 
@@ -1377,6 +1437,7 @@ function navigate(page) {
   else if (page === 'settings')            renderSettings(container);
   else if (page === 'credit-cards')        renderCreditCards(container);
   else if (page === 'bank-accounts')       renderBankAccounts(container);
+  else if (page === 'import-transactions') renderImportTransactions(container);
   else if (page === 'duplicates')          renderDuplicates(container);
   else if (page === 'accruals')            renderAccruals(container);
   else if (page === 'equity')              renderEquity(container);
@@ -5528,7 +5589,832 @@ function baInjectPanel(baId) {
 }
 
 // ════════════════════════════════════════════════════════════
-// DUPLICATES PAGE
+// IMPORT TRANSACTIONS PAGE — Screenshot-based draft import
+// ════════════════════════════════════════════════════════════
+
+let _itTab         = 'import';   // 'import' | 'review' | 'templates' | 'log'
+let _itModelReady  = false;      // true once Transformers.js + Moondream loaded
+let _itModelLoading= false;
+let _itPipeline    = null;       // the Transformers.js image-to-text pipeline
+
+function renderImportTransactions(container) {
+  _itTab = _itTab || 'import';
+  _renderITPage(container);
+  // Eager model download — start immediately on page open
+  if (!_itModelReady && !_itModelLoading) _itLoadModel();
+}
+
+function _renderITPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+
+  const pendingBatches  = query(`SELECT db.*, st.cardNickname AS tplName
+    FROM DraftBatch db LEFT JOIN ScreenshotTemplate st ON db.templateId=st.id
+    WHERE db.status='pending' ORDER BY db.createdAt DESC`);
+  const pendingCount    = pendingBatches.reduce((s,b) => s + (b.rowCount - b.approvedCount - b.rejectedCount), 0);
+  const templates       = query(`SELECT st.*, cc.name AS ccName FROM ScreenshotTemplate st
+    LEFT JOIN CreditCard cc ON st.creditCardId=cc.id ORDER BY st.cardNickname`);
+  const logs            = query(`SELECT * FROM ImportLog ORDER BY importedAt DESC LIMIT 50`);
+
+  const tabBtn = (id, label, badge) => `
+    <button onclick="itSetTab('${id}')"
+      class="px-4 py-2.5 text-sm border-b-2 whitespace-nowrap transition-colors font-medium
+        ${_itTab===id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+      ${label}${badge ? ` <span class="ml-1 text-xs bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-semibold">${badge}</span>` : ''}
+    </button>`;
+
+  const modelStatus = _itModelReady
+    ? `<span class="text-xs text-green-600 font-medium flex items-center gap-1">✓ Vision model ready</span>`
+    : _itModelLoading
+      ? `<span class="text-xs text-amber-600 font-medium flex items-center gap-1" id="itModelStatus">⏳ Preparing vision model…</span>`
+      : `<span class="text-xs text-slate-400">Vision model not loaded</span>`;
+
+  let tabContent = '';
+
+  if (_itTab === 'import') {
+    tabContent = `
+      <div class="space-y-4">
+        <div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-start gap-3">
+          <span class="text-blue-400 text-lg flex-shrink-0">📱</span>
+          <div class="text-sm text-blue-800">
+            Take a screenshot of your credit card app showing recent transactions, then upload it here.
+            The app will extract transactions into a draft batch for you to review before posting.
+          </div>
+        </div>
+        ${!_itModelReady ? `
+        <div class="bg-white border border-slate-200 rounded-lg p-4 space-y-2" id="itModelLoadBox">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-medium text-slate-700">Vision Model</span>
+            <span class="text-xs text-slate-400" id="itModelPct"></span>
+          </div>
+          <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div id="itModelBar" class="h-full bg-blue-500 rounded-full transition-all" style="width:0%"></div>
+          </div>
+          <p class="text-xs text-slate-400" id="itModelMsg">Downloading Moondream vision model (one-time, ~450 MB)…</p>
+        </div>` : ''}
+        <div class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-slate-400 transition-colors">
+          <div class="text-3xl mb-3">📷</div>
+          <p class="text-sm font-medium text-slate-700 mb-1">Upload a credit card screenshot</p>
+          <p class="text-xs text-slate-400 mb-4">JPG, PNG, or WebP — taken from your banking app</p>
+          <label class="cursor-pointer bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 inline-block">
+            Choose Screenshot
+            <input type="file" accept="image/*" onchange="itHandleScreenshot(this)" class="hidden" ${_itModelReady ? '' : 'disabled'}>
+          </label>
+          ${!_itModelReady ? '<p class="text-xs text-amber-600 mt-2">Waiting for vision model to load…</p>' : ''}
+        </div>
+        <div id="itExtractStatus"></div>
+      </div>`;
+
+  } else if (_itTab === 'review') {
+    if (!pendingBatches.length) {
+      tabContent = `<div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-400 text-sm">
+        No pending draft batches. Import a screenshot to get started.</div>`;
+    } else {
+      const batchHtml = pendingBatches.map(batch => {
+        const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY date ASC`);
+        const allHaveDr = drafts.every(d => d.drAccountId);
+        const cardAccts = query(`SELECT id, code, name FROM Account WHERE type='ASSET' OR type='EXPENSE' AND isActive=1 ORDER BY code`);
+
+        const rows = drafts.map(d => {
+          const crAcct = d.suggestedCrAccountId ? query(`SELECT name FROM Account WHERE id='${d.suggestedCrAccountId}'`)[0] : null;
+          const drAcct = d.drAccountId ? query(`SELECT name FROM Account WHERE id='${d.drAccountId}'`)[0] : null;
+          return `<tr class="border-t border-slate-100 hover:bg-slate-50" id="itRow-${d.id}">
+            <td class="px-3 py-2">
+              <input type="date" value="${d.date||''}"
+                onchange="itUpdateDraft('${d.id}','date',this.value)"
+                class="text-sm border border-slate-200 rounded px-1.5 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-slate-400">
+            </td>
+            <td class="px-3 py-2">
+              <input type="text" value="${escHtml(d.description||'')}"
+                onchange="itUpdateDraft('${d.id}','description',this.value)"
+                class="text-sm border border-slate-200 rounded px-1.5 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-slate-400">
+            </td>
+            <td class="px-3 py-2">
+              <input type="number" step="0.01" value="${d.amount||''}"
+                onchange="itUpdateDraft('${d.id}','amount',this.value)"
+                class="text-sm border border-slate-200 rounded px-1.5 py-1 w-24 text-right focus:outline-none focus:ring-1 focus:ring-slate-400">
+            </td>
+            <td class="px-3 py-2" id="itDrWrap-${d.id}">
+              <div class="it-dr-pick" data-draft="${d.id}">
+                <select onchange="itSetDrAccount('${d.id}',this.value)"
+                  class="text-sm border ${drAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                  <option value="">— DR Account —</option>
+                  ${cardAccts.map(a=>`<option value="${a.id}" ${d.drAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('')}
+                </select>
+              </div>
+            </td>
+            <td class="px-3 py-2 text-sm text-slate-500">${escHtml(crAcct?crAcct.name:'—')}</td>
+            <td class="px-3 py-2 whitespace-nowrap">
+              <button onclick="itApproveDraft('${d.id}')" ${d.drAccountId?'':'disabled'}
+                class="text-xs font-medium px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 mr-1 disabled:opacity-40 disabled:cursor-not-allowed">✓ Approve</button>
+              <button onclick="itRejectDraft('${d.id}')"
+                class="text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">✗ Reject</button>
+            </td>
+          </tr>`;
+        }).join('');
+
+        return `<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
+            <div>
+              <span class="text-sm font-semibold text-slate-800">${escHtml(batch.detectedCardName||batch.tplName||'Unknown Card')}</span>
+              <span class="text-xs text-slate-400 ml-2">${fmtDate(batch.createdAt)} · ${batch.rowCount} transactions</span>
+            </div>
+            <button onclick="itApproveAll('${batch.id}')" ${allHaveDr?'':'disabled title="All rows need a DR account"'}
+              class="text-xs font-medium px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
+              Approve All
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[700px]">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">DR Account <span class="text-red-400">*</span></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">CR Account</th>
+                  <th class="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>${rows||'<tr><td colspan="6" class="px-3 py-6 text-sm text-slate-400 text-center">All transactions reviewed.</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('');
+      tabContent = `<div class="space-y-4">${batchHtml}</div>`;
+    }
+
+  } else if (_itTab === 'templates') {
+    const cards = query(`SELECT id, name FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
+    const tplRows = templates.map(t => `
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(t.cardNickname)}</td>
+        <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.ccName||'—')}</td>
+        <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.dateFormat||'Auto')}</td>
+        <td class="px-3 py-2 text-sm text-slate-500">${t.amountConvention==='negative-charges'?'Negative charges':'Positive charges'}</td>
+        <td class="px-3 py-2 text-center">
+          <span class="text-xs px-1.5 py-0.5 rounded ${t.fingerprintData?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${t.fingerprintData?'✓ Trained':'No sample'}</span>
+        </td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">
+          <button onclick="itEditTemplate('${t.id}')" class="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+          <button onclick="itTestTemplate('${t.id}')" class="text-xs text-slate-500 hover:text-slate-700 mr-2">Test</button>
+          <button onclick="itDeleteTemplate('${t.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+        </td>
+      </tr>`).join('');
+
+    tabContent = `<div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <p class="text-sm text-slate-500">One template per credit card. Teach the app how to read each card's screenshot layout.</p>
+        <button onclick="itNewTemplate()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ New Template</button>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <table class="w-full">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Template Name</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Credit Card</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Date Format</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Amounts</th>
+              <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Detection</th>
+              <th class="px-3 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>${templates.length ? tplRows : '<tr><td colspan="6" class="px-3 py-8 text-sm text-slate-400 text-center">No templates yet. Add one to enable auto-detection.</td></tr>'}</tbody>
+        </table>
+      </div>
+
+      <!-- Template modal -->
+      <div id="itTplModal" style="display:none"
+        onclick="if(event.target===this)this.style.display='none'"
+        class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 overflow-y-auto" style="max-height:90vh">
+          <div class="flex items-center justify-between">
+            <h2 id="itTplTitle" class="text-base font-semibold text-slate-900">New Template</h2>
+            <button onclick="document.getElementById('itTplModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+          </div>
+          <input type="hidden" id="itTplId">
+          <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Template Name <span class="text-slate-400">(e.g. "Chase Sapphire")</span></label>
+              <input id="itTplNickname" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Chase Sapphire">
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Credit Card Account</label>
+              <select id="itTplCard" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="">— None —</option>
+                ${cards.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Date Format</label>
+              <select id="itTplDateFmt" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="auto">Auto-detect</option>
+                <option value="MM/DD">MM/DD (e.g. 05/15)</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                <option value="MMM D">MMM D (e.g. May 15)</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Amount Convention</label>
+              <select id="itTplAmtConv" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="negative-charges">Charges show as negative</option>
+                <option value="positive-charges">Charges show as positive</option>
+              </select>
+            </div>
+            <div class="col-span-2 flex items-center gap-2">
+              <input type="checkbox" id="itTplExclPending" checked class="w-4 h-4 accent-slate-700">
+              <label for="itTplExclPending" class="text-sm text-slate-700">Exclude pending transactions</label>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Extra instructions for the model <span class="text-slate-400">(optional)</span></label>
+              <textarea id="itTplNotes" rows="3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
+                placeholder="e.g. 'Merchant name is on the second line. Ignore rows marked Payment or Credit.'"></textarea>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Training Screenshot <span class="text-slate-400">(used for auto-detection fingerprint)</span></label>
+              <div id="itTplSampleWrap" class="flex items-center gap-3">
+                <label class="cursor-pointer border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+                  Upload sample screenshot
+                  <input type="file" accept="image/*" onchange="itLoadSample(this)" class="hidden">
+                </label>
+                <span id="itTplSampleName" class="text-xs text-slate-400"></span>
+              </div>
+              <canvas id="itTplSampleCanvas" style="display:none;max-width:100%;border-radius:0.5rem;margin-top:0.5rem;border:1px solid #e2e8f0"></canvas>
+            </div>
+          </div>
+          <p id="itTplErr" style="display:none" class="text-xs text-red-500"></p>
+          <div class="flex gap-3 pt-1">
+            <button onclick="itSaveTemplate()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save Template</button>
+            <button onclick="document.getElementById('itTplModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  } else if (_itTab === 'log') {
+    const logRows = logs.map(l => `
+      <tr class="border-t border-slate-100">
+        <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(l.importedAt)}</td>
+        <td class="px-3 py-2 text-sm text-slate-700 font-medium">${escHtml(l.cardName||'Unknown')}</td>
+        <td class="px-3 py-2 text-sm text-slate-500 text-center">${l.rowCount}</td>
+        <td class="px-3 py-2 text-sm text-green-700 text-center font-medium">${l.approvedCount}</td>
+        <td class="px-3 py-2 text-sm text-red-500 text-center">${l.rejectedCount}</td>
+      </tr>`).join('');
+
+    tabContent = `<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Date</th>
+            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Card</th>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Total</th>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Approved</th>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Rejected</th>
+          </tr>
+        </thead>
+        <tbody>${logs.length ? logRows : '<tr><td colspan="5" class="px-3 py-8 text-sm text-slate-400 text-center">No import history yet.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+  }
+
+  container.innerHTML = `<div class="space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900">Import Transactions</h1>
+        <p class="text-sm text-slate-500 mt-0.5">Screenshot-based draft import — review before posting.</p>
+      </div>
+      ${modelStatus}
+    </div>
+    <div class="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+      ${tabBtn('import', 'Import')}
+      ${tabBtn('review', 'Review Drafts', pendingCount || '')}
+      ${tabBtn('templates', 'Templates')}
+      ${tabBtn('log', 'Import Log')}
+    </div>
+    <div>${tabContent}</div>
+  </div>`;
+}
+
+function itSetTab(tab) { _itTab = tab; _renderITPage(); }
+
+// ── Model Loading ────────────────────────────────────────
+let _itSampleImageDataUrl = null; // temp store for template sample
+
+async function _itLoadModel() {
+  if (_itModelReady || _itModelLoading) return;
+  _itModelLoading = true;
+
+  function setMsg(msg, pct) {
+    const msgEl = document.getElementById('itModelMsg');
+    const barEl = document.getElementById('itModelBar');
+    const pctEl = document.getElementById('itModelPct');
+    if (msgEl) msgEl.textContent = msg;
+    if (barEl) barEl.style.width = (pct||0) + '%';
+    if (pctEl) pctEl.textContent = pct ? pct + '%' : '';
+  }
+
+  try {
+    setMsg('Loading Transformers.js runtime…', 5);
+
+    // Dynamic import — lazy load the library
+    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js');
+
+    // Use Hugging Face CDN for model weights, cache in browser IndexedDB
+    env.allowLocalModels = false;
+
+    setMsg('Downloading Moondream vision model (one-time, ~450 MB)…', 10);
+
+    _itPipeline = await pipeline(
+      'image-to-text',
+      'Xenova/moondream2',
+      {
+        dtype: 'q4',
+        device: navigator.gpu ? 'webgpu' : 'wasm',
+        progress_callback: (p) => {
+          if (p.status === 'downloading') {
+            const pct = p.total ? Math.round((p.loaded / p.total) * 85) + 10 : 10;
+            setMsg(`Downloading model weights… (${Math.round((p.loaded||0)/1024/1024)} MB)`, pct);
+          } else if (p.status === 'loading') {
+            setMsg('Initializing model…', 96);
+          }
+        }
+      }
+    );
+
+    _itModelReady  = true;
+    _itModelLoading = false;
+    setMsg('Vision model ready ✓', 100);
+
+    // Re-render to update UI state
+    setTimeout(() => _renderITPage(), 500);
+
+  } catch(e) {
+    _itModelLoading = false;
+    const msgEl = document.getElementById('itModelMsg');
+    if (msgEl) msgEl.textContent = 'Model load failed: ' + e.message + '. Try reloading the page.';
+    if (msgEl) msgEl.style.color = '#dc2626';
+    console.error('Moondream load error:', e);
+  }
+}
+
+// ── Visual Fingerprinting ────────────────────────────────
+function _itExtractFingerprint(imageDataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width  = 32;  // tiny — just enough for color histogram
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 32, 32);
+      const pixels = ctx.getImageData(0, 0, 32, 32).data;
+
+      // Build a simple 8-bucket color histogram per channel
+      const hist = { r: new Array(8).fill(0), g: new Array(8).fill(0), b: new Array(8).fill(0) };
+      for (let i = 0; i < pixels.length; i += 4) {
+        hist.r[Math.floor(pixels[i]   / 32)]++;
+        hist.g[Math.floor(pixels[i+1] / 32)]++;
+        hist.b[Math.floor(pixels[i+2] / 32)]++;
+      }
+      // Normalize
+      const total = 32 * 32;
+      ['r','g','b'].forEach(c => { hist[c] = hist[c].map(v => +(v/total).toFixed(4)); });
+
+      // Also capture a 4x4 thumbnail for structural matching
+      const thumbCanvas = document.createElement('canvas');
+      thumbCanvas.width = thumbCanvas.height = 4;
+      const tctx = thumbCanvas.getContext('2d');
+      tctx.drawImage(img, 0, 0, 4, 4);
+      const thumbData = Array.from(tctx.getImageData(0,0,4,4).data);
+
+      resolve(JSON.stringify({ hist, thumb: thumbData }));
+    };
+    img.src = imageDataUrl;
+  });
+}
+
+function _itMatchTemplate(fingerprint) {
+  // Returns {template, confidence} — confidence 0–1
+  const templates = query(`SELECT id, cardNickname, creditCardId, fingerprintData FROM ScreenshotTemplate WHERE fingerprintData IS NOT NULL`);
+  if (!templates.length) return null;
+
+  let best = null, bestScore = 0;
+
+  for (const tpl of templates) {
+    try {
+      const saved = JSON.parse(tpl.fingerprintData);
+      const incoming = JSON.parse(fingerprint);
+
+      // Compare color histograms using sum of absolute differences
+      let diff = 0;
+      ['r','g','b'].forEach(c => {
+        for (let i = 0; i < 8; i++) {
+          diff += Math.abs((saved.hist[c][i]||0) - (incoming.hist[c][i]||0));
+        }
+      });
+      // diff ranges 0–6 (3 channels × max 2.0 each); convert to similarity 0–1
+      const score = Math.max(0, 1 - diff / 3);
+
+      if (score > bestScore) { bestScore = score; best = tpl; }
+    } catch(e) { /* skip malformed fingerprint */ }
+  }
+
+  if (!best || bestScore < 0.65) return null; // below confidence threshold
+  return { template: best, confidence: bestScore };
+}
+
+// ── Screenshot Processing ────────────────────────────────
+async function itHandleScreenshot(input) {
+  const file = input.files[0];
+  if (!file || !_itModelReady) return;
+
+  const statusEl = document.getElementById('itExtractStatus');
+  if (statusEl) statusEl.innerHTML = `<div class="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600 flex items-center gap-2">
+    <span class="animate-spin inline-block">⏳</span> Reading screenshot…</div>`;
+
+  try {
+    // Load image as data URL
+    const dataUrl = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+
+    // Extract fingerprint and match template
+    const fp = await _itExtractFingerprint(dataUrl);
+    const match = _itMatchTemplate(fp);
+
+    let template = null;
+    let cardName = 'Unknown Card';
+    let suggestedCrId = null;
+
+    if (match && match.confidence >= 0.80) {
+      template = match.template;
+      cardName = template.cardNickname;
+      // Get liability account from linked CreditCard
+      if (template.creditCardId) {
+        const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${template.creditCardId}'`)[0];
+        if (cc) suggestedCrId = cc.liabilityAccountId;
+      }
+      if (statusEl) statusEl.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+        ✓ Detected: <strong>${escHtml(cardName)}</strong> (${Math.round(match.confidence*100)}% confidence)</div>`;
+    } else if (match) {
+      // Low confidence — ask user to confirm
+      const confirmed = confirm(`Detected card: "${match.template.cardNickname}" (${Math.round(match.confidence*100)}% confidence). Use this template?`);
+      if (confirmed) {
+        template = match.template;
+        cardName = template.cardNickname;
+        if (template.creditCardId) {
+          const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${template.creditCardId}'`)[0];
+          if (cc) suggestedCrId = cc.liabilityAccountId;
+        }
+      }
+    } else {
+      // No match — let user pick manually
+      const templates = query(`SELECT id, cardNickname FROM ScreenshotTemplate ORDER BY cardNickname`);
+      const cards     = query(`SELECT id, name, liabilityAccountId FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
+      if (templates.length) {
+        const opts = templates.map(t => t.cardNickname).join('\n');
+        const pick = prompt(`Could not auto-detect card. Enter template name:\n${opts}`);
+        if (pick) {
+          template = templates.find(t => t.cardNickname.toLowerCase() === pick.toLowerCase());
+          if (template) cardName = template.cardNickname;
+        }
+      }
+      if (!template && cards.length) {
+        const cardOpts = cards.map(c => c.name).join('\n');
+        const pick = prompt(`No template found. Enter credit card name to pre-fill CR account:\n${cardOpts}`);
+        if (pick) {
+          const cc = cards.find(c => c.name.toLowerCase() === pick.toLowerCase());
+          if (cc) { cardName = cc.name; suggestedCrId = cc.liabilityAccountId; }
+        }
+      }
+    }
+
+    if (statusEl) statusEl.innerHTML = `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
+      <span>🔍</span> Extracting transactions from screenshot…</div>`;
+
+    // Build extraction prompt
+    const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
+    const prompt = _itBuildPrompt(tplData);
+
+    // Run Moondream inference
+    const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
+    const rawText = result?.[0]?.generated_text || result?.generated_text || '';
+
+    // Parse JSON from model output
+    const transactions = _itParseModelOutput(rawText, tplData);
+
+    if (!transactions.length) {
+      if (statusEl) statusEl.innerHTML = `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+        ⚠ No transactions could be extracted. Try a clearer screenshot or check your template settings.</div>`;
+      return;
+    }
+
+    // Create DraftBatch + DraftTransaction records
+    const now     = new Date().toISOString();
+    const batchId = genId();
+    db.run(`INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,createdAt,updatedAt)
+      VALUES ('${batchId}',${template?`'${template.id}'`:'NULL'},'${cardName.replace(/'/g,"''")}','pending',${transactions.length},0,0,'${now}','${now}')`);
+
+    for (const tx of transactions) {
+      const draftId = genId();
+      const desc  = (tx.description||'').replace(/'/g,"''");
+      const date  = tx.date  || '';
+      const amt   = isNaN(+tx.amount) ? 0 : Math.abs(+tx.amount);
+      const raw   = JSON.stringify(tx).replace(/'/g,"''");
+      db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,suggestedCrAccountId,drAccountId,status,rawExtracted,createdAt)
+        VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},${suggestedCrId?`'${suggestedCrId}'`:'NULL'},NULL,'pending','${raw}','${now}')`);
+    }
+    syncAfterWrite();
+
+    if (statusEl) statusEl.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+      ✓ Extracted <strong>${transactions.length} transactions</strong> into draft batch. Go to Review tab to approve.</div>`;
+
+    // Auto-switch to review tab
+    setTimeout(() => { _itTab = 'review'; _renderITPage(); }, 1200);
+
+  } catch(e) {
+    if (statusEl) statusEl.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+      Error: ${escHtml(e.message)}</div>`;
+    console.error('Screenshot extraction error:', e);
+  }
+}
+
+function _itBuildPrompt(tpl) {
+  const dateHint  = tpl?.dateFormat && tpl.dateFormat !== 'auto' ? `Dates are in ${tpl.dateFormat} format. ` : '';
+  const amtHint   = tpl?.amountConvention === 'positive-charges'
+    ? 'Amounts are positive numbers for charges. '
+    : 'Amounts may be negative for charges — return the absolute value. ';
+  const pendHint  = tpl?.excludePending ? 'Exclude any pending or unposted transactions. ' : '';
+  const custHint  = tpl?.customNotes ? tpl.customNotes + ' ' : '';
+  return `Extract all transactions from this credit card screenshot. ${dateHint}${amtHint}${pendHint}${custHint}Return ONLY a JSON array, no other text, in this format: [{"date":"YYYY-MM-DD","description":"merchant name","amount":12.34}]. If the year is not shown assume current year. Return [] if no transactions are visible.`;
+}
+
+function _itParseModelOutput(raw, tpl) {
+  // Try to extract JSON array from model response
+  try {
+    // Strip any markdown code fences
+    let cleaned = raw.replace(/```json|```/g, '').trim();
+    // Find the first [ and last ]
+    const start = cleaned.indexOf('[');
+    const end   = cleaned.lastIndexOf(']');
+    if (start === -1 || end === -1) return [];
+    const jsonStr = cleaned.slice(start, end + 1);
+    const parsed  = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) return [];
+
+    const currentYear = new Date().getFullYear();
+    return parsed
+      .filter(tx => tx && (tx.description || tx.amount))
+      .map(tx => ({
+        date:        _itNormalizeDate(tx.date || tx.Date || '', currentYear, tpl?.dateFormat),
+        description: String(tx.description || tx.Description || tx.merchant || '').trim(),
+        amount:      Math.abs(parseFloat(tx.amount || tx.Amount || 0)) || 0
+      }))
+      .filter(tx => tx.amount > 0);
+  } catch(e) {
+    console.warn('Failed to parse model output:', raw, e.message);
+    return [];
+  }
+}
+
+function _itNormalizeDate(raw, year, fmt) {
+  if (!raw) return '';
+  raw = String(raw).trim();
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  // MM/DD/YYYY
+  let m = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  // MM/DD
+  m = raw.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (m) return `${year}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  // MMM D or MMM DD
+  m = raw.match(/^([A-Za-z]{3})\s+(\d{1,2})(?:,?\s*(\d{4}))?$/);
+  if (m) {
+    const months = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+    const mo = months[m[1].toLowerCase()];
+    const yr = m[3] || year;
+    if (mo) return `${yr}-${mo}-${m[2].padStart(2,'0')}`;
+  }
+  return raw; // return as-is; user can fix in review
+}
+
+// ── Draft Review Actions ─────────────────────────────────
+function itUpdateDraft(draftId, field, value) {
+  const safe = String(value).replace(/'/g,"''");
+  const num  = field === 'amount' ? parseFloat(value)||0 : null;
+  if (field === 'amount') {
+    db.run(`UPDATE DraftTransaction SET amount=${num} WHERE id='${draftId}'`);
+  } else {
+    db.run(`UPDATE DraftTransaction SET ${field}='${safe}' WHERE id='${draftId}'`);
+  }
+  syncAfterWrite();
+}
+
+function itSetDrAccount(draftId, acctId) {
+  db.run(`UPDATE DraftTransaction SET drAccountId=${acctId?`'${acctId}'`:'NULL'} WHERE id='${draftId}'`);
+  syncAfterWrite();
+  // Re-render just the approve button state
+  _renderITPage();
+}
+
+function itApproveDraft(draftId) {
+  const d = query(`SELECT * FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  if (!d || !d.drAccountId) return;
+
+  const now    = new Date().toISOString();
+  const txId   = genId();
+  const date   = d.date ? d.date + 'T12:00:00.000Z' : now;
+  const period = (d.date||'').slice(0,7).replace('-','') || currentPeriod();
+  const desc   = (d.description||'Imported transaction').replace(/'/g,"''");
+  const amt    = parseFloat(d.amount)||0;
+
+  db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
+    VALUES ('${txId}','${date}','${period}','${desc}',${amt},'${d.drAccountId}','${d.suggestedCrAccountId}',NULL,NULL,NULL,0,'screenshot','${now}','${now}')`);
+
+  db.run(`UPDATE DraftTransaction SET status='approved' WHERE id='${draftId}'`);
+  _itCheckBatchComplete(d.batchId);
+  syncAfterWrite();
+  _renderITPage();
+}
+
+function itRejectDraft(draftId) {
+  const d = query(`SELECT batchId FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  db.run(`UPDATE DraftTransaction SET status='rejected' WHERE id='${draftId}'`);
+  if (d) _itCheckBatchComplete(d.batchId);
+  syncAfterWrite();
+  _renderITPage();
+}
+
+function itApproveAll(batchId) {
+  const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batchId}' AND status='pending' AND drAccountId IS NOT NULL`);
+  for (const d of drafts) itApproveDraft(d.id);
+}
+
+function _itCheckBatchComplete(batchId) {
+  const pending = queryVal(`SELECT COUNT(*) FROM DraftTransaction WHERE batchId='${batchId}' AND status='pending'`)||0;
+  if (pending > 0) return;
+
+  // All actioned — write to ImportLog and delete batch
+  const batch    = query(`SELECT * FROM DraftBatch WHERE id='${batchId}'`)[0];
+  const approved = queryVal(`SELECT COUNT(*) FROM DraftTransaction WHERE batchId='${batchId}' AND status='approved'`)||0;
+  const rejected = queryVal(`SELECT COUNT(*) FROM DraftTransaction WHERE batchId='${batchId}' AND status='rejected'`)||0;
+  const now      = new Date().toISOString();
+
+  if (batch) {
+    db.run(`INSERT INTO ImportLog (id,batchId,cardName,templateId,rowCount,approvedCount,rejectedCount,importedAt)
+      VALUES ('${genId()}','${batchId}','${(batch.detectedCardName||'').replace(/'/g,"''")}',${batch.templateId?`'${batch.templateId}'`:'NULL'},${batch.rowCount},${approved},${rejected},'${now}')`);
+  }
+  db.run(`DELETE FROM DraftTransaction WHERE batchId='${batchId}'`);
+  db.run(`DELETE FROM DraftBatch WHERE id='${batchId}'`);
+}
+
+// ── Template CRUD ────────────────────────────────────────
+function itNewTemplate() {
+  document.getElementById('itTplTitle').textContent = 'New Template';
+  document.getElementById('itTplId').value          = '';
+  document.getElementById('itTplNickname').value    = '';
+  document.getElementById('itTplCard').value        = '';
+  document.getElementById('itTplDateFmt').value     = 'auto';
+  document.getElementById('itTplAmtConv').value     = 'negative-charges';
+  document.getElementById('itTplExclPending').checked = true;
+  document.getElementById('itTplNotes').value       = '';
+  document.getElementById('itTplSampleName').textContent = '';
+  document.getElementById('itTplSampleCanvas').style.display = 'none';
+  document.getElementById('itTplErr').style.display = 'none';
+  _itSampleImageDataUrl = null;
+  document.getElementById('itTplModal').style.display = 'flex';
+}
+
+function itEditTemplate(id) {
+  const t = query(`SELECT * FROM ScreenshotTemplate WHERE id='${id}'`)[0];
+  if (!t) return;
+  document.getElementById('itTplTitle').textContent  = 'Edit Template';
+  document.getElementById('itTplId').value           = t.id;
+  document.getElementById('itTplNickname').value     = t.cardNickname || '';
+  document.getElementById('itTplCard').value         = t.creditCardId || '';
+  document.getElementById('itTplDateFmt').value      = t.dateFormat   || 'auto';
+  document.getElementById('itTplAmtConv').value      = t.amountConvention || 'negative-charges';
+  document.getElementById('itTplExclPending').checked = !!t.excludePending;
+  document.getElementById('itTplNotes').value        = t.customNotes  || '';
+  document.getElementById('itTplErr').style.display  = 'none';
+  _itSampleImageDataUrl = t.sampleImageDataUrl || null;
+  if (_itSampleImageDataUrl) {
+    document.getElementById('itTplSampleName').textContent = 'Sample loaded';
+    const canvas = document.getElementById('itTplSampleCanvas');
+    canvas.style.display = 'block';
+    const img = new Image();
+    img.onload = () => {
+      canvas.width  = Math.min(img.width, 300);
+      canvas.height = Math.round(img.height * (canvas.width / img.width));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = _itSampleImageDataUrl;
+  }
+  document.getElementById('itTplModal').style.display = 'flex';
+}
+
+function itLoadSample(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async e => {
+    _itSampleImageDataUrl = e.target.result;
+    document.getElementById('itTplSampleName').textContent = file.name;
+    const canvas = document.getElementById('itTplSampleCanvas');
+    canvas.style.display = 'block';
+    const img = new Image();
+    img.onload = () => {
+      canvas.width  = Math.min(img.width, 300);
+      canvas.height = Math.round(img.height * (canvas.width / img.width));
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = _itSampleImageDataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function itSaveTemplate() {
+  const id        = document.getElementById('itTplId').value;
+  const nickname  = document.getElementById('itTplNickname').value.trim();
+  const cardId    = document.getElementById('itTplCard').value;
+  const dateFmt   = document.getElementById('itTplDateFmt').value;
+  const amtConv   = document.getElementById('itTplAmtConv').value;
+  const exclPend  = document.getElementById('itTplExclPending').checked ? 1 : 0;
+  const notes     = document.getElementById('itTplNotes').value.trim();
+  const errEl     = document.getElementById('itTplErr');
+
+  if (!nickname) { errEl.textContent='Template name is required.'; errEl.style.display='block'; return; }
+
+  const now  = new Date().toISOString();
+  const nE   = nickname.replace(/'/g,"''");
+  const notE = notes.replace(/'/g,"''");
+
+  // Extract fingerprint from sample if provided
+  let fpData = null;
+  if (_itSampleImageDataUrl) {
+    fpData = await _itExtractFingerprint(_itSampleImageDataUrl);
+  }
+
+  // Build the extraction prompt
+  const tplObj = { dateFormat: dateFmt, amountConvention: amtConv, excludePending: exclPend, customNotes: notes };
+  const prompt  = _itBuildPrompt(tplObj).replace(/'/g,"''");
+
+  try {
+    if (id) {
+      db.run(`UPDATE ScreenshotTemplate SET
+        cardNickname='${nE}', creditCardId=${cardId?`'${cardId}'`:'NULL'},
+        dateFormat='${dateFmt}', amountConvention='${amtConv}', excludePending=${exclPend},
+        customNotes='${notE}', extractionPrompt='${prompt}',
+        ${fpData?`fingerprintData='${fpData.replace(/'/g,"''")}', `:''}
+        ${_itSampleImageDataUrl?`sampleImageDataUrl='${_itSampleImageDataUrl.slice(0,4000).replace(/'/g,"''")}', `:''}
+        updatedAt='${now}' WHERE id='${id}'`);
+    } else {
+      db.run(`INSERT INTO ScreenshotTemplate (id,cardNickname,creditCardId,dateFormat,amountConvention,excludePending,customNotes,extractionPrompt,fingerprintData,sampleImageDataUrl,createdAt,updatedAt)
+        VALUES ('${genId()}','${nE}',${cardId?`'${cardId}'`:'NULL'},'${dateFmt}','${amtConv}',${exclPend},'${notE}','${prompt}',
+          ${fpData?`'${fpData.replace(/'/g,"''")}'`:'NULL'},
+          ${_itSampleImageDataUrl?`'${_itSampleImageDataUrl.slice(0,4000).replace(/'/g,"''")}' `:'NULL'},
+          '${now}','${now}')`);
+    }
+    syncAfterWrite();
+    document.getElementById('itTplModal').style.display = 'none';
+    _itSampleImageDataUrl = null;
+    _renderITPage();
+  } catch(e) { errEl.textContent='Error: '+e.message; errEl.style.display='block'; }
+}
+
+function itDeleteTemplate(id) {
+  if (!confirm('Delete this template? Auto-detection for this card will stop working.')) return;
+  db.run(`DELETE FROM ScreenshotTemplate WHERE id='${id}'`);
+  syncAfterWrite();
+  _renderITPage();
+}
+
+async function itTestTemplate(id) {
+  const t = query(`SELECT * FROM ScreenshotTemplate WHERE id='${id}'`)[0];
+  if (!t) return;
+  if (!_itModelReady) { alert('Vision model is not loaded yet. Please wait for it to finish loading.'); return; }
+  // Pick a test image
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const dataUrl = await new Promise((res,rej) => { const r=new FileReader(); r.onload=ev=>res(ev.target.result); r.onerror=rej; r.readAsDataURL(file); });
+    const prompt  = _itBuildPrompt(t);
+    alert('Running extraction test… this may take 10–20 seconds.');
+    try {
+      const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
+      const raw    = result?.[0]?.generated_text || result?.generated_text || '';
+      const parsed = _itParseModelOutput(raw, t);
+      alert(`Extracted ${parsed.length} transactions:\n\n` + parsed.map(tx=>`${tx.date}  ${tx.description}  $${tx.amount}`).join('\n') + '\n\nRaw output:\n' + raw.slice(0,500));
+    } catch(e) { alert('Test failed: ' + e.message); }
+  };
+  input.click();
+}
 // ════════════════════════════════════════════════════════════
 
 let dupTab       = 'pending';
