@@ -5916,25 +5916,26 @@ async function _itLoadModel() {
   try {
     setMsg('Loading Transformers.js runtime…', 5);
 
-    // Pinned v4 URL — WASM paths must point to same version so helper files load correctly
-    const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+    // v3.8.1 — current stable npm release. v4 ships under the "next" tag only
+    // and is not yet reliably available on jsDelivr for CDN use.
+    const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
     const { pipeline, env } = await import(CDN);
 
-    // Point WASM runtime files to the same CDN base — fixes "Failed to fetch dynamically
-    // imported module" errors caused by the runtime trying to load ort-wasm-*.mjs files
+    // Point WASM runtime files to same CDN base — prevents "Failed to fetch
+    // dynamically imported module" for ort-wasm-*.mjs helper files
     env.backends.onnx.wasm.wasmPaths = CDN + '/dist/';
-    env.allowLocalModels  = false;
-    env.useBrowserCache   = true;   // cache model weights in browser Cache Storage
+    env.allowLocalModels = false;
+    env.useBrowserCache  = true;
 
     setMsg('Downloading Moondream vision model (one-time, ~450 MB)…', 10);
 
-    // onnx-community/moondream2 is the Transformers.js-compatible ONNX version
-    // 'image-text-to-text' is the correct task for vision+prompt models
+    // Xenova/moondream2 is the v3-compatible ONNX repo.
+    // 'image-to-text' is the correct task in v3 for vision+prompt models.
     _itPipeline = await pipeline(
-      'image-text-to-text',
-      'onnx-community/moondream2',
+      'image-to-text',
+      'Xenova/moondream2',
       {
-        dtype: { embed_tokens: 'fp16', vision_encoder: 'fp16', decoder_model_merged: 'q4' },
+        dtype: 'q4',
         device: navigator.gpu ? 'webgpu' : 'wasm',
         progress_callback: (p) => {
           if (p.status === 'downloading') {
@@ -6102,18 +6103,9 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt = _itBuildPrompt(tplData);
 
-    // Run Moondream inference — image-text-to-text takes messages array
-    const result = await _itPipeline([{
-      role: 'user',
-      content: [
-        { type: 'image', image: dataUrl },
-        { type: 'text',  text: prompt   }
-      ]
-    }], { max_new_tokens: 600 });
-    const rawText = result?.[0]?.generated_text?.at(-1)?.content
-      || result?.[0]?.generated_text
-      || result?.generated_text
-      || '';
+    // v3 image-to-text: pass image URL directly, prompt as option
+    const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
+    const rawText = result?.[0]?.generated_text || result?.generated_text || '';
 
     // Parse JSON from model output
     const transactions = _itParseModelOutput(rawText, tplData);
@@ -6419,17 +6411,8 @@ async function itTestTemplate(id) {
     const prompt  = _itBuildPrompt(t);
     alert('Running extraction test… this may take 10–20 seconds.');
     try {
-      const result = await _itPipeline([{
-        role: 'user',
-        content: [
-          { type: 'image', image: dataUrl },
-          { type: 'text',  text: prompt   }
-        ]
-      }], { max_new_tokens: 600 });
-      const raw = result?.[0]?.generated_text?.at(-1)?.content
-        || result?.[0]?.generated_text
-        || result?.generated_text
-        || '';
+      const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
+      const raw = result?.[0]?.generated_text || result?.generated_text || '';
       const parsed = _itParseModelOutput(raw, t);
       alert(`Extracted ${parsed.length} transactions:\n\n` + parsed.map(tx=>`${tx.date}  ${tx.description}  $${tx.amount}`).join('\n') + '\n\nRaw output:\n' + raw.slice(0,500));
     } catch(e) { alert('Test failed: ' + e.message); }
