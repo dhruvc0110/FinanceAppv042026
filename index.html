@@ -4872,11 +4872,11 @@ function importDataTab() {
   return `<div class="space-y-4 max-w-2xl">
     <p class="text-sm text-slate-500">Upload a completed template to append new rows. All rows are validated before any data is saved — if any row fails, the entire batch is rejected with a per-row error report.</p>
     ${card('transactions','Transactions','Append new posted transactions.',
-      'Date | Description | Amount | DR Account Code | DR Sub-Account | CR Account Code | CR Sub-Account | Notes | Is Reconciled')}
+      'Date | Description | Amount | DR Account Code | DR Account Name | DR Sub-Account Code | DR Sub-Account Name | CR Account Code | CR Account Name | CR Sub-Account Code | CR Sub-Account Name | Notes | Is Reconciled')}
     ${card('future','Future Transactions','Append new future / repeating entries.',
-      'Date | Description | Amount | DR Account Code | DR Sub-Account | CR Account Code | CR Sub-Account | Notes | Recurrence | End Date')}
+      'Date | Description | Amount | DR Account Code | DR Account Name | DR Sub-Account Code | DR Sub-Account Name | CR Account Code | CR Account Name | CR Sub-Account Code | CR Sub-Account Name | Notes | Recurrence | End Date')}
     ${card('equitylots','US Equity Lots','Append new equity lot purchase or sale entries.',
-      'Ticker | Stock Name | Date | Type (BUY/SELL) | Qty | Price | DR Account Code | CR Account Code | Notes')}
+      'Ticker | Stock Name | Date | Type (BUY/SELL) | Qty | Price | DR Account Code | DR Account Name | CR Account Code | CR Account Name | Notes')}
     ${card('coa','Chart of Accounts','Add new accounts only. Existing codes are ignored.',
       'Code | Name | Type | SubType | Has Sub-Accounts (Y/N) | Show on Inquiry (Y/N) | Normal Balance (DR/CR) | Is Active (Y/N)')}
   </div>`;
@@ -4887,12 +4887,22 @@ function importDataTab() {
 // ════════════════════════════════════════════════════════════
 
 // ── SheetJS lazy loader ──────────────────────────────────
+// Load SheetJS + JSZip (needed for DV injection into xlsx zip)
 function _xlLoad(cb) {
-  if (window.XLSX) { cb(); return; }
-  const s = document.createElement('script');
-  s.src   = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  s.onload = cb;
-  document.head.appendChild(s);
+  const loadScript = (src, check, next) => {
+    if (window[check]) { next(); return; }
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = next;
+    document.head.appendChild(s);
+  };
+  loadScript(
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'XLSX',
+    () => loadScript(
+      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip',
+      cb
+    )
+  );
 }
 
 // ── Core export utility ──────────────────────────────────
@@ -4992,22 +5002,30 @@ function xlDoExport(id) {
         const from = f.from || '000000'; const to = f.to || '999999';
         const rows = query(`
           SELECT t.trxDate, t.description, t.amount,
-            da.code AS drCode, ds.code AS drSub,
-            ca.code AS crCode, cs.code AS crSub,
+            da.code AS drCode, da.name AS drName,
+            ds.code AS drSubCode, ds.name AS drSubName,
+            ca.code AS crCode, ca.name AS crName,
+            cs.code AS crSubCode, cs.name AS crSubName,
             t.notes, t.isReconciled
           FROM "Transaction" t
-          LEFT JOIN Account da ON t.drAccountId=da.id
+          LEFT JOIN Account da    ON t.drAccountId=da.id
           LEFT JOIN SubAccount ds ON t.drSubId=ds.id
-          LEFT JOIN Account ca ON t.crAccountId=ca.id
+          LEFT JOIN Account ca    ON t.crAccountId=ca.id
           LEFT JOIN SubAccount cs ON t.crSubId=cs.id
           WHERE t.period BETWEEN '${from}' AND '${to}'
           ORDER BY t.trxDate`);
         sheets = [{
           name:'Transactions',
-          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Reconciled'],
-          rows: rows.map(r=>[r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
-            r.drCode||'', r.drSub||'', r.crCode||'', r.crSub||'', r.notes||'', r.isReconciled?'Yes':'No']),
-          colWidths:[12,40,12,18,16,18,16,30,10],
+          headers:['Date','Description','Amount',
+            'DR Account Code','DR Account Name','DR Sub-Account Code','DR Sub-Account Name',
+            'CR Account Code','CR Account Name','CR Sub-Account Code','CR Sub-Account Name',
+            'Notes','Reconciled'],
+          rows: rows.map(r=>[
+            r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
+            r.drCode||'', r.drName||'', r.drSubCode||'', r.drSubName||'',
+            r.crCode||'', r.crName||'', r.crSubCode||'', r.crSubName||'',
+            r.notes||'', r.isReconciled?'Yes':'No']),
+          colWidths:[12,40,12, 18,30,18,25, 18,30,18,25, 30,10],
           numFmts:[{col:2,fmt:'#,##0.00'}],
         }];
         filename = `transactions_${from}_${to}.xlsx`;
@@ -5016,22 +5034,30 @@ function xlDoExport(id) {
         const from = f.from || '000000'; const to = f.to || '999999';
         const rows = query(`
           SELECT ft.trxDate, ft.description, ft.amount,
-            da.code AS drCode, ds.code AS drSub,
-            ca.code AS crCode, cs.code AS crSub,
+            da.code AS drCode, da.name AS drName,
+            ds.code AS drSubCode, ds.name AS drSubName,
+            ca.code AS crCode, ca.name AS crName,
+            cs.code AS crSubCode, cs.name AS crSubName,
             ft.notes, ft.recurrence, ft.endDate
           FROM FutureTransaction ft
-          LEFT JOIN Account da ON ft.drAccountId=da.id
+          LEFT JOIN Account da    ON ft.drAccountId=da.id
           LEFT JOIN SubAccount ds ON ft.drSubId=ds.id
-          LEFT JOIN Account ca ON ft.crAccountId=ca.id
+          LEFT JOIN Account ca    ON ft.crAccountId=ca.id
           LEFT JOIN SubAccount cs ON ft.crSubId=cs.id
           WHERE ft.period BETWEEN '${from}' AND '${to}'
           ORDER BY ft.trxDate`);
         sheets = [{
           name:'FutureTransactions',
-          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Recurrence','End Date'],
-          rows: rows.map(r=>[r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
-            r.drCode||'', r.drSub||'', r.crCode||'', r.crSub||'', r.notes||'', r.recurrence||'', r.endDate?.slice(0,10)||'']),
-          colWidths:[12,40,12,18,16,18,16,30,14,12],
+          headers:['Date','Description','Amount',
+            'DR Account Code','DR Account Name','DR Sub-Account Code','DR Sub-Account Name',
+            'CR Account Code','CR Account Name','CR Sub-Account Code','CR Sub-Account Name',
+            'Notes','Recurrence','End Date'],
+          rows: rows.map(r=>[
+            r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
+            r.drCode||'', r.drName||'', r.drSubCode||'', r.drSubName||'',
+            r.crCode||'', r.crName||'', r.crSubCode||'', r.crSubName||'',
+            r.notes||'', r.recurrence||'', r.endDate?.slice(0,10)||'']),
+          colWidths:[12,40,12, 18,30,18,25, 18,30,18,25, 30,14,12],
           numFmts:[{col:2,fmt:'#,##0.00'}],
         }];
         filename = `future_transactions_${from}_${to}.xlsx`;
@@ -5043,17 +5069,21 @@ function xlDoExport(id) {
         if (f.ticker) where += ` AND el.ticker='${f.ticker.replace(/'/g,"''")}'`;
         const rows = query(`
           SELECT el.ticker, el.stockName, el.trxDate, el.qty, el.price, el.amount,
-            da.code AS drCode, ca.code AS crCode, el.notes
+            da.code AS drCode, da.name AS drName,
+            ca.code AS crCode, ca.name AS crName,
+            el.notes
           FROM EquityLot el
           LEFT JOIN Account da ON el.drAccountId=da.id
           LEFT JOIN Account ca ON el.crAccountId=ca.id
           ${where} ORDER BY el.trxDate`);
         sheets = [{
           name:'EquityLots',
-          headers:['Ticker','Stock Name','Date','Type','Qty','Price','Amount','DR Account Code','CR Account Code','Notes'],
+          headers:['Ticker','Stock Name','Date','Type','Qty','Price','Amount',
+            'DR Account Code','DR Account Name','CR Account Code','CR Account Name','Notes'],
           rows: rows.map(r=>[r.ticker||'', r.stockName||'', r.trxDate?.slice(0,10)||'','BUY',
-            +r.qty||0, +r.price||0, +r.amount||0, r.drCode||'', r.crCode||'', r.notes||'']),
-          colWidths:[10,25,12,8,12,12,14,18,18,30],
+            +r.qty||0, +r.price||0, +r.amount||0,
+            r.drCode||'', r.drName||'', r.crCode||'', r.crName||'', r.notes||'']),
+          colWidths:[10,25,12,8,12,12,14, 18,30,18,30, 30],
           numFmts:[{col:4,fmt:'#,##0.0000'},{col:5,fmt:'#,##0.00'},{col:6,fmt:'#,##0.00'}],
         }];
         filename = `equity_lots.xlsx`;
@@ -5165,7 +5195,7 @@ function xlDoExport(id) {
 
 // ── TEMPLATE EXPORT ───────────────────────────────────────
 function xlDoExportTemplate(id) {
-  _xlLoad(() => {
+  _xlLoad(async () => {
     try {
       const listSheet = xlBuildListsSheet();
       const accounts  = query(`SELECT code,name FROM Account WHERE isActive=1 ORDER BY code`);
@@ -5187,16 +5217,19 @@ function xlDoExportTemplate(id) {
       if (id === 'transactions') {
         dataSheet = {
           name:'Transactions',
-          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Is Reconciled'],
-          rows: Array(3).fill(['','',0,'','','','','','No']),
-          colWidths:[12,40,12,18,16,18,16,30,12],
+          headers:['Date','Description','Amount',
+            'DR Account Code','DR Account Name','DR Sub-Account Code','DR Sub-Account Name',
+            'CR Account Code','CR Account Name','CR Sub-Account Code','CR Sub-Account Name',
+            'Notes','Is Reconciled'],
+          rows: Array(3).fill(['','',0, '','','','', '','','','', '','No']),
+          colWidths:[12,40,12, 18,30,18,25, 18,30,18,25, 30,12],
           numFmts:[{col:2,fmt:'#,##0.00'},{col:0,fmt:'yyyy-mm-dd'}],
           dvCols:[
-            {col:3, list:acctList,  prompt:'Select DR Account'},
-            {col:4, list:subList,   prompt:'Select DR Sub-Account'},
-            {col:5, list:acctList,  prompt:'Select CR Account'},
-            {col:6, list:subList,   prompt:'Select CR Sub-Account'},
-            {col:8, list:['Yes','No'], prompt:'Reconciled?'},
+            {col:3,  list:acctList, prompt:'Select DR Account Code'},
+            {col:5,  list:subList,  prompt:'Select DR Sub-Account Code'},
+            {col:7,  list:acctList, prompt:'Select CR Account Code'},
+            {col:9,  list:subList,  prompt:'Select CR Sub-Account Code'},
+            {col:12, list:['Yes','No'], prompt:'Reconciled?'},
           ],
         };
         filename = 'template_transactions.xlsx';
@@ -5204,16 +5237,19 @@ function xlDoExportTemplate(id) {
       } else if (id === 'future') {
         dataSheet = {
           name:'FutureTransactions',
-          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Recurrence','End Date'],
-          rows: Array(3).fill(['','',0,'','','','','','Monthly','']),
-          colWidths:[12,40,12,18,16,18,16,30,14,12],
-          numFmts:[{col:2,fmt:'#,##0.00'},{col:0,fmt:'yyyy-mm-dd'},{col:9,fmt:'yyyy-mm-dd'}],
+          headers:['Date','Description','Amount',
+            'DR Account Code','DR Account Name','DR Sub-Account Code','DR Sub-Account Name',
+            'CR Account Code','CR Account Name','CR Sub-Account Code','CR Sub-Account Name',
+            'Notes','Recurrence','End Date'],
+          rows: Array(3).fill(['','',0, '','','','', '','','','', '','Monthly','']),
+          colWidths:[12,40,12, 18,30,18,25, 18,30,18,25, 30,14,12],
+          numFmts:[{col:2,fmt:'#,##0.00'},{col:0,fmt:'yyyy-mm-dd'},{col:13,fmt:'yyyy-mm-dd'}],
           dvCols:[
-            {col:3, list:acctList,  prompt:'Select DR Account'},
-            {col:4, list:subList,   prompt:'Select DR Sub-Account'},
-            {col:5, list:acctList,  prompt:'Select CR Account'},
-            {col:6, list:subList,   prompt:'Select CR Sub-Account'},
-            {col:8, list:recurrList,prompt:'Recurrence type'},
+            {col:3,  list:acctList,  prompt:'Select DR Account Code'},
+            {col:5,  list:subList,   prompt:'Select DR Sub-Account Code'},
+            {col:7,  list:acctList,  prompt:'Select CR Account Code'},
+            {col:9,  list:subList,   prompt:'Select CR Sub-Account Code'},
+            {col:12, list:recurrList,prompt:'Recurrence type'},
           ],
         };
         filename = 'template_future_transactions.xlsx';
@@ -5222,14 +5258,15 @@ function xlDoExportTemplate(id) {
         const tickers = query(`SELECT DISTINCT ticker FROM EquityLot ORDER BY ticker`).map(r=>r.ticker);
         dataSheet = {
           name:'EquityLots',
-          headers:['Ticker','Stock Name','Date','Type','Qty','Price','DR Account Code','CR Account Code','Notes'],
-          rows: Array(3).fill(['','','','BUY',0,0,'','','']),
-          colWidths:[10,25,12,8,12,12,18,18,30],
+          headers:['Ticker','Stock Name','Date','Type','Qty','Price',
+            'DR Account Code','DR Account Name','CR Account Code','CR Account Name','Notes'],
+          rows: Array(3).fill(['','','','BUY',0,0, '','','','', '']),
+          colWidths:[10,25,12,8,12,12, 18,30,18,30, 30],
           numFmts:[{col:4,fmt:'#,##0.0000'},{col:5,fmt:'#,##0.00'},{col:2,fmt:'yyyy-mm-dd'}],
           dvCols:[
-            {col:3, list:typeList,  prompt:'Transaction type'},
-            {col:6, list:acctList,  prompt:'Select DR Account'},
-            {col:7, list:acctList,  prompt:'Select CR Account'},
+            {col:3, list:typeList, prompt:'Transaction type'},
+            {col:6, list:acctList, prompt:'Select DR Account Code'},
+            {col:8, list:acctList, prompt:'Select CR Account Code'},
           ],
         };
         filename = 'template_equity_lots.xlsx';
@@ -5255,7 +5292,7 @@ function xlDoExportTemplate(id) {
 
       // Write workbook with Data Validation XML injection
       const wb = xlBuildWorkbook([dataSheet, listSheet]);
-      xlWriteWithDV(wb, dataSheet, filename);
+      await xlWriteWithDV(wb, dataSheet, filename);
       xlStatus('✓ Template downloaded: ' + filename, false);
     } catch(e) {
       xlStatus('Template export failed: ' + e.message, true);
@@ -5271,88 +5308,128 @@ function xlDoExportTemplate(id) {
 // This is injected via the sheet's !validations property which XLSX 0.18
 // writes as <dataValidations> XML if the sheet has the property set
 // via the undocumented but working approach below.
-function xlWriteWithDV(wb, dataSheet, filename) {
+// ── Write workbook with Data Validation via JSZip XML injection ──
+// SheetJS community 0.18.5 does NOT support writing Data Validation.
+// Solution: write xlsx to binary, unzip with JSZip, inject <dataValidations>
+// XML into xl/worksheets/sheet1.xml, repack and download.
+// Requires JSZip (loaded by _xlLoad alongside SheetJS).
+async function xlWriteWithDV(wb, dataSheet, filename) {
   const dvCols = dataSheet.dvCols || [];
-  if (!dvCols.length) {
-    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary', cellStyles:true });
+
+  if (!dvCols.length || !window.JSZip) {
+    // No DV needed or JSZip not loaded — plain download
+    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
     return;
   }
 
-  // Build named ranges in the Lists sheet for each unique list
-  // Lists sheet structure: col A = display, col B = code, col E = account types, col F = subtypes
-  // We define named ranges pointing to the code column (B) or type columns (E, F)
-  // for account dropdowns, and inline lists for short enumerations.
+  // 1. Write workbook to Uint8Array
+  const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
 
-  const listSheet = wb.Sheets['Lists'];
-  const listRows  = listSheet ? (XLSX.utils.decode_range(listSheet['!ref'] || 'A1:F1').e.r) : 0;
+  // 2. Open the zip
+  const zip = await JSZip.loadAsync(wbArray);
 
-  // Ensure wb.Workbook.Names exists
-  if (!wb.Workbook)        wb.Workbook = {};
-  if (!wb.Workbook.Names)  wb.Workbook.Names = [];
-
-  // Define named ranges
-  // AccountList → Lists!$B$2:$B$N  (account codes, col B)
-  // SubAccountList → Lists!$D$2:$D$N (sub-account codes, col D)
-  // AccountTypeList → Lists!$E$2:$E$N
-  // SubTypeList → Lists!$F$2:$F$N
-  const listSheetIdx = wb.SheetNames.indexOf('Lists');
-  if (listSheetIdx >= 0 && listRows > 0) {
-    const namedRanges = [
-      { Name:'AccountList',     Ref:`Lists!$B$2:$B$${listRows+1}` },
-      { Name:'SubAccountList',  Ref:`Lists!$D$2:$D$${listRows+1}` },
-      { Name:'AccountTypeList', Ref:`Lists!$E$2:$E$${listRows+1}` },
-      { Name:'SubTypeList',     Ref:`Lists!$F$2:$F$${listRows+1}` },
-    ];
-    namedRanges.forEach(nr => {
-      if (!wb.Workbook.Names.find(n => n.Name === nr.Name))
-        wb.Workbook.Names.push(nr);
-    });
-  }
-
-  // Inject Data Validation into the data sheet using XLSX sheet !validations
-  // XLSX 0.18 writes this as <dataValidations> when present
-  const ws = wb.Sheets[dataSheet.name];
-  if (!ws['!validations']) ws['!validations'] = [];
-
-  dvCols.forEach(dv => {
+  // 3. Build the dataValidation XML block
+  // For account lists (>250 chars) we reference a named range on the Lists sheet.
+  // For short lists (Yes/No, types etc) we use inline comma-separated values.
+  const dvNodes = dvCols.map(dv => {
     const col   = XLSX.utils.encode_col(dv.col);
     const sqref = `${col}2:${col}10000`;
+    const total = (dv.list || []).join('').length;
 
-    // Choose formula1 based on list size
     let formula1;
-    if (dv.list && dv.list.join('').length <= 250) {
-      // Short list — inline formula
-      const escaped = '"' + dv.list.map(v =>
-        v.replace(/"/g, '""')
-      ).join('","') + '"';
-      formula1 = escaped;
+    if (!dv.list || dv.list.length === 0) {
+      return ''; // skip
+    } else if (total <= 250) {
+      // Inline list — values comma-separated inside double-quotes
+      const vals = dv.list.map(v =>
+        v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+      ).join('","');
+      formula1 = `<formula1>"${vals}"</formula1>`;
     } else {
-      // Long list — use named range based on content hint
+      // Reference Lists sheet named range
+      // Lists sheet: col B = Account Code, col D = Sub-Account Code
+      // col E = Account Type, col F = Sub-Type
       const hint = (dv.prompt || '').toLowerCase();
-      if (hint.includes('sub-account')) formula1 = 'SubAccountList';
-      else if (hint.includes('account type')) formula1 = 'AccountTypeList';
-      else if (hint.includes('sub-type')) formula1 = 'SubTypeList';
-      else formula1 = 'AccountList';
+      let ref;
+      const listRows = dv.list.length;
+      if (hint.includes('sub-account')) {
+        ref = `Lists!$D$2:$D$${listRows + 1}`;
+      } else if (hint.includes('account type')) {
+        ref = `Lists!$E$2:$E$${listRows + 1}`;
+      } else if (hint.includes('sub-type')) {
+        ref = `Lists!$F$2:$F$${listRows + 1}`;
+      } else {
+        ref = `Lists!$B$2:$B$${listRows + 1}`;
+      }
+      formula1 = `<formula1>${ref}</formula1>`;
     }
 
-    ws['!validations'].push({
-      type:             'list',
-      sqref,
-      formula1,
-      allowBlank:       true,
-      showDropDown:     false,
-      showInputMessage: true,
-      prompt:           dv.prompt || '',
-    });
-  });
+    const promptAttr = dv.prompt
+      ? ` showInputMessage="1" promptTitle="Select value" prompt="${dv.prompt.replace(/"/g,'&quot;')}"`
+      : '';
+    return `<dataValidation type="list" allowBlank="1" showDropDown="0" showErrorMessage="1" errorTitle="Invalid" error="Please select a value from the list" sqref="${sqref}"${promptAttr}>${formula1}</dataValidation>`;
+  }).filter(Boolean);
 
-  // Write — XLSX 0.18 community edition will serialize !validations
-  // to the sheet XML if present. If not (older build), falls back gracefully.
-  try {
-    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary', cellStyles:true });
-  } catch(e) {
-    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary' });
+  if (!dvNodes.length) {
+    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
+    return;
   }
+
+  const dvBlock = `<dataValidations count="${dvNodes.length}">${dvNodes.join('')}</dataValidations>`;
+
+  // 4. Get sheet1.xml and inject DV before </worksheet>
+  const sheetPath = 'xl/worksheets/sheet1.xml';
+  let sheetXml = await zip.file(sheetPath)?.async('string');
+
+  if (!sheetXml) {
+    // Sheet not found at expected path — try to find it
+    const sheetKeys = Object.keys(zip.files).filter(k => k.match(/xl\/worksheets\/sheet\d+\.xml/));
+    if (sheetKeys.length) sheetXml = await zip.file(sheetKeys[0])?.async('string');
+  }
+
+  if (sheetXml) {
+    // Remove any existing dataValidations block first
+    sheetXml = sheetXml.replace(/<dataValidations[^>]*>[\s\S]*?<\/dataValidations>/g, '');
+    // Inject before </worksheet>
+    sheetXml = sheetXml.replace('</worksheet>', dvBlock + '</worksheet>');
+    zip.file(sheetPath, sheetXml);
+  }
+
+  // 5. Also define named ranges in workbook.xml for the Lists sheet references
+  let wbXml = await zip.file('xl/workbook.xml')?.async('string');
+  if (wbXml && !wbXml.includes('AccountList')) {
+    // Find how many rows the Lists sheet has
+    const listSheet = wb.Sheets['Lists'];
+    const listRef   = listSheet ? XLSX.utils.decode_range(listSheet['!ref'] || 'A1') : null;
+    const listRows  = listRef ? listRef.e.r : 200;
+    // Find the sheetId for the Lists sheet
+    const listsIdx  = wb.SheetNames.indexOf('Lists') + 1;
+
+    const namedRanges = [
+      `<definedName name="AccountList">Lists!$B$2:$B$${listRows + 1}</definedName>`,
+      `<definedName name="SubAccountList">Lists!$D$2:$D$${listRows + 1}</definedName>`,
+      `<definedName name="AccountTypeList">Lists!$E$2:$E$${listRows + 1}</definedName>`,
+      `<definedName name="SubTypeList">Lists!$F$2:$F$${listRows + 1}</definedName>`,
+    ].join('');
+
+    if (wbXml.includes('</definedNames>')) {
+      wbXml = wbXml.replace('</definedNames>', namedRanges + '</definedNames>');
+    } else if (wbXml.includes('</workbook>')) {
+      wbXml = wbXml.replace('</workbook>', `<definedNames>${namedRanges}</definedNames></workbook>`);
+    }
+    zip.file('xl/workbook.xml', wbXml);
+  }
+
+  // 6. Generate the modified zip and trigger download
+  const outBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const url = URL.createObjectURL(outBlob);
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
 // ── IMPORT HANDLER ────────────────────────────────────────
@@ -5464,62 +5541,87 @@ function xlValidate(id, headers, rows) {
     return d.toISOString().slice(0,10);
   };
 
+  // Helper: strip display portion — user may select "FOOD · Groceries" from dropdown
+  // We need just the code part before " · "
+  const stripCode = (val) => {
+    const s = String(val||'').trim();
+    const idx = s.indexOf(' · ');  // middle dot separator
+    return idx >= 0 ? s.slice(0, idx).trim() : s;
+  };
+  const lookAcctS = (val, rn, field) => lookAcct(stripCode(val), rn, field);
+  const lookSubS  = (acctVal, subVal, rn, field) => lookSub(stripCode(acctVal), stripCode(subVal), rn, field);
+
   rows.forEach((row, i) => {
-    const rn = i + 2; // Excel row number (1 header + 1-indexed)
+    const rn = i + 2; // Excel row number (1-indexed, row 1 = header)
     const c  = (n) => row[n] === undefined ? '' : row[n];
     const before = errors.length;
 
     if (id === 'transactions') {
+      // Col layout: 0=Date 1=Desc 2=Amt
+      //   3=DRCode 4=DRName 5=DRSubCode 6=DRSubName
+      //   7=CRCode 8=CRName 9=CRSubCode 10=CRSubName
+      //   11=Notes 12=Reconciled
       const date = parseDate(c(0), rn, 'Date');
-      const desc = reqStr(c(1), rn, 'Description');
-      const amt  = reqNum(c(2), rn, 'Amount');
-      const drId = lookAcct(c(3), rn, 'DR Account Code');
-      const drSub= lookSub(c(3), c(4), rn, 'DR Sub-Account');
-      const crId = lookAcct(c(5), rn, 'CR Account Code');
-      const crSub= lookSub(c(5), c(6), rn, 'CR Sub-Account');
+      const desc = reqStr(c(1),  rn, 'Description');
+      const amt  = reqNum(c(2),  rn, 'Amount');
+      const drId = lookAcctS(c(3), rn, 'DR Account Code');
+      const drSub= lookSubS(c(3), c(5), rn, 'DR Sub-Account Code');
+      const crId = lookAcctS(c(7), rn, 'CR Account Code');
+      const crSub= lookSubS(c(7), c(9), rn, 'CR Sub-Account Code');
       if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
       if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
-      if (errors.length === before) valid.push({date,desc,amt,drId,drSub,crId,crSub,notes:String(c(7)||'').trim(),reconciled:String(c(8)||'').toLowerCase()==='yes'?1:0});
+      if (errors.length === before) valid.push({date, desc, amt, drId, drSub, crId, crSub,
+        notes:String(c(11)||'').trim(),
+        reconciled:String(c(12)||'').toLowerCase()==='yes'?1:0});
 
     } else if (id === 'future') {
+      // Same layout as transactions + 12=Recurrence 13=EndDate
       const date = parseDate(c(0), rn, 'Date');
-      const desc = reqStr(c(1), rn, 'Description');
-      const amt  = reqNum(c(2), rn, 'Amount');
-      const drId = lookAcct(c(3), rn, 'DR Account Code');
-      const drSub= lookSub(c(3), c(4), rn, 'DR Sub-Account');
-      const crId = lookAcct(c(5), rn, 'CR Account Code');
-      const crSub= lookSub(c(5), c(6), rn, 'CR Sub-Account');
-      const recur= String(c(8)||'Once').trim();
+      const desc = reqStr(c(1),  rn, 'Description');
+      const amt  = reqNum(c(2),  rn, 'Amount');
+      const drId = lookAcctS(c(3), rn, 'DR Account Code');
+      const drSub= lookSubS(c(3), c(5), rn, 'DR Sub-Account Code');
+      const crId = lookAcctS(c(7), rn, 'CR Account Code');
+      const crSub= lookSubS(c(7), c(9), rn, 'CR Sub-Account Code');
+      const recur= String(c(12)||'Once').trim();
       if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
       if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
-      if (errors.length === before) valid.push({date,desc,amt,drId,drSub,crId,crSub,notes:String(c(7)||'').trim(),recurrence:recur,endDate:c(9)?parseDate(c(9),rn,'End Date'):'',});
+      if (errors.length === before) valid.push({date, desc, amt, drId, drSub, crId, crSub,
+        notes:String(c(11)||'').trim(), recurrence:recur,
+        endDate:c(13)?parseDate(c(13),rn,'End Date'):''});
 
     } else if (id === 'equitylots') {
+      // Col layout: 0=Ticker 1=StockName 2=Date 3=Type 4=Qty 5=Price
+      //   6=DRCode 7=DRName 8=CRCode 9=CRName 10=Notes
       const ticker = reqStr(c(0), rn, 'Ticker');
       const name   = String(c(1)||'').trim();
       const date   = parseDate(c(2), rn, 'Date');
       const type   = String(c(3)||'BUY').trim().toUpperCase();
-      if (!['BUY','SELL'].includes(type)) errors.push({row:rn,field:'Type',msg:`Must be BUY or SELL (got "${type}")`});
-      const qty    = reqNum(c(4), rn, 'Qty');
-      const price  = reqNum(c(5), rn, 'Price');
-      const drId   = lookAcct(c(6), rn, 'DR Account Code');
-      const crId   = lookAcct(c(7), rn, 'CR Account Code');
+      if (!['BUY','SELL'].includes(type))
+        errors.push({row:rn, field:'Type', msg:`Must be BUY or SELL (got "${type}")`});
+      const qty  = reqNum(c(4), rn, 'Qty');
+      const price= reqNum(c(5), rn, 'Price');
+      const drId = lookAcctS(c(6), rn, 'DR Account Code');
+      const crId = lookAcctS(c(8), rn, 'CR Account Code');
       if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
       if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
-      if (errors.length === before) valid.push({ticker,name,date,type,qty,price,drId,crId,notes:String(c(8)||'').trim()});
+      if (errors.length === before) valid.push({ticker, name, date, type, qty, price, drId, crId,
+        notes:String(c(10)||'').trim()});
 
     } else if (id === 'coa') {
-      const code  = reqStr(c(0), rn, 'Code');
-      const name  = reqStr(c(1), rn, 'Name');
-      const type  = reqStr(c(2), rn, 'Type');
+      const code = reqStr(c(0), rn, 'Code');
+      const name = reqStr(c(1), rn, 'Name');
+      const type = reqStr(c(2), rn, 'Type');
       if (!['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'].includes(type.toUpperCase()))
-        errors.push({row:rn, field:'Type', msg:`Invalid type "${type}". Must be ASSET, LIABILITY, INCOME, EXPENSE, or EQUITY`});
-      // Check code doesn't already exist
+        errors.push({row:rn, field:'Type', msg:`Invalid type "${type}". Must be one of: ASSET, LIABILITY, INCOME, EXPENSE, EQUITY`});
       if (code && acctByCode[code.trim().toLowerCase()])
         errors.push({row:rn, field:'Code', msg:`Account code "${code}" already exists — import only adds new codes`});
-      if (errors.length === before) valid.push({code:code.trim(), name:name.trim(), type:type.trim().toUpperCase(),
-        grouping:String(c(3)||'').trim(), hasSub:String(c(4)||'N').trim().toUpperCase()==='Y'?1:0,
-        showInquiry:String(c(5)||'Y').trim().toUpperCase()==='Y'?1:0, isActive:String(c(6)||'Y').trim().toUpperCase()==='Y'?1:0});
+      if (errors.length === before) valid.push({
+        code:code.trim(), name:name.trim(), type:type.trim().toUpperCase(),
+        grouping:String(c(3)||'').trim(),
+        hasSub:String(c(4)||'N').trim().toUpperCase()==='Y'?1:0,
+        showInquiry:String(c(5)||'Y').trim().toUpperCase()==='Y'?1:0,
+        isActive:String(c(6)||'Y').trim().toUpperCase()==='Y'?1:0});
     }
   });
 
