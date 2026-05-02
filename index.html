@@ -5914,8 +5914,8 @@ async function _itLoadModel() {
     const barEl = document.getElementById('itModelBar');
     const pctEl = document.getElementById('itModelPct');
     if (msgEl) msgEl.textContent = msg;
-    if (barEl) barEl.style.width = (pct||0) + '%';
-    if (pctEl) pctEl.textContent = pct ? pct + '%' : '';
+    if (barEl && pct !== null) barEl.style.width = Math.min(100, pct) + '%';
+    if (pctEl) pctEl.textContent = pct !== null ? Math.min(100, Math.round(pct)) + '%' : '';
   }
 
   try {
@@ -5931,26 +5931,63 @@ async function _itLoadModel() {
     } = await import(CDN);
 
     window._itRawImage = RawImage;
-
     env.backends.onnx.wasm.wasmPaths = CDN + '/dist/';
     env.allowLocalModels = false;
     env.useBrowserCache  = true;
 
     const MODEL_ID = 'Xenova/moondream2';
-    const progressCb = (p) => {
-      if (p.status === 'downloading') {
-        const pct = p.total ? Math.round((p.loaded / p.total) * 75) + 15 : 15;
-        setMsg('Downloading model weights… (' + Math.round((p.loaded||0)/1024/1024) + ' MB)', pct);
-      } else if (p.status === 'loading') {
-        setMsg('Initializing model…', 92);
-      }
-    };
 
-    setMsg('Loading processor and tokenizer…', 10);
+    // Moondream2 downloads 3 weight files + tokenizer/processor config files.
+    // Approximate sizes (compressed): embed_tokens ~30MB, vision_encoder ~90MB,
+    // decoder_model_merged ~310MB. Total ~430MB.
+    // We track each file's progress by name and compute a weighted overall %.
+    const FILE_WEIGHTS = {
+      'embed_tokens':         30,
+      'vision_encoder':       90,
+      'decoder_model_merged': 310,
+    };
+    const TOTAL_WEIGHTED = Object.values(FILE_WEIGHTS).reduce((a,b)=>a+b, 0); // 430
+    const fileProgress = {}; // filename → { loaded, total }
+
+    function computeOverallPct() {
+      let weightedLoaded = 0;
+      for (const [fname, weight] of Object.entries(FILE_WEIGHTS)) {
+        const fp = fileProgress[fname];
+        if (fp && fp.total > 0) {
+          weightedLoaded += (fp.loaded / fp.total) * weight;
+        }
+      }
+      // Map 0–430 weighted MB → 15–95% of progress bar
+      return 15 + (weightedLoaded / TOTAL_WEIGHTED) * 80;
+    }
+
+    // Track last update time to throttle DOM updates to ~5/sec
+    let lastUpdate = 0;
+    function progressCb(p) {
+      if (p.status === 'downloading' && p.name) {
+        // p.name is the filename e.g. "onnx/decoder_model_merged_quantized.onnx"
+        // Match it to one of our tracked components
+        const key = Object.keys(FILE_WEIGHTS).find(k => p.name.includes(k));
+        if (key) {
+          fileProgress[key] = { loaded: p.loaded || 0, total: p.total || 0 };
+          const now = Date.now();
+          if (now - lastUpdate > 200) {  // throttle to 5 updates/sec
+            lastUpdate = now;
+            const totalMB = Object.values(fileProgress).reduce((s,f)=>s+(f.loaded||0),0);
+            const pct = computeOverallPct();
+            setMsg('Downloading model… ' + Math.round(totalMB/1024/1024) + ' MB / ~430 MB', pct);
+          }
+        }
+      } else if (p.status === 'loading') {
+        setMsg('Initializing model on ' + (navigator.gpu ? 'GPU' : 'CPU') + '…', 96);
+      }
+    }
+
+    setMsg('Loading tokenizer and processor…', 10);
     _itProcessor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progressCb });
+    setMsg('Tokenizer loaded. Downloading model weights (~430 MB one-time)…', 15);
     _itTokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb });
 
-    setMsg('Downloading model weights (one-time, ~450 MB)…', 15);
     _itModel = await Moondream1ForConditionalGeneration.from_pretrained(MODEL_ID, {
       dtype: {
         embed_tokens:         'fp16',
