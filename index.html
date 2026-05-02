@@ -6016,19 +6016,26 @@ async function _itRunInference(imageDataUrl, prompt) {
   const RawImage = window._itRawImage;
   if (!_itModel || !_itProcessor || !_itTokenizer || !RawImage) throw new Error('Model not loaded');
 
-  const text = '<image>\n\nQuestion: ' + prompt + '\n\nAnswer:';
-  const textInputs   = _itTokenizer(text);
-  const image        = await RawImage.fromURL(imageDataUrl);
-  const visionInputs = await _itProcessor(image);
+  // Format prompt — <image> token must appear exactly once before the question
+  const text = `<image>\n\nQuestion: ${prompt}\n\nAnswer:`;
 
+  // Load image
+  const image = await RawImage.fromURL(imageDataUrl);
+
+  // CRITICAL: pass text AND image through the processor together in one call.
+  // Separate tokenizer + processor calls cause the token/features mismatch error
+  // because the <image> token position isn't aligned with the vision embeddings.
+  const inputs = await _itProcessor(image, text, { return_tensors: 'pt' });
+
+  // Generate
   const output = await _itModel.generate({
-    ...textInputs,
-    ...visionInputs,
+    ...inputs,
     do_sample:      false,
     max_new_tokens:  600,
   });
 
-  const inputLen = textInputs.input_ids.dims[1];
+  // Decode only the newly generated tokens (skip the input)
+  const inputLen = inputs.input_ids.dims[1];
   const decoded  = _itTokenizer.batch_decode(
     output.slice(null, [inputLen, null]),
     { skip_special_tokens: true }
