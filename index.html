@@ -6012,35 +6012,38 @@ async function _itLoadModel() {
 }
 
 // Run inference using the low-level Moondream2 API
+// Pattern matches the official Xenova/moondream2 model card exactly.
 async function _itRunInference(imageDataUrl, prompt) {
   const RawImage = window._itRawImage;
   if (!_itModel || !_itProcessor || !_itTokenizer || !RawImage) throw new Error('Model not loaded');
 
-  // Format prompt — <image> token must appear exactly once before the question
+  // Format prompt exactly as the model card specifies
   const text = `<image>\n\nQuestion: ${prompt}\n\nAnswer:`;
 
-  // Load image
+  // Step 1: tokenize text separately
+  const text_inputs = _itTokenizer(text);
+
+  // Step 2: process image separately
   const image = await RawImage.fromURL(imageDataUrl);
+  const vision_inputs = await _itProcessor(image);
 
-  // CRITICAL: pass text AND image through the processor together in one call.
-  // Separate tokenizer + processor calls cause the token/features mismatch error
-  // because the <image> token position isn't aligned with the vision embeddings.
-  const inputs = await _itProcessor(image, text, { return_tensors: 'pt' });
-
-  // Generate
+  // Step 3: generate — spread both inputs
   const output = await _itModel.generate({
-    ...inputs,
+    ...text_inputs,
+    ...vision_inputs,
     do_sample:      false,
     max_new_tokens:  600,
   });
 
-  // Decode only the newly generated tokens (skip the input)
-  const inputLen = inputs.input_ids.dims[1];
-  const decoded  = _itTokenizer.batch_decode(
-    output.slice(null, [inputLen, null]),
-    { skip_special_tokens: true }
-  );
-  return decoded[0] || '';
+  // Step 4: decode only newly generated tokens.
+  // output is a 2D Tensor [batch, seq_len].
+  // input_ids.dims[1] gives the input length to skip.
+  const inputLen = text_inputs.input_ids.dims.at(-1);
+
+  // Use tokenizer.decode (singular) on the first batch item, sliced to new tokens only.
+  // Transformers.js Tensor supports tolist() to convert to a nested JS array.
+  const outputIds = output.tolist()[0].slice(inputLen);
+  return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
 }
 
 
