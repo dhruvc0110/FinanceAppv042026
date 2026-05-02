@@ -360,6 +360,14 @@ async function handleTokenResponse(response) {
   }
   accessToken = response.access_token;
 
+  // Schedule a proactive silent token refresh 5 minutes before expiry
+  // GIS tokens typically expire in 3600 seconds (1 hour)
+  const expiresIn = (response.expires_in || 3600) - 300; // refresh 5 min early
+  if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
+  window._tokenRefreshTimer = setTimeout(async () => {
+    try { await _refreshTokenSilent(); } catch(e) { console.warn('Proactive token refresh failed:', e.message); }
+  }, expiresIn * 1000);
+
   // Get user info
   try {
     const res  = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -571,18 +579,56 @@ async function syncToDrive() {
   try {
     const uint8    = db.export();
     const uploaded = await driveUploadFile(uint8, driveFileId, driveFolderId);
-    // Update fileId in case Drive returned a new one (shouldn't happen but be safe)
     if (uploaded.id) driveFileId = uploaded.id;
-
     await driveVerifyUpload(driveFileId, uint8.byteLength);
-
     lastSyncedAt = new Date();
     setSyncBar('ok');
   } catch (e) {
-    setSyncBar('error', e.message);
+    // On 401 (expired token), silently refresh and retry once
+    if (e.message && e.message.includes('401')) {
+      try {
+        await _refreshTokenSilent();
+        const uint8    = db.export();
+        const uploaded = await driveUploadFile(uint8, driveFileId, driveFolderId);
+        if (uploaded.id) driveFileId = uploaded.id;
+        await driveVerifyUpload(driveFileId, uint8.byteLength);
+        lastSyncedAt = new Date();
+        setSyncBar('ok');
+      } catch (e2) {
+        // If silent refresh also fails, show the error with a re-auth button
+        setSyncBar('error', e2.message + ' — click ↻ to re-authenticate.');
+      }
+    } else {
+      setSyncBar('error', e.message);
+    }
   } finally {
     isSyncing = false;
   }
+}
+
+// Silently request a new token from GIS (no popup if user is still signed in)
+function _refreshTokenSilent() {
+  return new Promise((resolve, reject) => {
+    if (!tokenClient) return reject(new Error('Token client not initialised'));
+    tokenClient.requestAccessToken({
+      prompt: '',          // '' = no UI prompt — uses existing Google session
+      hint: currentUser?.email || '',
+      callback: (response) => {
+        if (response.error) {
+          reject(new Error('Token refresh failed: ' + response.error));
+        } else {
+          accessToken = response.access_token;
+          // Reset the proactive refresh timer
+          const expiresIn = (response.expires_in || 3600) - 300;
+          if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
+          window._tokenRefreshTimer = setTimeout(async () => {
+            try { await _refreshTokenSilent(); } catch(e) { console.warn('Proactive token refresh failed:', e.message); }
+          }, expiresIn * 1000);
+          resolve();
+        }
+      }
+    });
+  });
 }
 
 // Call this from any future write operation to trigger a background sync
@@ -670,16 +716,152 @@ async function checkAndClaimLock() {
     }
 
     if (age > LOCK_STALE_MS) {
-      // Stale lock from another device — safe to force-unlock but show the banner
-      setLockBanner('stale', existing);
+      // Stale lock from another device — silently take over
+      await claimLock();
     } else {
-      // Active lock from another device — warn and don't claim
-      setLockBanner('active', existing);
+      // Active lock from another device — show the conflict dialog
+      showSessionConflictDialog(existing);
     }
   } catch (e) {
-    // Firebase unreachable / rules blocked — fail silently, app still works fine
     console.warn('Lock check skipped (non-fatal):', e.message);
   }
+}
+
+// ─── Session Conflict Dialog ──────────────────────────────
+// Shown to the NEW session when it finds an active lock held by another tab/device.
+// Two options:
+//   A. Ask that session to save its work then close  → writes command 'save-and-close'
+//   B. Close THIS session                            → reloads current page
+//
+// The OTHER (existing) session polls Firebase for commands every 5 s via startCommandPoll().
+// When it sees a command it acts on it and clears the command node.
+
+function showSessionConflictDialog(lockData) {
+  const mins  = Math.max(0, Math.floor((Date.now() - (lockData.timestamp || 0)) / 60000));
+  const since = mins < 1 ? 'just now' : mins + ' min ago';
+  const where = escHtml(lockData.device || 'another device');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'sessionConflictOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:460px;padding:2rem;font-family:Arial,sans-serif">
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+        <span style="font-size:1.5rem">⚠️</span>
+        <h2 style="margin:0;font-size:1.1rem;font-weight:700;color:#0f172a">Active Session Detected</h2>
+      </div>
+      <p style="margin:0 0 0.5rem;font-size:0.875rem;color:#334155">
+        This app is already open on <strong>${where}</strong>, last active <strong>${since}</strong>.
+      </p>
+      <p style="margin:0 0 1.5rem;font-size:0.875rem;color:#64748b">
+        Having two sessions open at the same time can cause data to be overwritten. How would you like to proceed?
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:0.75rem">
+
+        <button id="scOptSaveClose" style="text-align:left;border:1.5px solid #e2e8f0;border-radius:0.625rem;padding:0.875rem 1rem;cursor:pointer;background:#f8fafc;transition:border-color 0.15s" onmouseover="this.style.borderColor='#334155'" onmouseout="this.style.borderColor='#e2e8f0'">
+          <div style="font-size:0.875rem;font-weight:600;color:#0f172a;margin-bottom:0.2rem">💾 Save &amp; close the other session</div>
+          <div style="font-size:0.8rem;color:#64748b">The other session will sync its latest data to Drive, then close. Recommended.</div>
+        </button>
+
+        <button id="scOptKeepOther" style="text-align:left;border:1.5px solid #e2e8f0;border-radius:0.625rem;padding:0.875rem 1rem;cursor:pointer;background:#f8fafc;transition:border-color 0.15s" onmouseover="this.style.borderColor='#334155'" onmouseout="this.style.borderColor='#e2e8f0'">
+          <div style="font-size:0.875rem;font-weight:600;color:#0f172a;margin-bottom:0.2rem">↩ Keep the other session, close this one</div>
+          <div style="font-size:0.8rem;color:#64748b">Closes this tab and returns to the other session. No data is affected.</div>
+        </button>
+
+      </div>
+
+      <p id="scStatus" style="margin:1rem 0 0;font-size:0.8rem;color:#64748b;min-height:1.25rem;text-align:center"></p>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('scOptSaveClose').addEventListener('click', () => _scAction('save-and-close'));
+  document.getElementById('scOptKeepOther').addEventListener('click', () => { window.close(); setTimeout(() => window.location.reload(), 300); });
+}
+
+async function _scAction(command) {
+  const statusEl = document.getElementById('scStatus');
+  const buttons  = ['scOptSaveClose', 'scOptKeepOther'].map(id => document.getElementById(id));
+  buttons.forEach(b => { if(b) { b.disabled = true; b.style.opacity = '0.5'; b.style.cursor = 'default'; } });
+
+  statusEl.style.color = '#64748b';
+  statusEl.textContent = 'Asking the other session to save and close…';
+
+  try {
+    await fbPut('/commands/' + lockKey, { cmd: 'save-and-close', from: sessionDeviceId, timestamp: Date.now() });
+
+    // Poll for up to 15 s — the other session will clear the lock when it acknowledges
+    statusEl.textContent = 'Waiting for the other session to respond…';
+    let waited = 0;
+    const acknowledged = await new Promise(resolve => {
+      const check = setInterval(async () => {
+        waited += 2000;
+        try {
+          const lock = await fbGet('/locks/' + lockKey);
+          if (!lock || lock.deviceId === sessionDeviceId) {
+            clearInterval(check);
+            resolve(true);
+          } else if (waited >= 15000) {
+            clearInterval(check);
+            resolve(false);
+          }
+        } catch(e) { clearInterval(check); resolve(false); }
+      }, 2000);
+    });
+
+    if (acknowledged) {
+      statusEl.style.color = '#15803d';
+      statusEl.textContent = '✓ Other session saved and closed. Taking over…';
+    } else {
+      // No response — warn the user before proceeding
+      statusEl.style.color = '#b45309';
+      statusEl.textContent = '⚠ The other session did not respond. Any unsaved work in that session may be lost. Taking over in 5 seconds…';
+      await new Promise(r => setTimeout(r, 5000));
+    }
+
+    // Clear command node, claim lock, dismiss dialog
+    await fbPut('/commands/' + lockKey, null).catch(() => {});
+    await claimLock();
+    const overlay = document.getElementById('sessionConflictOverlay');
+    if (overlay) overlay.remove();
+    setLockBanner('mine');
+
+  } catch(e) {
+    if (statusEl) { statusEl.style.color = '#dc2626'; statusEl.textContent = 'Error: ' + e.message + ' — try reloading.'; }
+  }
+}
+
+// ─── Command Poll ─────────────────────────────────────────
+// The EXISTING session runs this to watch for commands from a competing new session.
+let _cmdPollId = null;
+
+function startCommandPoll() {
+  if (_cmdPollId) clearInterval(_cmdPollId);
+  _cmdPollId = setInterval(async () => {
+    if (!lockKey) return;
+    try {
+      const cmd = await fbGet('/commands/' + lockKey);
+      if (!cmd || !cmd.cmd) return;
+      if (cmd.from === sessionDeviceId) return; // ignore our own commands
+
+      if (cmd.cmd === 'save-and-close') {
+        // Clear command immediately so the new session's poll sees the lock change
+        await fbPut('/commands/' + lockKey, null).catch(() => {});
+        // Sync latest data, release lock, stop heartbeat and poll
+        await syncToDrive();
+        weHoldLock = false;
+        await fbPut('/locks/' + lockKey, null).catch(() => {});
+        clearInterval(_cmdPollId);
+        clearInterval(heartbeatId);
+        document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Arial,sans-serif;flex-direction:column;gap:1rem">
+          <div style="font-size:2rem">✅</div>
+          <p style="font-size:1rem;color:#334155;font-weight:600">Work saved. This session has been closed.</p>
+          <p style="font-size:0.875rem;color:#94a3b8">You can close this tab.</p>
+        </div>`;
+      }
+    } catch(e) { /* Firebase unreachable — ignore */ }
+  }, 5000);
 }
 
 async function claimLock() {
@@ -693,6 +875,7 @@ async function claimLock() {
   weHoldLock = true;
   setLockBanner('mine');
   startHeartbeat();
+  startCommandPoll(); // begin watching for commands from competing sessions
 }
 
 function startHeartbeat() {
@@ -700,7 +883,6 @@ function startHeartbeat() {
   heartbeatId = setInterval(async () => {
     if (!weHoldLock || !lockKey) return;
     try {
-      // Update only the timestamp field, not the whole record
       await fbPut('/locks/' + lockKey + '/timestamp', Date.now());
     } catch (e) {
       console.warn('Lock heartbeat failed:', e.message);
@@ -711,8 +893,8 @@ function startHeartbeat() {
 async function forceUnlock() {
   try {
     setLockBanner('forcing');
-    await fbPut('/locks/' + lockKey + '/timestamp', 0); // mark stale first
-    await fbPut('/locks/' + lockKey, null);             // clear it
+    await fbPut('/locks/' + lockKey + '/timestamp', 0);
+    await fbPut('/locks/' + lockKey, null);
     await claimLock();
   } catch (e) {
     setLockBanner('error', null, 'Force unlock failed: ' + e.message);
@@ -731,38 +913,7 @@ function setLockBanner(state, lockData, errorMsg) {
 
   banner.style.display = 'flex';
 
-  if (state === 'active') {
-    const mins = Math.max(0, Math.floor((Date.now() - (lockData.timestamp || 0)) / 60000));
-    banner.className = 'bg-yellow-50 border-b border-yellow-200 px-6 py-2 flex items-center justify-between gap-4 flex-shrink-0';
-    banner.innerHTML = `
-      <div class="flex items-center gap-2 min-w-0">
-        <span class="text-yellow-500 flex-shrink-0">⚠</span>
-        <span class="text-xs text-yellow-800 leading-snug">
-          <strong>${escHtml(lockData.device || 'Another device')}</strong> has this app open and may be editing.
-          Last active ${mins < 1 ? 'just now' : mins + ' min ago'}.
-          Changes from that session will be overwritten if you force-unlock.
-        </span>
-      </div>
-      <button onclick="forceUnlock()"
-        class="text-xs font-medium text-yellow-700 hover:text-yellow-900 border border-yellow-400 hover:border-yellow-600 rounded px-2 py-1 flex-shrink-0 transition">
-        Force unlock
-      </button>`;
-  } else if (state === 'stale') {
-    const mins = Math.floor((Date.now() - (lockData.timestamp || 0)) / 60000);
-    banner.className = 'bg-orange-50 border-b border-orange-200 px-6 py-2 flex items-center justify-between gap-4 flex-shrink-0';
-    banner.innerHTML = `
-      <div class="flex items-center gap-2 min-w-0">
-        <span class="text-orange-400 flex-shrink-0">⚠</span>
-        <span class="text-xs text-orange-800 leading-snug">
-          A previous session on <strong>${escHtml(lockData.device || 'another device')}</strong>
-          didn't close cleanly (${mins} min ago). Safe to unlock.
-        </span>
-      </div>
-      <button onclick="forceUnlock()"
-        class="text-xs font-medium text-orange-700 hover:text-orange-900 border border-orange-400 hover:border-orange-600 rounded px-2 py-1 flex-shrink-0 transition">
-        Take over
-      </button>`;
-  } else if (state === 'forcing') {
+  if (state === 'forcing') {
     banner.className = 'bg-slate-50 border-b border-slate-200 px-6 py-2 flex items-center gap-2 flex-shrink-0';
     banner.innerHTML = `<span class="text-xs text-slate-500">Releasing lock\u2026</span>`;
   } else if (state === 'error') {
@@ -1060,6 +1211,11 @@ function startApp() {
   // Refresh "X min ago" label every 30 seconds
   syncIntervalId = setInterval(() => {
     if (!isSyncing) setSyncBar('ok');
+  }, 30000);
+
+  // Auto-save every 30 seconds — silently syncs DB to Drive if not already syncing
+  setInterval(() => {
+    if (db && driveFileId && !isSyncing) syncToDrive();
   }, 30000);
 
   // Check Firebase lock — non-blocking; app works even if this fails
