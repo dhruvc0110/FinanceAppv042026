@@ -6012,37 +6012,47 @@ async function _itLoadModel() {
 }
 
 // Run inference using the low-level Moondream2 API
-// Pattern matches the official Xenova/moondream2 model card exactly.
 async function _itRunInference(imageDataUrl, prompt) {
   const RawImage = window._itRawImage;
   if (!_itModel || !_itProcessor || !_itTokenizer || !RawImage) throw new Error('Model not loaded');
 
-  // Format prompt exactly as the model card specifies
   const text = `<image>\n\nQuestion: ${prompt}\n\nAnswer:`;
 
-  // Step 1: tokenize text separately
+  // Tokenize — log what comes back so we can see the real shape
   const text_inputs = _itTokenizer(text);
+  console.log('[moondream] text_inputs keys:', Object.keys(text_inputs || {}));
+  console.log('[moondream] input_ids:', text_inputs?.input_ids);
+  console.log('[moondream] input_ids type:', typeof text_inputs?.input_ids);
 
-  // Step 2: process image separately
-  const image = await RawImage.fromURL(imageDataUrl);
+  // Safely get input_ids — handle both {input_ids} and direct Tensor return
+  let input_ids = text_inputs?.input_ids ?? text_inputs;
+  if (!input_ids) throw new Error('Tokenizer returned no input_ids. Keys: ' + JSON.stringify(Object.keys(text_inputs || {})));
+
+  const inputLen = input_ids.dims ? input_ids.dims.at(-1) : (input_ids.length || 0);
+  console.log('[moondream] inputLen:', inputLen);
+
+  const image        = await RawImage.fromURL(imageDataUrl);
   const vision_inputs = await _itProcessor(image);
+  console.log('[moondream] vision_inputs keys:', Object.keys(vision_inputs || {}));
 
-  // Step 3: generate — spread both inputs
   const output = await _itModel.generate({
-    ...text_inputs,
+    input_ids,
     ...vision_inputs,
-    do_sample:      false,
-    max_new_tokens:  600,
+    do_sample:     false,
+    max_new_tokens: 600,
   });
 
-  // Step 4: decode only newly generated tokens.
-  // output is a 2D Tensor [batch, seq_len].
-  // input_ids.dims[1] gives the input length to skip.
-  const inputLen = text_inputs.input_ids.dims.at(-1);
+  console.log('[moondream] output type:', typeof output, Array.isArray(output), output?.constructor?.name);
 
-  // Use tokenizer.decode (singular) on the first batch item, sliced to new tokens only.
-  // Transformers.js Tensor supports tolist() to convert to a nested JS array.
-  const outputIds = output.tolist()[0].slice(inputLen);
+  // Decode — handle Tensor or plain array output
+  let outputIds;
+  if (output && typeof output.tolist === 'function') {
+    outputIds = output.tolist()[0].slice(inputLen);
+  } else if (Array.isArray(output)) {
+    outputIds = (Array.isArray(output[0]) ? output[0] : output).slice(inputLen);
+  } else {
+    throw new Error('Unexpected output shape from model.generate: ' + typeof output);
+  }
   return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
 }
 
