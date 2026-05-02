@@ -529,8 +529,15 @@ async function loadFromDrive() {
       setLoadStatus('Downloading database\u2026');
       const buf = await driveDownloadFile(driveFileId);
       db = new SQL.Database(new Uint8Array(buf));
-      // Smoke-test the file
-      db.exec('SELECT COUNT(*) FROM "Transaction"');
+      // Smoke-test: ensure core schema exists. On a freshly created database
+      // the Transaction table may not exist yet if the file was just initialised —
+      // create it here as a safety net rather than failing hard.
+      try {
+        db.exec('SELECT COUNT(*) FROM "Transaction"');
+      } catch(smokeErr) {
+        // Fresh database — initialise the full schema now
+        _initCoreSchema();
+      }
       lastSyncedAt = new Date();
       startApp();
     } else {
