@@ -1318,6 +1318,15 @@ function startApp() {
     )`);
   } catch(e) { console.warn('Screenshot import tables init:', e.message); }
 
+  // Ensure AppSettings table exists — key/value store for cross-device settings
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS AppSettings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('AppSettings init:', e.message); }
+
   navigate('dashboard');
 }
 
@@ -5596,9 +5605,24 @@ let _itTab = 'import';  // 'import' | 'review' | 'templates' | 'log'
 
 // ── Claude Vision API ─────────────────────────────────────
 // Key stored in localStorage only — never in DB or Drive
-function _itGetApiKey()  { try { return localStorage.getItem('_itApiKey') || ''; } catch(e) { return ''; } }
-function _itSetApiKey(k) { try { localStorage.setItem('_itApiKey', k.trim()); } catch(e) {} }
-function _itHasApiKey()  { return _itGetApiKey().startsWith('sk-ant-'); }
+// ── Claude Vision API key ─────────────────────────────────
+// Stored in AppSettings table in SQLite — syncs to Drive so all devices share it.
+// Same trust level as the rest of your financial data on Drive.
+function _itGetApiKey() {
+  try {
+    const row = query(`SELECT value FROM AppSettings WHERE key='anthropicApiKey'`)[0];
+    return row ? row.value : '';
+  } catch(e) { return ''; }
+}
+function _itSetApiKey(k) {
+  try {
+    const now  = new Date().toISOString();
+    const safe = k.trim().replace(/'/g, "''");
+    db.run(`INSERT INTO AppSettings (key,value,updatedAt) VALUES ('anthropicApiKey','${safe}','${now}') ON CONFLICT(key) DO UPDATE SET value='${safe}',updatedAt='${now}'`);
+    syncAfterWrite();
+  } catch(e) { console.warn('_itSetApiKey:', e.message); }
+}
+function _itHasApiKey() { return _itGetApiKey().startsWith('sk-ant-'); }
 
 function renderImportTransactions(container) {
   _itTab = _itTab || 'import';
