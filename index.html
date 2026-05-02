@@ -5569,25 +5569,44 @@ async function xlWriteWithDV(sheetName, headers, rows, colWidths, numFmts, dvCol
           });
         }
 
-        // Data Validation — ExcelJS native, no XML needed
-        if (dvCols) {
-          dvCols.forEach(dv => {
+        // Data Validation — use worksheet.dataValidations.add() for range-based DV
+        // For lists > 1024 chars total, Excel corrupts inline formulae.
+        // Solution: put values in a hidden Values sheet, reference via named range.
+        if (dvCols && dvCols.length) {
+
+          // Build a hidden Values sheet with each DV column's list in its own column
+          const valSheet = wb.addWorksheet('_Values');
+          valSheet.state = 'veryHidden'; // hidden from user
+
+          dvCols.forEach((dv, dvIdx) => {
             if (!dv.list || !dv.list.length) return;
-            const col = dv.col + 1; // ExcelJS is 1-indexed
-            // Build the formulae string: "Val1,Val2,Val3"
-            // ExcelJS requires the outer quotes in the formulae string
-            const vals = dv.list.slice(0, 200)
-              .map(v => String(v).replace(/"/g, '').replace(/,/g, ' '))
-              .join(',');
-            const formulae = [`"${vals}"`];
-            // Apply to every data row (2 to 10001)
-            for (let r = 2; r <= 10001; r++) {
-              ws.getCell(r, col).dataValidation = {
-                type: 'list',
-                allowBlank: true,
-                formulae,
-              };
+            const items   = dv.list.slice(0, 500); // max 500 items per list
+            const colLetter = String.fromCharCode(65 + dvIdx); // A, B, C...
+
+            // Write list values into the hidden sheet
+            items.forEach((v, i) => {
+              valSheet.getCell(`${colLetter}${i + 1}`).value = String(v);
+            });
+
+            // Define a named range for this list
+            const rangeName = `_DV_${dvIdx}`;
+            const rangeRef  = `_Values!$${colLetter}$1:$${colLetter}$${items.length}`;
+            wb.definedNames.add(rangeRef, rangeName);
+
+            // Convert 0-based column index to Excel letter (A, B, ... Z, AA, ...)
+            const colNum = dv.col; // 0-based
+            let dataCol = '';
+            let n = colNum + 1;
+            while (n > 0) {
+              dataCol = String.fromCharCode(65 + (n - 1) % 26) + dataCol;
+              n = Math.floor((n - 1) / 26);
             }
+            const sqref    = `${dataCol}2:${dataCol}10000`;
+            ws.dataValidations.add(sqref, {
+              type: 'list',
+              allowBlank: true,
+              formulae: [`=${rangeName}`],
+            });
           });
         }
 
