@@ -5563,6 +5563,14 @@ async function xlWriteWithDV(wb, dataSheet, filename) {
 
     if (!sheetXml) throw new Error('Could not locate data sheet XML in workbook');
 
+    // ── DIAGNOSTIC: show exact XML so we can verify injection point ──
+    console.log('[xlWriteWithDV] sheetFile:', sheetFile);
+    console.log('[xlWriteWithDV] sheetXml length:', sheetXml.length);
+    console.log('[xlWriteWithDV] sheetXml tail (last 200 chars):', JSON.stringify(sheetXml.slice(-200)));
+    console.log('[xlWriteWithDV] contains </worksheet>:', sheetXml.includes('</worksheet>'));
+    console.log('[xlWriteWithDV] lastIndexOf </worksheet>:', sheetXml.lastIndexOf('</worksheet>'));
+    console.log('[xlWriteWithDV] zip files:', Object.keys(zip.files).join(', '));
+
     // Validate the sheet XML before modifying
     if (!sheetXml.includes('</worksheet>')) {
       throw new Error('Sheet XML does not end with </worksheet> — unexpected format');
