@@ -420,35 +420,65 @@ async function driveGet(url) {
 }
 
 async function driveFindOrCreateFolder() {
-  // Search for existing FinanceApp folder at Drive root
-  const q = encodeURIComponent(
-    `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and 'root' in parents and trashed=false`
-  );
-  const res = await driveGet(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`
-  );
-  if (res.files && res.files.length > 0) {
-    return res.files[0].id;
+  // Check localStorage cache first — avoids the Drive search query
+  // which requires broader scope than drive.file on some account states
+  const cacheKey = 'driveFolder_' + (currentUser?.email || '');
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      // Verify the folder still exists with a quick metadata fetch
+      try {
+        await driveGet(`https://www.googleapis.com/drive/v3/files/${cached}?fields=id,trashed`);
+        return cached;
+      } catch(e) {
+        // Folder gone or inaccessible — clear cache and re-search
+        localStorage.removeItem(cacheKey);
+      }
+    }
+  } catch(e) { /* localStorage unavailable */ }
+
+  // Search for existing FinanceApp folder — only finds folders this app created
+  // (drive.file scope restricts results to app-created files)
+  let folderId = null;
+  try {
+    const q = encodeURIComponent(
+      `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
+    );
+    const res = await driveGet(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&spaces=drive`
+    );
+    if (res.files && res.files.length > 0) {
+      folderId = res.files[0].id;
+    }
+  } catch(e) {
+    // Search failed (common on first sign-in with drive.file scope)
+    // Fall through to create
   }
-  // Not found — create it
-  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + accessToken,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: DRIVE_FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: ['root'],
-    })
-  });
-  if (!createRes.ok) {
-    const body = await createRes.text().catch(() => '');
-    throw new Error('Could not create FinanceApp folder in Drive: ' + body.slice(0, 120));
+
+  if (!folderId) {
+    // Create the folder
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: DRIVE_FOLDER_NAME,
+        mimeType: 'application/vnd.google-apps.folder',
+      })
+    });
+    if (!createRes.ok) {
+      const body = await createRes.text().catch(() => '');
+      throw new Error('Drive folder creation failed ' + createRes.status + ': ' + body.slice(0, 120));
+    }
+    const folder = await createRes.json();
+    folderId = folder.id;
   }
-  const folder = await createRes.json();
-  return folder.id;
+
+  // Cache the folder ID for future sessions
+  try { localStorage.setItem(cacheKey, folderId); } catch(e) {}
+  return folderId;
 }
 
 async function driveFindFile(folderId) {
@@ -5079,22 +5109,23 @@ function importDataTab() {
 // ════════════════════════════════════════════════════════════
 
 // ── SheetJS lazy loader ──────────────────────────────────
-// Load SheetJS + JSZip (needed for DV injection into xlsx zip)
+// Load SheetJS lazily (used for all data exports)
 function _xlLoad(cb) {
-  const loadScript = (src, check, next) => {
-    if (window[check]) { next(); return; }
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = next;
-    document.head.appendChild(s);
-  };
-  loadScript(
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'XLSX',
-    () => loadScript(
-      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip',
-      cb
-    )
-  );
+  if (window.XLSX) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+// Load ExcelJS lazily (used only for template exports — has native DV support)
+function _xlLoadExcelJS(cb) {
+  if (window.ExcelJS) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+  s.onload = cb;
+  s.onerror = () => { console.error('ExcelJS failed to load'); cb(); };
+  document.head.appendChild(s);
 }
 
 // ── Core export utility ──────────────────────────────────
@@ -5387,9 +5418,9 @@ function xlDoExport(id) {
 
 // ── TEMPLATE EXPORT ───────────────────────────────────────
 function xlDoExportTemplate(id) {
-  _xlLoad(async () => {
+  _xlLoadExcelJS(async () => {
+    if (!window.ExcelJS) { xlStatus('ExcelJS failed to load.', true); return; }
     try {
-      const listSheet = xlBuildListsSheet();
       const accounts  = query(`SELECT code,name FROM Account WHERE isActive=1 ORDER BY code`);
       const subAccts  = query(`SELECT sa.code, a.code AS acctCode FROM SubAccount sa JOIN Account a ON sa.accountId=a.id WHERE sa.isActive=1 ORDER BY a.code, sa.code`);
       const acctList  = accounts.map(a => a.code + ' · ' + a.name);
@@ -5483,8 +5514,11 @@ function xlDoExportTemplate(id) {
       if (!dataSheet) return;
 
       // Write workbook with Data Validation XML injection
-      const wb = xlBuildWorkbook([dataSheet, listSheet]);
-      await xlWriteWithDV(wb, dataSheet, filename);
+      // ExcelJS handles the full template including DV and Lists sheet
+      await xlWriteWithDV(
+        dataSheet.name, dataSheet.headers, dataSheet.rows,
+        dataSheet.colWidths, dataSheet.numFmts, dataSheet.dvCols, filename
+      );
       xlStatus('✓ Template downloaded: ' + filename, false);
     } catch(e) {
       xlStatus('Template export failed: ' + e.message, true);
@@ -5493,115 +5527,117 @@ function xlDoExportTemplate(id) {
   });
 }
 
-// ── Write workbook with Data Validation via JSZip XML injection ──
-async function xlWriteWithDV(wb, dataSheet, filename) {
-  const dvCols = dataSheet.dvCols || [];
-
-  if (!dvCols.length || !window.JSZip) {
-    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
-    return;
-  }
-
-  const xmlEsc = s => String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  // Build DV nodes — inline lists only, max 200 items, minimal attributes
-  const dvNodes = dvCols.map(dv => {
-    if (!dv.list || !dv.list.length) return '';
-    const col   = XLSX.utils.encode_col(dv.col);
-    const sqref = `${col}2:${col}10000`;
-    const items = dv.list.slice(0, 200);
-    const vals  = items.map(v => xmlEsc(String(v))).join('","');
-    return `<dataValidation type="list" allowBlank="1" showDropDown="0" sqref="${sqref}"><formula1>"${vals}"</formula1></dataValidation>`;
-  }).filter(Boolean);
-
-  if (!dvNodes.length) {
-    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
-    return;
-  }
-
-  const dvBlock = `<dataValidations count="${dvNodes.length}">${dvNodes.join('')}</dataValidations>`;
-
-  try {
-    // Write to array and open with JSZip
-    const wbArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const zip     = await JSZip.loadAsync(wbArray);
-
-    // Find the correct sheet XML file for the data sheet (not the Lists sheet)
-    // Read workbook.xml to find which rId maps to the data sheet name
-    const wbXml   = await zip.file('xl/workbook.xml')?.async('string') || '';
-    const wbRels  = await zip.file('xl/_rels/workbook.xml.rels')?.async('string') || '';
-
-    // Find sheetId for the data sheet by name
-    const dataName   = dataSheet.name;
-    const sheetMatch = wbXml.match(new RegExp(`<sheet[^>]+name="${dataName}"[^>]+r:id="(rId\\d+)"`, 'i'))
-                    || wbXml.match(new RegExp(`<sheet[^>]+r:id="(rId\\d+)"[^>]+name="${dataName}"`, 'i'));
-    let   sheetFile  = 'xl/worksheets/sheet1.xml'; // fallback
-
-    if (sheetMatch && wbRels) {
-      const rId      = sheetMatch[1];
-      const relMatch = wbRels.match(new RegExp(`Id="${rId}"[^>]+Target="([^"]+)"`, 'i'));
-      if (relMatch) {
-        const target = relMatch[1];
-        sheetFile = target.startsWith('xl/') ? target : 'xl/' + target;
+// ── Write template with Data Validation using ExcelJS ────
+// ExcelJS has native DV support — no XML injection, no JSZip, no guessing.
+// Loaded lazily only when a template is downloaded.
+async function xlWriteWithDV(sheetName, headers, rows, colWidths, numFmts, dvCols, filename) {
+  return new Promise((resolve, reject) => {
+    _xlLoadExcelJS(async () => {
+      if (!window.ExcelJS) {
+        xlStatus('ExcelJS library failed to load. Try again.', true);
+        return resolve();
       }
-    }
+      try {
+        const wb = new ExcelJS.Workbook();
 
-    let sheetXml = await zip.file(sheetFile)?.async('string');
-    if (!sheetXml) {
-      // Fallback: try all sheet files
-      const keys = Object.keys(zip.files).filter(k => /xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort();
-      for (const k of keys) {
-        const xml = await zip.file(k).async('string');
-        // Pick the sheet that doesn't look like a Lists sheet
-        if (!xml.includes('>Account (Display)<') && !xml.includes('>Account Code<')) {
-          sheetXml = xml; sheetFile = k; break;
+        // ── Data sheet ────────────────────────────────────────
+        const ws = wb.addWorksheet(sheetName);
+
+        // Header row — bold, light grey background
+        ws.addRow(headers);
+        ws.getRow(1).eachCell(cell => {
+          cell.font = { bold: true };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        });
+        ws.getRow(1).commit();
+
+        // Data rows (template has 3 blank rows)
+        rows.forEach(r => { ws.addRow(r); ws.lastRow.commit(); });
+
+        // Column widths
+        if (colWidths) {
+          colWidths.forEach((w, i) => { if (ws.columns[i]) ws.columns[i].width = w; });
         }
+
+        // Number formats
+        if (numFmts) {
+          numFmts.forEach(({ col, fmt }) => {
+            for (let r = 2; r <= rows.length + 1; r++) {
+              const cell = ws.getCell(r, col + 1);
+              cell.numFmt = fmt;
+            }
+          });
+        }
+
+        // Data Validation — ExcelJS native, no XML needed
+        if (dvCols) {
+          dvCols.forEach(dv => {
+            if (!dv.list || !dv.list.length) return;
+            const col = dv.col + 1; // ExcelJS is 1-indexed
+            // Build the formulae string: "Val1,Val2,Val3"
+            // ExcelJS requires the outer quotes in the formulae string
+            const vals = dv.list.slice(0, 200)
+              .map(v => String(v).replace(/"/g, '').replace(/,/g, ' '))
+              .join(',');
+            const formulae = [`"${vals}"`];
+            // Apply to every data row (2 to 10001)
+            for (let r = 2; r <= 10001; r++) {
+              ws.getCell(r, col).dataValidation = {
+                type: 'list',
+                allowBlank: true,
+                formulae,
+              };
+            }
+          });
+        }
+
+        // ── Lists reference sheet ─────────────────────────────
+        const accounts    = typeof query === 'function'
+          ? query('SELECT code, name FROM Account WHERE isActive=1 ORDER BY code')
+          : [];
+        const subAccounts = typeof query === 'function'
+          ? query('SELECT sa.code, sa.name, a.code AS acctCode FROM SubAccount sa JOIN Account a ON sa.accountId=a.id WHERE sa.isActive=1 ORDER BY a.code, sa.name')
+          : [];
+        const acctTypes   = ['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'];
+        const subTypes    = typeof query === 'function'
+          ? query('SELECT DISTINCT grouping FROM Account WHERE grouping IS NOT NULL ORDER BY grouping').map(r => r.grouping)
+          : [];
+
+        const listWs = wb.addWorksheet('Lists');
+        listWs.addRow(['Account (Display)','Account Code','Sub-Account (Display)','Sub-Account Code','Account Type','Account Sub-Type']);
+        listWs.getRow(1).eachCell(cell => { cell.font = { bold: true }; });
+        const maxRows = Math.max(accounts.length, subAccounts.length, acctTypes.length, subTypes.length);
+        for (let i = 0; i < maxRows; i++) {
+          listWs.addRow([
+            accounts[i]    ? accounts[i].code + ' · ' + accounts[i].name : '',
+            accounts[i]    ? accounts[i].code : '',
+            subAccounts[i] ? subAccounts[i].acctCode + '/' + subAccounts[i].code + ' · ' + subAccounts[i].name : '',
+            subAccounts[i] ? subAccounts[i].code : '',
+            acctTypes[i]   || '',
+            subTypes[i]    || '',
+          ]);
+        }
+        listWs.columns = [{width:35},{width:15},{width:40},{width:15},{width:18},{width:20}];
+
+        // ── Download ──────────────────────────────────────────
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob   = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url    = URL.createObjectURL(blob);
+        const a      = Object.assign(document.createElement('a'), { href: url, download: filename });
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        xlStatus('✓ Template downloaded: ' + filename, false);
+        resolve();
+
+      } catch(e) {
+        xlStatus('Template export failed: ' + e.message, true);
+        console.error('xlWriteWithDV ExcelJS error:', e);
+        resolve();
       }
-    }
-
-    if (!sheetXml) throw new Error('Could not locate data sheet XML in workbook');
-
-    // ── DIAGNOSTIC: show exact XML so we can verify injection point ──
-    console.log('[xlWriteWithDV] sheetFile:', sheetFile);
-    console.log('[xlWriteWithDV] sheetXml length:', sheetXml.length);
-    console.log('[xlWriteWithDV] sheetXml tail (last 200 chars):', JSON.stringify(sheetXml.slice(-200)));
-    console.log('[xlWriteWithDV] contains </worksheet>:', sheetXml.includes('</worksheet>'));
-    console.log('[xlWriteWithDV] lastIndexOf </worksheet>:', sheetXml.lastIndexOf('</worksheet>'));
-    console.log('[xlWriteWithDV] zip files:', Object.keys(zip.files).join(', '));
-
-    // Validate the sheet XML before modifying
-    if (!sheetXml.includes('</worksheet>')) {
-      throw new Error('Sheet XML does not end with </worksheet> — unexpected format');
-    }
-
-    // Remove any existing dataValidations, then inject before </worksheet>
-    let modified = sheetXml
-      .replace(/<dataValidations[^/]*\/>/g, '')              // self-closing
-      .replace(/<dataValidations[\s\S]*?<\/dataValidations>/g, ''); // block
-
-    // Insert before the LAST </worksheet> occurrence
-    const lastIdx = modified.lastIndexOf('</worksheet>');
-    modified = modified.slice(0, lastIdx) + dvBlock + '</worksheet>';
-
-    zip.file(sheetFile, modified);
-
-    // Download
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-    const url  = URL.createObjectURL(blob);
-    const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-
-  } catch(e) {
-    console.error('xlWriteWithDV failed, falling back to plain write:', e.message);
-    // Fall back to plain xlsx without DV rather than producing a corrupt file
-    XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary' });
-    xlStatus('Template downloaded without dropdowns (XML injection failed: ' + e.message + ')', true);
-  }
+    });
+  });
 }
 
 // ── IMPORT HANDLER ────────────────────────────────────────
