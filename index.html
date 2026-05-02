@@ -29,7 +29,9 @@
     #sidebar.collapsed { width: 3.5rem; }
     #sidebar.collapsed .nav-label,
     #sidebar.collapsed .group-label,
-    #sidebar.collapsed .user-info { display: none; }
+    #sidebar.collapsed .user-info,
+    #sidebar.collapsed #userName,
+    #sidebar.collapsed #userEmail { display: none; }
     .nav-btn.active { background-color: rgb(51 65 85); color: white; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin-anim { animation: spin 0.8s linear infinite; }
@@ -162,7 +164,8 @@
   <!-- SIDEBAR -->
   <div id="sidebar" class="bg-slate-900 text-white flex flex-col h-screen sticky top-0 flex-shrink-0 w-56">
 
-    <div class="flex items-center justify-between px-4 py-4 border-b border-slate-700 flex-shrink-0">
+    <!-- Top: App title + hamburger + avatar/settings -->
+    <div class="flex items-center justify-between px-3 py-3 border-b border-slate-700 flex-shrink-0">
       <span class="nav-label font-bold text-slate-100 text-base">Finance</span>
       <button onclick="toggleSidebar()" class="text-slate-400 hover:text-white p-1 rounded flex-shrink-0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -171,87 +174,69 @@
       </button>
     </div>
 
+    <!-- Avatar + user info + settings -->
+    <div id="sidebarUser" class="flex-shrink-0 px-3 py-2.5 border-b border-slate-700">
+      <div class="flex items-center gap-2 min-w-0">
+        <div id="userAvatar" class="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white"></div>
+        <div class="user-info min-w-0 flex-1">
+          <div id="userName" class="text-xs font-medium text-slate-300 truncate"></div>
+          <div id="userEmail" class="text-xs text-slate-500 truncate"></div>
+        </div>
+        <button onclick="navigate('settings')" data-page="settings" title="Settings"
+          class="nav-btn flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button onclick="signOut()" title="Sign out"
+          class="user-info flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+
     <nav class="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-      <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-2 pb-1">Review</div>
+
+      <!-- ── REVIEW ── -->
+      <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-1 pb-1">Review</div>
+
       <button onclick="navigate('dashboard')" data-page="dashboard" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         <span class="nav-label">Dashboard</span>
       </button>
-      <button onclick="navigate('projected-bs')" data-page="projected-bs" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-        <span class="nav-label">Projected BS</span>
-      </button>
-      <button onclick="navigate('account-inquiry')" data-page="account-inquiry" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span class="nav-label">Account Inquiry</span>
-      </button>
-      <button onclick="navigate('credit-cards')" data-page="credit-cards" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-        <span class="nav-label">Credit Card Tracker</span>
-      </button>
-      <button onclick="navigate('bank-accounts')" data-page="bank-accounts" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><polyline points="16 3 12 7 8 3"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-        <span class="nav-label">Bank Account Tracker</span>
+
+      <button onclick="navigate('financial-statements')" data-page="financial-statements" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="nav-label">Financial Statements</span>
       </button>
 
+      <button onclick="navigate('account-tracker')" data-page="account-tracker" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span class="nav-label">Account Tracker</span>
+      </button>
+
+      <button onclick="navigate('review-equity')" data-page="review-equity" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        <span class="nav-label">Equity</span>
+      </button>
+
+      <!-- ── TRANSACT ── -->
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
+
       <button onclick="navigate('transactions')" data-page="transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
         <span class="nav-label">Transactions</span>
       </button>
-      <button onclick="navigate('import-transactions')" data-page="import-transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M9 10l3-3 3 3"/><path d="M12 7v6"/></svg>
-        <span class="nav-label">Import Transactions</span>
-      </button>
-      <button onclick="navigate('future-transactions')" data-page="future-transactions" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span class="nav-label">Future Transactions</span>
-      </button>
+
       <button onclick="navigate('budget')" data-page="budget" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span class="nav-label">Budget</span>
       </button>
-      <button onclick="navigate('duplicates')" data-page="duplicates" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <span class="nav-label">Duplicates</span>
-      </button>
-      <button onclick="navigate('equity')" data-page="equity" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+
+      <button onclick="navigate('transact-equity')" data-page="transact-equity" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-        <span class="nav-label">US Equity</span>
+        <span class="nav-label">Equity</span>
       </button>
 
-      <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Manage</div>
-      <button onclick="navigate('pl')" data-page="pl" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        <span class="nav-label">P&amp;L</span>
-      </button>
-      <button onclick="navigate('balance-sheet')" data-page="balance-sheet" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        <span class="nav-label">Balance Sheet</span>
-      </button>
-      <button onclick="navigate('accruals')" data-page="accruals" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <span class="nav-label">Accruals</span>
-      </button>
     </nav>
-
-    <!-- Bottom: Settings + user -->
-    <div class="border-t border-slate-700 p-2 flex-shrink-0 space-y-1">
-      <button onclick="navigate('settings')" data-page="settings" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="nav-label">Settings</span>
-      </button>
-      <div id="sidebarUser" class="px-2 py-2 rounded-md">
-        <div class="flex items-center gap-2 min-w-0">
-          <div id="userAvatar" class="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white"></div>
-          <div class="user-info min-w-0 flex-1">
-            <div id="userName" class="text-xs font-medium text-slate-300 truncate"></div>
-            <div id="userEmail" class="text-xs text-slate-500 truncate"></div>
-          </div>
-        </div>
-        <button onclick="signOut()" class="user-info mt-2 w-full text-left text-xs text-slate-500 hover:text-slate-300">Sign out</button>
-      </div>
-    </div>
   </div><!-- /sidebar -->
 
   <!-- MAIN CONTENT -->
@@ -1672,21 +1657,29 @@ function navigate(page) {
     b.classList.toggle('active', b.dataset.page === page);
   });
   const container = document.getElementById('pageContent');
-  if (page === 'dashboard')         renderDashboard(container);
-  else if (page === 'transactions')        renderTransactions(container);
-  else if (page === 'future-transactions') renderFutureTransactions(container);
-  else if (page === 'pl')                  renderPL(container);
-  else if (page === 'balance-sheet')       renderBS(container);
-  else if (page === 'projected-bs')        renderProjectedBS(container);
-  else if (page === 'budget')              renderBudget(container);
-  else if (page === 'account-inquiry')     renderAI(container);
-  else if (page === 'settings')            renderSettings(container);
-  else if (page === 'credit-cards')        renderCreditCards(container);
-  else if (page === 'bank-accounts')       renderBankAccounts(container);
-  else if (page === 'import-transactions') renderImportTransactions(container);
-  else if (page === 'duplicates')          renderDuplicates(container);
-  else if (page === 'accruals')            renderAccruals(container);
-  else if (page === 'equity')              renderEquity(container);
+  if (page === 'dashboard')               renderDashboard(container);
+  // ── Review composite pages ──────────────────────────────
+  else if (page === 'financial-statements') renderFinancialStatements(container);
+  else if (page === 'account-tracker')      renderAccountTracker(container);
+  else if (page === 'review-equity')        renderReviewEquity(container);
+  // ── Transact pages ───────────────────────────────────────
+  else if (page === 'transactions')         renderTransactions(container);
+  else if (page === 'budget')               renderBudget(container);
+  else if (page === 'transact-equity')      renderTransactEquity(container);
+  // ── Settings ─────────────────────────────────────────────
+  else if (page === 'settings')             renderSettings(container);
+  // ── Legacy direct routes (deep links / existing code) ────
+  else if (page === 'future-transactions')  renderFutureTransactions(container);
+  else if (page === 'import-transactions')  renderImportTransactions(container);
+  else if (page === 'pl')                   renderPL(container);
+  else if (page === 'balance-sheet')        renderBS(container);
+  else if (page === 'projected-bs')         renderProjectedBS(container);
+  else if (page === 'account-inquiry')      renderAI(container);
+  else if (page === 'credit-cards')         renderCreditCards(container);
+  else if (page === 'bank-accounts')        renderBankAccounts(container);
+  else if (page === 'duplicates')           renderDuplicates(container);
+  else if (page === 'accruals')             renderAccruals(container);
+  else if (page === 'equity')               renderTransactEquity(container); // old key → new page
   else renderPlaceholder(container, page);
 }
 
@@ -1694,6 +1687,244 @@ function toggleSidebar() {
   sidebarCollapsed = !sidebarCollapsed;
   localStorage.setItem('sidebar-collapsed', sidebarCollapsed ? 'true' : 'false');
   document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+}
+
+// ════════════════════════════════════════════════════════════
+// COMPOSITE PAGES — tab wrappers over existing render fns
+// ════════════════════════════════════════════════════════════
+
+// ── Tab bar helper (shared by all composite pages) ──────────
+function _pageTabBar(tabs, activeId, onClickFn) {
+  return `<div class="flex border-b border-slate-200 overflow-x-auto bg-white">
+    ${tabs.map(({id, label}) => `
+      <button onclick="${onClickFn}('${id}')"
+        class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0
+          ${activeId === id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+        ${label}
+      </button>`).join('')}
+  </div>`;
+}
+
+// ── Financial Statements ─────────────────────────────────────
+// Tabs: P&L | Balance Sheet | Projected Balance Sheet
+let _fsTab = localStorage.getItem('_fsTab') || 'pl';
+function renderFinancialStatements(container) {
+  _fsTab = localStorage.getItem('_fsTab') || 'pl';
+  _renderFSPage(container);
+}
+function _renderFSPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-col h-full';
+  const tabs = [
+    { id: 'pl',           label: 'P&L' },
+    { id: 'balance-sheet',label: 'Balance Sheet' },
+    { id: 'projected-bs', label: 'Projected Balance Sheet' },
+  ];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'flex-shrink-0';
+  tabBar.innerHTML = _pageTabBar(tabs, _fsTab, 'fsSetTab');
+  const content = document.createElement('div');
+  content.id = 'fsContent';
+  content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(tabBar);
+  wrap.appendChild(content);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+  _renderFSContent();
+}
+function _renderFSContent() {
+  const c = document.getElementById('fsContent');
+  if (!c) return;
+  if      (_fsTab === 'pl')           renderPL(c);
+  else if (_fsTab === 'balance-sheet') renderBS(c);
+  else if (_fsTab === 'projected-bs')  renderProjectedBS(c);
+}
+function fsSetTab(tab) {
+  _fsTab = tab;
+  localStorage.setItem('_fsTab', tab);
+  const tabs = [
+    { id: 'pl', label: 'P&L' },
+    { id: 'balance-sheet', label: 'Balance Sheet' },
+    { id: 'projected-bs', label: 'Projected Balance Sheet' },
+  ];
+  // Re-render just the tab bar highlight
+  const barEl = document.querySelector('#fsContent')?.previousElementSibling;
+  if (barEl) barEl.innerHTML = _pageTabBar(tabs, _fsTab, 'fsSetTab');
+  _renderFSContent();
+}
+
+// ── Account Tracker ──────────────────────────────────────────
+// Tabs: Credit Card Tracker | Bank Account Tracker | Account Inquiry | Accruals
+let _atTab = localStorage.getItem('_atTab') || 'credit-cards';
+function renderAccountTracker(container) {
+  _atTab = localStorage.getItem('_atTab') || 'credit-cards';
+  _renderATPage(container);
+}
+function _renderATPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-col h-full';
+  const tabs = [
+    { id: 'credit-cards',    label: 'Credit Card Tracker' },
+    { id: 'bank-accounts',   label: 'Bank Account Tracker' },
+    { id: 'account-inquiry', label: 'Account Inquiry' },
+    { id: 'accruals',        label: 'Accruals' },
+  ];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'flex-shrink-0';
+  tabBar.innerHTML = _pageTabBar(tabs, _atTab, 'atSetTab');
+  const content = document.createElement('div');
+  content.id = 'atContent';
+  content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(tabBar);
+  wrap.appendChild(content);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+  _renderATContent();
+}
+function _renderATContent() {
+  const c = document.getElementById('atContent');
+  if (!c) return;
+  if      (_atTab === 'credit-cards')    renderCreditCards(c);
+  else if (_atTab === 'bank-accounts')   renderBankAccounts(c);
+  else if (_atTab === 'account-inquiry') renderAI(c);
+  else if (_atTab === 'accruals')        renderAccruals(c);
+}
+function atSetTab(tab) {
+  _atTab = tab;
+  localStorage.setItem('_atTab', tab);
+  const tabs = [
+    { id: 'credit-cards',    label: 'Credit Card Tracker' },
+    { id: 'bank-accounts',   label: 'Bank Account Tracker' },
+    { id: 'account-inquiry', label: 'Account Inquiry' },
+    { id: 'accruals',        label: 'Accruals' },
+  ];
+  const barEl = document.querySelector('#atContent')?.previousElementSibling;
+  if (barEl) barEl.innerHTML = _pageTabBar(tabs, _atTab, 'atSetTab');
+  _renderATContent();
+}
+
+// ── Review Equity (Summary only) ─────────────────────────────
+function renderReviewEquity(container) {
+  if (!container) container = document.getElementById('pageContent');
+  // Force summary tab and render the equity page
+  equityTab     = 'summary';
+  equitySortCol = 'ticker';
+  equitySortDir = 1;
+  _renderEquityPage(container);
+  // After render, hide the lots/closed tabs — this is summary-only view
+  // The equity page tab bar is inside a .flex.border-b div; hide non-summary tabs
+  // We add a note to the header instead of hiding tabs (they may still be useful)
+}
+
+// ── Transact Equity ───────────────────────────────────────────
+// Tabs: Transactions (lots with on hand) | Closed Lots | Dividends
+let _teTab = localStorage.getItem('_teTab') || 'lots';
+function renderTransactEquity(container) {
+  _teTab = localStorage.getItem('_teTab') || 'lots';
+  equityTab     = _teTab === 'lots' ? 'lots' : _teTab === 'closedlots' ? 'closedlots' : 'lots';
+  equitySortCol = 'ticker';
+  equitySortDir = 1;
+  _renderTEPage(container);
+}
+function _renderTEPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-col h-full';
+  const tabs = [
+    { id: 'lots',       label: 'Lots with On Hand' },
+    { id: 'closedlots', label: 'Closed Lots' },
+    { id: 'dividends',  label: 'Dividends' },
+  ];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'flex-shrink-0';
+  tabBar.innerHTML = _pageTabBar(tabs, _teTab, 'teSetTab');
+  const content = document.createElement('div');
+  content.id = 'teContent';
+  content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(tabBar);
+  wrap.appendChild(content);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+  _renderTEContent();
+}
+function _renderTEContent() {
+  const c = document.getElementById('teContent');
+  if (!c) return;
+  if (_teTab === 'dividends') {
+    c.innerHTML = `<div class="p-8 text-center text-slate-400 text-sm">Dividends feature coming soon.</div>`;
+  } else {
+    equityTab = _teTab;
+    _renderEquityPage(c);
+    // After equity renders, strip its outer tab bar to avoid double tabs
+    const innerTabBar = c.querySelector('.flex.border-b.border-slate-200');
+    if (innerTabBar) innerTabBar.style.display = 'none';
+  }
+}
+function teSetTab(tab) {
+  _teTab = tab;
+  localStorage.setItem('_teTab', tab);
+  const tabs = [
+    { id: 'lots',       label: 'Lots with On Hand' },
+    { id: 'closedlots', label: 'Closed Lots' },
+    { id: 'dividends',  label: 'Dividends' },
+  ];
+  const barEl = document.querySelector('#teContent')?.previousElementSibling;
+  if (barEl) barEl.innerHTML = _pageTabBar(tabs, _teTab, 'teSetTab');
+  _renderTEContent();
+}
+
+// ── Transactions composite page ──────────────────────────────
+// Tabs: Transactions | Future Transactions | Import Transactions | Duplicates
+let _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
+
+function renderTransactions(container) {
+  _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
+  _renderTxComboPage(container);
+}
+function _renderTxComboPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-col h-full';
+  const tabs = [
+    { id: 'transactions',        label: 'Transactions' },
+    { id: 'future-transactions', label: 'Future Transactions' },
+    { id: 'import-transactions', label: 'Import Transactions' },
+    { id: 'duplicates',          label: 'Duplicates' },
+  ];
+  const tabBar = document.createElement('div');
+  tabBar.className = 'flex-shrink-0';
+  tabBar.innerHTML = _pageTabBar(tabs, _txComboTab, 'txComboSetTab');
+  const content = document.createElement('div');
+  content.id = 'txComboContent';
+  content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(tabBar);
+  wrap.appendChild(content);
+  container.innerHTML = '';
+  container.appendChild(wrap);
+  _renderTxComboContent();
+}
+function _renderTxComboContent() {
+  const c = document.getElementById('txComboContent');
+  if (!c) return;
+  if      (_txComboTab === 'transactions')        _renderTransactionsInner(c);
+  else if (_txComboTab === 'future-transactions') renderFutureTransactions(c);
+  else if (_txComboTab === 'import-transactions') renderImportTransactions(c);
+  else if (_txComboTab === 'duplicates')          renderDuplicates(c);
+}
+function txComboSetTab(tab) {
+  _txComboTab = tab;
+  localStorage.setItem('_txComboTab', tab);
+  const tabs = [
+    { id: 'transactions',        label: 'Transactions' },
+    { id: 'future-transactions', label: 'Future Transactions' },
+    { id: 'import-transactions', label: 'Import Transactions' },
+    { id: 'duplicates',          label: 'Duplicates' },
+  ];
+  const barEl = document.querySelector('#txComboContent')?.previousElementSibling;
+  if (barEl) barEl.innerHTML = _pageTabBar(tabs, _txComboTab, 'txComboSetTab');
+  _renderTxComboContent();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2128,7 +2359,7 @@ function buildTxWhere(f) {
   return parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 }
 
-function renderTransactions(container) {
+function _renderTransactionsInner(container) {
   txPage   = 0;
   txEditId = null;
   // Fire-and-forget on-load tasks (errors silently swallowed)
