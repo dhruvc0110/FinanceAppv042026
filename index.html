@@ -596,10 +596,15 @@ async function handleCreateNewDatabase() {
   try {
     setStatus('Creating blank database…');
 
-    // Create a fresh blank SQL.js database
+    // Create a fresh blank SQL.js database.
+    // sql.js exports 0 bytes until at least one write has occurred,
+    // which causes Drive's size verification to fail.
+    // Force the SQLite file header to initialise with a trivial write.
     db = new SQL.Database();
+    db.run('CREATE TABLE IF NOT EXISTS _init (id INTEGER PRIMARY KEY)');
+    db.run('DROP TABLE IF EXISTS _init');
 
-    // Export immediately — startApp() will add all tables on first run
+    // Export — now has a valid SQLite header (minimum 4096 bytes)
     const uint8 = db.export();
 
     setStatus('Uploading to Google Drive…');
