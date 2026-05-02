@@ -1276,6 +1276,8 @@ function startApp() {
       dateFormat TEXT,
       amountConvention TEXT NOT NULL DEFAULT 'negative-charges',
       excludePending INTEGER NOT NULL DEFAULT 1,
+      paymentKeywords TEXT,
+      refundKeywords TEXT,
       customNotes TEXT,
       extractionPrompt TEXT,
       fingerprintData TEXT,
@@ -1300,8 +1302,11 @@ function startApp() {
       date TEXT,
       description TEXT,
       amount REAL,
+      txnType TEXT NOT NULL DEFAULT 'charge',
+      suggestedDrAccountId TEXT,
       suggestedCrAccountId TEXT,
       drAccountId TEXT,
+      crAccountId TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       rawExtracted TEXT,
       createdAt TEXT NOT NULL
@@ -1326,6 +1331,14 @@ function startApp() {
       updatedAt TEXT NOT NULL
     )`);
   } catch(e) { console.warn('AppSettings init:', e.message); }
+
+  // Migrations for new ScreenshotTemplate and DraftTransaction columns
+  ['paymentKeywords','refundKeywords'].forEach(col => {
+    try { db.run(`ALTER TABLE ScreenshotTemplate ADD COLUMN ${col} TEXT`); } catch(e) {}
+  });
+  ['txnType','suggestedDrAccountId','crAccountId'].forEach(col => {
+    try { db.run(`ALTER TABLE DraftTransaction ADD COLUMN ${col} TEXT`); } catch(e) {}
+  });
 
   navigate('dashboard');
 }
@@ -5721,16 +5734,24 @@ function _renderITPage(container) {
         const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY date ASC`);
         const allHaveDr = drafts.every(d => d.drAccountId);
         const rows = drafts.map(d => {
-          const crAcct = d.suggestedCrAccountId ? query(`SELECT name FROM Account WHERE id='${d.suggestedCrAccountId}'`)[0] : null;
-          const drAcct = d.drAccountId ? query(`SELECT name FROM Account WHERE id='${d.drAccountId}'`)[0] : null;
+          const crAcct  = d.crAccountId ? query(`SELECT name FROM Account WHERE id='${d.crAccountId}'`)[0] : null;
+          const drAcct  = d.drAccountId ? query(`SELECT name FROM Account WHERE id='${d.drAccountId}'`)[0] : null;
+          const txnType = d.txnType || 'charge';
+          const typeBadge = txnType === 'payment'
+            ? `<span class="text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5 font-medium">Payment</span>`
+            : txnType === 'refund'
+            ? `<span class="text-xs bg-green-100 text-green-700 rounded px-1.5 py-0.5 font-medium">Refund</span>`
+            : `<span class="text-xs bg-slate-100 text-slate-500 rounded px-1.5 py-0.5">Charge</span>`;
+
           return `<tr class="border-t border-slate-100 hover:bg-slate-50" id="itRow-${d.id}">
+            <td class="px-3 py-2">${typeBadge}</td>
             <td class="px-3 py-2">
               <input type="date" value="${d.date||''}" onchange="itUpdateDraft('${d.id}','date',this.value)"
                 class="text-sm border border-slate-200 rounded px-1.5 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-slate-400">
             </td>
             <td class="px-3 py-2">
               <input type="text" value="${escHtml(d.description||'')}" onchange="itUpdateDraft('${d.id}','description',this.value)"
-                class="text-sm border border-slate-200 rounded px-1.5 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                class="text-sm border border-slate-200 rounded px-1.5 py-1 w-44 focus:outline-none focus:ring-1 focus:ring-slate-400">
             </td>
             <td class="px-3 py-2">
               <input type="number" step="0.01" value="${d.amount||''}" onchange="itUpdateDraft('${d.id}','amount',this.value)"
@@ -5743,9 +5764,15 @@ function _renderITPage(container) {
                 ${cardAccts.map(a=>`<option value="${a.id}" ${d.drAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('')}
               </select>
             </td>
-            <td class="px-3 py-2 text-sm text-slate-500">${escHtml(crAcct?crAcct.name:'—')}</td>
+            <td class="px-3 py-2">
+              <select onchange="itSetCrAccount('${d.id}',this.value)"
+                class="text-sm border ${crAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-44 focus:outline-none focus:ring-1 focus:ring-slate-400">
+                <option value="">— CR Account —</option>
+                ${cardAccts.map(a=>`<option value="${a.id}" ${d.crAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('')}
+              </select>
+            </td>
             <td class="px-3 py-2 whitespace-nowrap">
-              <button onclick="itApproveDraft('${d.id}')" ${d.drAccountId?'':'disabled'}
+              <button onclick="itApproveDraft('${d.id}')" ${(d.drAccountId&&d.crAccountId)?'':'disabled'}
                 class="text-xs font-medium px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 mr-1 disabled:opacity-40 disabled:cursor-not-allowed">✓</button>
               <button onclick="itRejectDraft('${d.id}')"
                 class="text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">✗</button>
@@ -5758,19 +5785,20 @@ function _renderITPage(container) {
               <span class="text-sm font-semibold text-slate-800">${escHtml(batch.detectedCardName||batch.tplName||'Unknown Card')}</span>
               <span class="text-xs text-slate-400 ml-2">${fmtDate(batch.createdAt)} · ${batch.rowCount} transactions</span>
             </div>
-            <button onclick="itApproveAll('${batch.id}')" ${allHaveDr?'':'disabled title="All rows need a DR account"'}
+            <button onclick="itApproveAll('${batch.id}')" ${(allHaveDr && drafts.every(d=>d.crAccountId))?'':'disabled title="All rows need DR and CR accounts"'}
               class="text-xs font-medium px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
               Approve All
             </button>
           </div>
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[680px]">
+            <table class="w-full min-w-[900px]">
               <thead class="bg-slate-50 border-b border-slate-200"><tr>
+                <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Type</th>
                 <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
                 <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
                 <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">DR Account <span class="text-red-400">*</span></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">CR Account</th>
+                <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">CR Account <span class="text-red-400">*</span></th>
                 <th class="px-3 py-2"></th>
               </tr></thead>
               <tbody>${rows||'<tr><td colspan="6" class="px-3 py-6 text-sm text-slate-400 text-center">All transactions reviewed.</td></tr>'}</tbody>
@@ -5858,6 +5886,16 @@ function _renderITPage(container) {
             <div class="col-span-2 flex items-center gap-2">
               <input type="checkbox" id="itTplExclPending" checked class="w-4 h-4 accent-slate-700">
               <label for="itTplExclPending" class="text-sm text-slate-700">Exclude pending transactions</label>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Payment keywords <span class="text-slate-400">(comma-separated — how payments appear in your app)</span></label>
+              <input id="itTplPaymentKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+                placeholder="e.g. Payment Thank You, AUTOPAY, Online Payment">
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs text-slate-500 mb-1">Refund keywords <span class="text-slate-400">(comma-separated — how refunds/credits appear)</span></label>
+              <input id="itTplRefundKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+                placeholder="e.g. RETURN, CREDIT, REFUND, Reversal">
             </div>
             <div class="col-span-2">
               <label class="block text-xs text-slate-500 mb-1">Extra instructions for Claude <span class="text-slate-400">(optional)</span></label>
@@ -6163,14 +6201,46 @@ async function itHandleScreenshot(input) {
     db.run(`INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,createdAt,updatedAt)
       VALUES ('${batchId}',${template?`'${template.id}'`:'NULL'},'${cardName.replace(/'/g,"''")}','pending',${transactions.length},0,0,'${now}','${now}')`);
 
+    // Get card payment account for payment entries
+    let paymentAccountId = null;
+    if (template?.creditCardId) {
+      const ccFull = query(`SELECT paymentAccountId FROM CreditCard WHERE id='${template.creditCardId}'`)[0];
+      if (ccFull) paymentAccountId = ccFull.paymentAccountId;
+    }
+
     for (const tx of transactions) {
-      const draftId = genId();
-      const desc = (tx.description||'').replace(/'/g,"''");
-      const date = tx.date || '';
-      const amt  = isNaN(+tx.amount) ? 0 : Math.abs(+tx.amount);
-      const raw  = JSON.stringify(tx).replace(/'/g,"''");
-      db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,suggestedCrAccountId,drAccountId,status,rawExtracted,createdAt)
-        VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},${suggestedCrId?`'${suggestedCrId}'`:'NULL'},NULL,'pending','${raw}','${now}')`);
+      const draftId  = genId();
+      const desc     = (tx.description||'').replace(/'/g,"''");
+      const date     = tx.date || '';
+      const amt      = isNaN(+tx.amount) ? 0 : Math.abs(+tx.amount);
+      const raw      = JSON.stringify(tx).replace(/'/g,"''");
+      const txnType  = tx.txnType || 'charge';
+
+      // ── Accounting logic by transaction type ──────────────
+      // CHARGE:  DR = expense (from merchant history or blank)  CR = card liability
+      // PAYMENT: DR = card liability                            CR = payment account
+      // REFUND:  DR = card liability                            CR = expense (from merchant history or blank)
+
+      let sugDr = null;
+      let sugCr = null;
+
+      if (txnType === 'payment') {
+        sugDr = suggestedCrId;      // card liability (reduces what you owe)
+        sugCr = paymentAccountId;   // bank account payment came from
+      } else if (txnType === 'refund') {
+        sugDr = suggestedCrId;      // card liability (reduces what you owe)
+        sugCr = _itLookupMerchantAccount(tx.description);  // reverse the original expense
+      } else {
+        // charge — look up merchant history for DR account
+        sugDr = _itLookupMerchantAccount(tx.description);
+        sugCr = suggestedCrId;      // card liability
+      }
+
+      db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
+        VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},'${txnType}',
+          ${sugDr?`'${sugDr}'`:'NULL'},${sugCr?`'${sugCr}'`:'NULL'},
+          ${sugDr?`'${sugDr}'`:'NULL'},${sugCr?`'${sugCr}'`:'NULL'},
+          'pending','${raw}','${now}')`);
     }
     syncAfterWrite();
 
@@ -6189,33 +6259,81 @@ async function itHandleScreenshot(input) {
 function _itBuildPrompt(tpl) {
   const dateHint  = tpl?.dateFormat && tpl.dateFormat !== 'auto' ? `Dates are in ${tpl.dateFormat} format. ` : '';
   const amtHint   = tpl?.amountConvention === 'positive-charges'
-    ? 'Amounts are positive numbers for charges. '
-    : 'Amounts may be negative for charges — return the absolute value. ';
+    ? 'Charges show as positive amounts. Payments and refunds show as negative. '
+    : 'Charges show as negative amounts. Payments and refunds show as positive. ';
   const pendHint  = tpl?.excludePending ? 'Exclude any pending or unposted transactions. ' : '';
+  const payKws    = (tpl?.paymentKeywords || '').trim();
+  const refKws    = (tpl?.refundKeywords  || '').trim();
+  const payHint   = payKws ? `A transaction is a PAYMENT if its description contains any of these (case-insensitive): ${payKws}. ` : '';
+  const refHint   = refKws ? `A transaction is a REFUND if its description contains any of these (case-insensitive): ${refKws}. ` : '';
+  const typeHint  = (payHint || refHint)
+    ? `Classify each transaction as one of: "charge" (normal purchase), "payment" (paying the credit card bill), or "refund" (merchant credit/return). ${payHint}${refHint}All other transactions are "charge". `
+    : 'Set txnType to "charge" for all transactions unless you can clearly identify a payment or refund. ';
   const custHint  = tpl?.customNotes ? tpl.customNotes + ' ' : '';
-  return `Extract all transactions from this credit card screenshot. ${dateHint}${amtHint}${pendHint}${custHint}Return ONLY a JSON array, no other text, in this format: [{"date":"YYYY-MM-DD","description":"merchant name","amount":12.34}]. If the year is not shown assume current year. Return [] if no transactions are visible.`;
+  return `Extract all transactions from this credit card screenshot. ${dateHint}${amtHint}${pendHint}${typeHint}${custHint}` +
+    `Return ONLY a valid JSON array with no other text, in this exact format: ` +
+    `[{"date":"YYYY-MM-DD","description":"merchant name","amount":12.34,"txnType":"charge"}]. ` +
+    `Rules: amount is always a positive number. If year is not shown assume ${new Date().getFullYear()}. ` +
+    `Return [] if no transactions are visible.`;
+}
+
+// Look up the most recently used DR account for a given merchant description
+// by searching posted transactions. Uses a simple word-overlap match.
+function _itLookupMerchantAccount(description) {
+  if (!description) return null;
+  try {
+    // Normalise: uppercase, strip special chars, split to words ≥3 chars
+    const words = description.toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/).filter(w => w.length >= 3);
+    if (!words.length) return null;
+
+    // Try progressively: exact phrase → any two words → any one word
+    const searches = [
+      `'%${description.replace(/'/g,"''").toUpperCase()}%'`,
+      ...words.slice(0,2).map(w => `'%${w}%'`),
+      `'%${words[0]}%'`
+    ];
+
+    for (const like of searches) {
+      const row = query(
+        `SELECT drAccountId FROM "Transaction"
+         WHERE importSource='screenshot'
+           AND UPPER(description) LIKE ${like}
+           AND drAccountId IS NOT NULL
+         ORDER BY trxDate DESC LIMIT 1`
+      )[0];
+      if (row?.drAccountId) return row.drAccountId;
+    }
+
+    // Also check non-screenshot transactions for broader history
+    for (const like of searches) {
+      const row = query(
+        `SELECT drAccountId FROM "Transaction"
+         WHERE UPPER(description) LIKE ${like}
+           AND drAccountId IS NOT NULL
+         ORDER BY trxDate DESC LIMIT 1`
+      )[0];
+      if (row?.drAccountId) return row.drAccountId;
+    }
+  } catch(e) { /* non-fatal */ }
+  return null;
 }
 
 function _itParseModelOutput(raw, tpl) {
-  // Try to extract JSON array from model response
   try {
-    // Strip any markdown code fences
     let cleaned = raw.replace(/```json|```/g, '').trim();
-    // Find the first [ and last ]
     const start = cleaned.indexOf('[');
     const end   = cleaned.lastIndexOf(']');
     if (start === -1 || end === -1) return [];
-    const jsonStr = cleaned.slice(start, end + 1);
-    const parsed  = JSON.parse(jsonStr);
+    const parsed = JSON.parse(cleaned.slice(start, end + 1));
     if (!Array.isArray(parsed)) return [];
-
     const currentYear = new Date().getFullYear();
     return parsed
       .filter(tx => tx && (tx.description || tx.amount))
       .map(tx => ({
         date:        _itNormalizeDate(tx.date || tx.Date || '', currentYear, tpl?.dateFormat),
         description: String(tx.description || tx.Description || tx.merchant || '').trim(),
-        amount:      Math.abs(parseFloat(tx.amount || tx.Amount || 0)) || 0
+        amount:      Math.abs(parseFloat(tx.amount || tx.Amount || 0)) || 0,
+        txnType:     ['charge','payment','refund'].includes(tx.txnType) ? tx.txnType : 'charge',
       }))
       .filter(tx => tx.amount > 0);
   } catch(e) {
@@ -6261,13 +6379,18 @@ function itUpdateDraft(draftId, field, value) {
 function itSetDrAccount(draftId, acctId) {
   db.run(`UPDATE DraftTransaction SET drAccountId=${acctId?`'${acctId}'`:'NULL'} WHERE id='${draftId}'`);
   syncAfterWrite();
-  // Re-render just the approve button state
+  _renderITPage();
+}
+
+function itSetCrAccount(draftId, acctId) {
+  db.run(`UPDATE DraftTransaction SET crAccountId=${acctId?`'${acctId}'`:'NULL'} WHERE id='${draftId}'`);
+  syncAfterWrite();
   _renderITPage();
 }
 
 function itApproveDraft(draftId) {
   const d = query(`SELECT * FROM DraftTransaction WHERE id='${draftId}'`)[0];
-  if (!d || !d.drAccountId) return;
+  if (!d || !d.drAccountId || !d.crAccountId) return;
 
   const now    = new Date().toISOString();
   const txId   = genId();
@@ -6277,7 +6400,7 @@ function itApproveDraft(draftId) {
   const amt    = parseFloat(d.amount)||0;
 
   db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
-    VALUES ('${txId}','${date}','${period}','${desc}',${amt},'${d.drAccountId}','${d.suggestedCrAccountId}',NULL,NULL,NULL,0,'screenshot','${now}','${now}')`);
+    VALUES ('${txId}','${date}','${period}','${desc}',${amt},'${d.drAccountId}','${d.crAccountId}',NULL,NULL,NULL,0,'screenshot','${now}','${now}')`);
 
   db.run(`UPDATE DraftTransaction SET status='approved' WHERE id='${draftId}'`);
   _itCheckBatchComplete(d.batchId);
@@ -6294,7 +6417,7 @@ function itRejectDraft(draftId) {
 }
 
 function itApproveAll(batchId) {
-  const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batchId}' AND status='pending' AND drAccountId IS NOT NULL`);
+  const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batchId}' AND status='pending' AND drAccountId IS NOT NULL AND crAccountId IS NOT NULL`);
   for (const d of drafts) itApproveDraft(d.id);
 }
 
@@ -6325,6 +6448,8 @@ function itNewTemplate() {
   document.getElementById('itTplDateFmt').value     = 'auto';
   document.getElementById('itTplAmtConv').value     = 'negative-charges';
   document.getElementById('itTplExclPending').checked = true;
+  document.getElementById('itTplPaymentKw').value   = '';
+  document.getElementById('itTplRefundKw').value    = '';
   document.getElementById('itTplNotes').value       = '';
   document.getElementById('itTplSampleName').textContent = '';
   document.getElementById('itTplSampleCanvas').style.display = 'none';
@@ -6343,6 +6468,8 @@ function itEditTemplate(id) {
   document.getElementById('itTplDateFmt').value      = t.dateFormat   || 'auto';
   document.getElementById('itTplAmtConv').value      = t.amountConvention || 'negative-charges';
   document.getElementById('itTplExclPending').checked = !!t.excludePending;
+  document.getElementById('itTplPaymentKw').value    = t.paymentKeywords || '';
+  document.getElementById('itTplRefundKw').value     = t.refundKeywords  || '';
   document.getElementById('itTplNotes').value        = t.customNotes  || '';
   document.getElementById('itTplErr').style.display  = 'none';
   _itSampleImageDataUrl = t.sampleImageDataUrl || null;
@@ -6388,14 +6515,18 @@ async function itSaveTemplate() {
   const dateFmt   = document.getElementById('itTplDateFmt').value;
   const amtConv   = document.getElementById('itTplAmtConv').value;
   const exclPend  = document.getElementById('itTplExclPending').checked ? 1 : 0;
+  const payKw     = document.getElementById('itTplPaymentKw').value.trim();
+  const refKw     = document.getElementById('itTplRefundKw').value.trim();
   const notes     = document.getElementById('itTplNotes').value.trim();
   const errEl     = document.getElementById('itTplErr');
 
   if (!nickname) { errEl.textContent='Template name is required.'; errEl.style.display='block'; return; }
 
-  const now  = new Date().toISOString();
-  const nE   = nickname.replace(/'/g,"''");
-  const notE = notes.replace(/'/g,"''");
+  const now   = new Date().toISOString();
+  const nE    = nickname.replace(/'/g,"''");
+  const notE  = notes.replace(/'/g,"''");
+  const payE  = payKw.replace(/'/g,"''");
+  const refE  = refKw.replace(/'/g,"''");
 
   // Extract fingerprint from sample if provided
   let fpData = null;
@@ -6404,7 +6535,7 @@ async function itSaveTemplate() {
   }
 
   // Build the extraction prompt
-  const tplObj = { dateFormat: dateFmt, amountConvention: amtConv, excludePending: exclPend, customNotes: notes };
+  const tplObj = { dateFormat: dateFmt, amountConvention: amtConv, excludePending: exclPend, customNotes: notes, paymentKeywords: payKw, refundKeywords: refKw };
   const prompt  = _itBuildPrompt(tplObj).replace(/'/g,"''");
 
   try {
@@ -6412,13 +6543,14 @@ async function itSaveTemplate() {
       db.run(`UPDATE ScreenshotTemplate SET
         cardNickname='${nE}', creditCardId=${cardId?`'${cardId}'`:'NULL'},
         dateFormat='${dateFmt}', amountConvention='${amtConv}', excludePending=${exclPend},
+        paymentKeywords='${payE}', refundKeywords='${refE}',
         customNotes='${notE}', extractionPrompt='${prompt}',
         ${fpData?`fingerprintData='${fpData.replace(/'/g,"''")}', `:''}
         ${_itSampleImageDataUrl?`sampleImageDataUrl='${_itSampleImageDataUrl.slice(0,4000).replace(/'/g,"''")}', `:''}
         updatedAt='${now}' WHERE id='${id}'`);
     } else {
-      db.run(`INSERT INTO ScreenshotTemplate (id,cardNickname,creditCardId,dateFormat,amountConvention,excludePending,customNotes,extractionPrompt,fingerprintData,sampleImageDataUrl,createdAt,updatedAt)
-        VALUES ('${genId()}','${nE}',${cardId?`'${cardId}'`:'NULL'},'${dateFmt}','${amtConv}',${exclPend},'${notE}','${prompt}',
+      db.run(`INSERT INTO ScreenshotTemplate (id,cardNickname,creditCardId,dateFormat,amountConvention,excludePending,paymentKeywords,refundKeywords,customNotes,extractionPrompt,fingerprintData,sampleImageDataUrl,createdAt,updatedAt)
+        VALUES ('${genId()}','${nE}',${cardId?`'${cardId}'`:'NULL'},'${dateFmt}','${amtConv}',${exclPend},'${payE}','${refE}','${notE}','${prompt}',
           ${fpData?`'${fpData.replace(/'/g,"''")}'`:'NULL'},
           ${_itSampleImageDataUrl?`'${_itSampleImageDataUrl.slice(0,4000).replace(/'/g,"''")}' `:'NULL'},
           '${now}','${now}')`);
