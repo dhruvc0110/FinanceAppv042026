@@ -5520,46 +5520,33 @@ async function xlWriteWithDV(wb, dataSheet, filename) {
   // 2. Open the zip
   const zip = await JSZip.loadAsync(wbArray);
 
-  // 3. Build the dataValidation XML block
-  // For account lists (>250 chars) we reference a named range on the Lists sheet.
-  // For short lists (Yes/No, types etc) we use inline comma-separated values.
+  // 3. Build the dataValidation XML block.
+  // Use inline formula1 lists for ALL cases — this avoids the need to inject
+  // named ranges into workbook.xml (which can trigger Excel's repair dialog).
+  // Account lists are truncated to 200 items (sufficient for any household CoA).
+  // The full list remains visible on the Lists sheet for reference.
+  const MAX_INLINE = 200; // max dropdown items
+
+  const xmlEsc = s => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
   const dvNodes = dvCols.map(dv => {
+    if (!dv.list || !dv.list.length) return '';
+
     const col   = XLSX.utils.encode_col(dv.col);
     const sqref = `${col}2:${col}10000`;
-    const total = (dv.list || []).join('').length;
 
-    let formula1;
-    if (!dv.list || dv.list.length === 0) {
-      return ''; // skip
-    } else if (total <= 250) {
-      // Inline list — values comma-separated inside double-quotes
-      const vals = dv.list.map(v =>
-        v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
-      ).join('","');
-      formula1 = `<formula1>"${vals}"</formula1>`;
-    } else {
-      // Reference Lists sheet named range
-      // Lists sheet: col B = Account Code, col D = Sub-Account Code
-      // col E = Account Type, col F = Sub-Type
-      const hint = (dv.prompt || '').toLowerCase();
-      let ref;
-      const listRows = dv.list.length;
-      if (hint.includes('sub-account')) {
-        ref = `Lists!$D$2:$D$${listRows + 1}`;
-      } else if (hint.includes('account type')) {
-        ref = `Lists!$E$2:$E$${listRows + 1}`;
-      } else if (hint.includes('sub-type')) {
-        ref = `Lists!$F$2:$F$${listRows + 1}`;
-      } else {
-        ref = `Lists!$B$2:$B$${listRows + 1}`;
-      }
-      formula1 = `<formula1>${ref}</formula1>`;
-    }
+    // Truncate to MAX_INLINE and build inline formula1
+    const items  = dv.list.slice(0, MAX_INLINE);
+    const vals   = items.map(v => xmlEsc(String(v))).join('","');
+    const formula1 = `<formula1>"${vals}"</formula1>`;
 
-    const promptAttr = dv.prompt
-      ? ` showInputMessage="1" promptTitle="Select value" prompt="${dv.prompt.replace(/"/g,'&quot;')}"`
-      : '';
-    return `<dataValidation type="list" allowBlank="1" showDropDown="0" showErrorMessage="1" errorTitle="Invalid" error="Please select a value from the list" sqref="${sqref}"${promptAttr}>${formula1}</dataValidation>`;
+    // Minimal attributes only — matches what Excel natively generates
+    return `<dataValidation type="list" allowBlank="1" showDropDown="0" sqref="${sqref}">${formula1}</dataValidation>`;
   }).filter(Boolean);
 
   if (!dvNodes.length) {
@@ -5587,32 +5574,7 @@ async function xlWriteWithDV(wb, dataSheet, filename) {
     zip.file(sheetPath, sheetXml);
   }
 
-  // 5. Also define named ranges in workbook.xml for the Lists sheet references
-  let wbXml = await zip.file('xl/workbook.xml')?.async('string');
-  if (wbXml && !wbXml.includes('AccountList')) {
-    // Find how many rows the Lists sheet has
-    const listSheet = wb.Sheets['Lists'];
-    const listRef   = listSheet ? XLSX.utils.decode_range(listSheet['!ref'] || 'A1') : null;
-    const listRows  = listRef ? listRef.e.r : 200;
-    // Find the sheetId for the Lists sheet
-    const listsIdx  = wb.SheetNames.indexOf('Lists') + 1;
-
-    const namedRanges = [
-      `<definedName name="AccountList">Lists!$B$2:$B$${listRows + 1}</definedName>`,
-      `<definedName name="SubAccountList">Lists!$D$2:$D$${listRows + 1}</definedName>`,
-      `<definedName name="AccountTypeList">Lists!$E$2:$E$${listRows + 1}</definedName>`,
-      `<definedName name="SubTypeList">Lists!$F$2:$F$${listRows + 1}</definedName>`,
-    ].join('');
-
-    if (wbXml.includes('</definedNames>')) {
-      wbXml = wbXml.replace('</definedNames>', namedRanges + '</definedNames>');
-    } else if (wbXml.includes('</workbook>')) {
-      wbXml = wbXml.replace('</workbook>', `<definedNames>${namedRanges}</definedNames></workbook>`);
-    }
-    zip.file('xl/workbook.xml', wbXml);
-  }
-
-  // 6. Generate the modified zip and trigger download
+  // 5. Generate the modified zip and trigger download
   const outBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   const url = URL.createObjectURL(outBlob);
   const a   = document.createElement('a');
