@@ -6018,42 +6018,86 @@ async function _itRunInference(imageDataUrl, prompt) {
 
   const text = `<image>\n\nQuestion: ${prompt}\n\nAnswer:`;
 
-  // Tokenize — log what comes back so we can see the real shape
-  const text_inputs = _itTokenizer(text);
-  console.log('[moondream] text_inputs keys:', Object.keys(text_inputs || {}));
-  console.log('[moondream] input_ids:', text_inputs?.input_ids);
-  console.log('[moondream] input_ids type:', typeof text_inputs?.input_ids);
-
-  // Safely get input_ids — handle both {input_ids} and direct Tensor return
-  let input_ids = text_inputs?.input_ids ?? text_inputs;
-  if (!input_ids) throw new Error('Tokenizer returned no input_ids. Keys: ' + JSON.stringify(Object.keys(text_inputs || {})));
-
-  const inputLen = input_ids.dims ? input_ids.dims.at(-1) : (input_ids.length || 0);
-  console.log('[moondream] inputLen:', inputLen);
-
-  const image        = await RawImage.fromURL(imageDataUrl);
-  const vision_inputs = await _itProcessor(image);
-  console.log('[moondream] vision_inputs keys:', Object.keys(vision_inputs || {}));
-
-  const output = await _itModel.generate({
-    input_ids,
-    ...vision_inputs,
-    do_sample:     false,
-    max_new_tokens: 600,
-  });
-
-  console.log('[moondream] output type:', typeof output, Array.isArray(output), output?.constructor?.name);
-
-  // Decode — handle Tensor or plain array output
-  let outputIds;
-  if (output && typeof output.tolist === 'function') {
-    outputIds = output.tolist()[0].slice(inputLen);
-  } else if (Array.isArray(output)) {
-    outputIds = (Array.isArray(output[0]) ? output[0] : output).slice(inputLen);
-  } else {
-    throw new Error('Unexpected output shape from model.generate: ' + typeof output);
+  // ── DIAGNOSTIC MODE ──────────────────────────────────────
+  // Shows a full on-screen report so we can see exactly what
+  // the tokenizer and processor return without needing DevTools.
+  function showDiag(lines) {
+    const el = document.getElementById('itExtractStatus');
+    if (el) el.innerHTML = `<div style="background:#f1f5f9;border:1px solid #94a3b8;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;white-space:pre-wrap;word-break:break-all">${lines.join('\n')}</div>`;
   }
-  return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
+
+  const diag = ['=== Moondream Inference Diagnostic ===', 'prompt length: ' + text.length];
+
+  try {
+    // Step 1: tokenize
+    const text_inputs = _itTokenizer(text);
+    diag.push('tokenizer returned type: ' + typeof text_inputs);
+    diag.push('tokenizer keys: ' + JSON.stringify(Object.keys(text_inputs || {})));
+
+    const hasInputIds = text_inputs && text_inputs.input_ids != null;
+    diag.push('has input_ids: ' + hasInputIds);
+    if (hasInputIds) {
+      diag.push('input_ids type: ' + text_inputs.input_ids?.constructor?.name);
+      diag.push('input_ids dims: ' + JSON.stringify(text_inputs.input_ids?.dims));
+    }
+
+    // Step 2: process image
+    const image = await RawImage.fromURL(imageDataUrl);
+    diag.push('image loaded: ' + image.width + 'x' + image.height);
+
+    const vision_inputs = await _itProcessor(image);
+    diag.push('processor keys: ' + JSON.stringify(Object.keys(vision_inputs || {})));
+
+    showDiag(diag);
+
+    // Step 3: build generate inputs defensively
+    // Handle case where tokenizer returns {input_ids, attention_mask} OR just a Tensor
+    let input_ids, attention_mask;
+    if (hasInputIds) {
+      input_ids      = text_inputs.input_ids;
+      attention_mask = text_inputs.attention_mask;
+    } else if (text_inputs && text_inputs.dims) {
+      // tokenizer returned a raw Tensor directly
+      input_ids = text_inputs;
+    } else {
+      throw new Error('Tokenizer returned unexpected shape. Keys: ' + JSON.stringify(Object.keys(text_inputs || {})));
+    }
+
+    const inputLen = input_ids.dims ? input_ids.dims.at(-1) : input_ids.size;
+    diag.push('inputLen: ' + inputLen);
+    showDiag(diag);
+
+    const generateInputs = { input_ids, ...vision_inputs, do_sample: false, max_new_tokens: 600 };
+    if (attention_mask) generateInputs.attention_mask = attention_mask;
+
+    // Step 4: generate
+    const output = await _itModel.generate(generateInputs);
+    diag.push('output type: ' + typeof output);
+    diag.push('output constructor: ' + output?.constructor?.name);
+    diag.push('output is array: ' + Array.isArray(output));
+    if (output?.dims) diag.push('output dims: ' + JSON.stringify(output.dims));
+    showDiag(diag);
+
+    // Step 5: decode
+    let outputIds;
+    if (output && typeof output.tolist === 'function') {
+      outputIds = output.tolist()[0].slice(inputLen);
+    } else if (Array.isArray(output)) {
+      outputIds = (Array.isArray(output[0]) ? output[0] : output).slice(inputLen);
+    } else {
+      throw new Error('Cannot decode output of type: ' + typeof output);
+    }
+
+    const result = _itTokenizer.decode(outputIds, { skip_special_tokens: true });
+    diag.push('decoded result: ' + result.slice(0, 200));
+    showDiag(diag);
+    return result;
+
+  } catch(e) {
+    diag.push('ERROR: ' + e.message);
+    showDiag(diag);
+    throw e;
+  }
 }
 
 
