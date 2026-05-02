@@ -585,6 +585,132 @@ async function handleFirstTimeFile(e) {
   reader.readAsArrayBuffer(file);
 }
 
+// Create all core application tables on a brand-new blank database.
+// These tables are normally present because an existing finance.sqlite is
+// uploaded. When creating from scratch we must create them explicitly.
+function _initCoreSchema() {
+  const stmts = [
+    `CREATE TABLE IF NOT EXISTS Account (
+      id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+      type TEXT NOT NULL, role TEXT, grouping TEXT,
+      hasSubAccounts INTEGER NOT NULL DEFAULT 0,
+      showOnInquiry INTEGER NOT NULL DEFAULT 1,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS SubAccount (
+      id TEXT PRIMARY KEY, accountId TEXT NOT NULL, code TEXT NOT NULL,
+      name TEXT NOT NULL, isActive INTEGER NOT NULL DEFAULT 1)`,
+    `CREATE TABLE IF NOT EXISTS "Transaction" (
+      id TEXT PRIMARY KEY, trxDate TEXT NOT NULL, period TEXT NOT NULL,
+      description TEXT, amount REAL NOT NULL,
+      drAccountId TEXT, crAccountId TEXT, drSubId TEXT, crSubId TEXT,
+      notes TEXT, isReconciled INTEGER NOT NULL DEFAULT 0,
+      importSource TEXT, linkedTxId TEXT,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS FutureTransaction (
+      id TEXT PRIMARY KEY, trxDate TEXT NOT NULL, period TEXT NOT NULL,
+      description TEXT, amount REAL NOT NULL,
+      drAccountId TEXT, crAccountId TEXT, drSubId TEXT, crSubId TEXT,
+      notes TEXT, recurrence TEXT, endDate TEXT,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS RepeatableTransaction (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+      amount REAL NOT NULL, dayOfMonth INTEGER,
+      drAccountId TEXT, crAccountId TEXT, notes TEXT,
+      isAutoGenerate TEXT NOT NULL DEFAULT 'N',
+      status TEXT NOT NULL DEFAULT 'Active',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS RepeatableGenLog (
+      id TEXT PRIMARY KEY, repeatableId TEXT NOT NULL,
+      period TEXT NOT NULL, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS Period (
+      period TEXT PRIMARY KEY, isLocked INTEGER NOT NULL DEFAULT 0)`,
+    `CREATE TABLE IF NOT EXISTS BudgetPlan (
+      id TEXT PRIMARY KEY, accountId TEXT NOT NULL, period TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0, projectedClose REAL)`,
+    `CREATE TABLE IF NOT EXISTS CreditCard (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      liabilityAccountId TEXT, paymentAccountId TEXT,
+      creditLimit REAL, paymentDueDay INTEGER,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS EquityLot (
+      id TEXT PRIMARY KEY, ticker TEXT NOT NULL, stockName TEXT,
+      trxDate TEXT NOT NULL, period TEXT NOT NULL,
+      qty REAL NOT NULL, price REAL NOT NULL, amount REAL NOT NULL,
+      drAccountId TEXT, crAccountId TEXT,
+      notes TEXT, linkedTxId TEXT, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS EquityLotSale (
+      id TEXT PRIMARY KEY, lotId TEXT NOT NULL,
+      trxDate TEXT NOT NULL, period TEXT NOT NULL,
+      qty REAL NOT NULL, price REAL NOT NULL,
+      proceeds REAL, costBasis REAL, gainLoss REAL,
+      drAccountId TEXT, crAccountId TEXT,
+      notes TEXT, linkedTxId TEXT, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS MarketPrice (
+      ticker TEXT PRIMARY KEY, price REAL, updatedAt TEXT)`,
+    `CREATE TABLE IF NOT EXISTS Note (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS DuplicateReview (
+      id TEXT PRIMARY KEY, txAId TEXT NOT NULL, txBId TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', reviewedAt TEXT,
+      createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS SectionLayout (
+      id TEXT PRIMARY KEY, section TEXT NOT NULL, config TEXT NOT NULL,
+      updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS TransactionLink (
+      id TEXT PRIMARY KEY, txAId TEXT NOT NULL, txBId TEXT NOT NULL,
+      note TEXT, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS ScratchPad (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS BankAccount (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT,
+      assetAccountId TEXT, status TEXT NOT NULL DEFAULT 'Active',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS AppSettings (
+      key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '',
+      updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS ScreenshotTemplate (
+      id TEXT PRIMARY KEY, creditCardId TEXT, cardNickname TEXT NOT NULL,
+      dateFormat TEXT, amountConvention TEXT NOT NULL DEFAULT 'negative-charges',
+      excludePending INTEGER NOT NULL DEFAULT 1,
+      paymentKeywords TEXT, refundKeywords TEXT,
+      customNotes TEXT, extractionPrompt TEXT,
+      fingerprintData TEXT, sampleImageDataUrl TEXT,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS DraftBatch (
+      id TEXT PRIMARY KEY, templateId TEXT, detectedCardName TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      rowCount INTEGER NOT NULL DEFAULT 0,
+      approvedCount INTEGER NOT NULL DEFAULT 0,
+      rejectedCount INTEGER NOT NULL DEFAULT 0,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS DraftTransaction (
+      id TEXT PRIMARY KEY, batchId TEXT NOT NULL,
+      date TEXT, description TEXT, amount REAL,
+      txnType TEXT NOT NULL DEFAULT 'charge',
+      suggestedDrAccountId TEXT, suggestedCrAccountId TEXT,
+      drAccountId TEXT, crAccountId TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      rawExtracted TEXT, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS ImportLog (
+      id TEXT PRIMARY KEY, batchId TEXT NOT NULL,
+      cardName TEXT, templateId TEXT,
+      rowCount INTEGER NOT NULL DEFAULT 0,
+      approvedCount INTEGER NOT NULL DEFAULT 0,
+      rejectedCount INTEGER NOT NULL DEFAULT 0,
+      importedAt TEXT NOT NULL)`,
+  ];
+  stmts.forEach(sql => {
+    try { db.run(sql); } catch(e) { console.warn('_initCoreSchema:', e.message); }
+  });
+}
+
 async function handleCreateNewDatabase() {
   const ftStatus  = document.getElementById('firstTimeStatus');
   const setStatus = msg => { if (ftStatus) ftStatus.textContent = msg; };
@@ -604,7 +730,12 @@ async function handleCreateNewDatabase() {
     db.run('CREATE TABLE IF NOT EXISTS _init (id INTEGER PRIMARY KEY)');
     db.run('DROP TABLE IF EXISTS _init');
 
-    // Export — now has a valid SQLite header (minimum 4096 bytes)
+    // Create ALL core tables — these are normally only present because an
+    // existing database file is uploaded. A brand-new database needs them
+    // created explicitly before startApp() can run.
+    _initCoreSchema();
+
+    // Export — now has a valid SQLite file with all tables
     const uint8 = db.export();
 
     setStatus('Uploading to Google Drive…');
