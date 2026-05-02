@@ -132,15 +132,18 @@
       <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
         <p class="text-sm font-semibold text-slate-700">First-time setup</p>
         <p class="text-xs text-slate-500 leading-relaxed">
-          No database was found in your Google Drive.<br>
-          Choose your <code class="bg-slate-100 px-1 rounded font-mono">finance.sqlite</code> file
-          and it will be uploaded to a <strong>FinanceApp</strong> folder in your Drive automatically.
-          From then on, sign-in will load it for you without this step.
+          No database was found in your Google Drive.
+          Create a fresh database, or upload an existing <code class="bg-slate-100 px-1 rounded font-mono">finance.sqlite</code> file.
+          It will be saved to a <strong>FinanceApp</strong> folder in your Drive automatically.
         </p>
       </div>
+      <button onclick="handleCreateNewDatabase()"
+        class="w-full bg-slate-900 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition text-sm font-medium text-center">
+        ✦ Create New Database
+      </button>
       <label class="cursor-pointer block">
-        <div class="bg-slate-900 text-white px-6 py-3 rounded-lg hover:bg-slate-700 transition text-sm font-medium text-center">
-          Choose finance.sqlite
+        <div class="border border-slate-300 text-slate-600 px-6 py-3 rounded-lg hover:bg-slate-50 transition text-sm font-medium text-center">
+          Upload existing finance.sqlite
         </div>
         <input type="file" id="firstTimeFileInput" accept=".sqlite,.db" class="hidden">
       </label>
@@ -580,6 +583,42 @@ async function handleFirstTimeFile(e) {
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+async function handleCreateNewDatabase() {
+  const ftStatus  = document.getElementById('firstTimeStatus');
+  const setStatus = msg => { if (ftStatus) ftStatus.textContent = msg; };
+
+  // Disable the button to prevent double-clicks
+  const btn = document.querySelector('[onclick="handleCreateNewDatabase()"]');
+  if (btn) btn.disabled = true;
+
+  try {
+    setStatus('Creating blank database…');
+
+    // Create a fresh blank SQL.js database
+    db = new SQL.Database();
+
+    // Export immediately — startApp() will add all tables on first run
+    const uint8 = db.export();
+
+    setStatus('Uploading to Google Drive…');
+    const uploaded = await driveUploadFile(uint8, null, driveFolderId);
+    driveFileId    = uploaded.id;
+
+    setStatus('Verifying…');
+    await driveVerifyUpload(driveFileId, uint8.byteLength);
+
+    lastSyncedAt = new Date();
+    document.getElementById('firstTimeSection').style.display = 'none';
+    setStatus('');
+    startApp(); // creates all tables via CREATE TABLE IF NOT EXISTS
+
+  } catch(err) {
+    setStatus('Error: ' + err.message);
+    console.error('handleCreateNewDatabase:', err);
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ════════════════════════════════════════════════════════════
