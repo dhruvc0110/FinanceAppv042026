@@ -5990,13 +5990,19 @@ async function _itLoadModel() {
     setMsg('Tokenizer loaded. Downloading model weights (~430 MB one-time)…', 15);
     _itTokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb });
 
+    // Force WASM on mobile — WebGPU on Android crashes the tab on large models.
+    // Use q8 for all components to reduce peak memory usage.
+    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    const device   = (!isMobile && navigator.gpu) ? 'webgpu' : 'wasm';
+    setMsg('Loading model on ' + (isMobile ? 'CPU (WASM)' : 'GPU') + '…', 15);
+
     _itModel = await Moondream1ForConditionalGeneration.from_pretrained(MODEL_ID, {
       dtype: {
-        embed_tokens:         'fp16',
-        vision_encoder:       'fp16',
+        embed_tokens:         'q8',
+        vision_encoder:       'q8',
         decoder_model_merged: 'q4',
       },
-      device: navigator.gpu ? 'webgpu' : 'wasm',
+      device: device,
       progress_callback: progressCb,
     });
 
@@ -6097,7 +6103,7 @@ async function _itRunInference(imageDataUrl, prompt) {
       input_ids,
       ...vision_inputs,
       do_sample:      false,
-      max_new_tokens:  512,
+      max_new_tokens:  200,  // keep low to prevent Android tab crash
     });
 
     // Decode only the newly generated tokens
