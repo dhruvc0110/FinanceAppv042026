@@ -6016,59 +6016,86 @@ async function _itLoadModel() {
 // Run inference using the low-level Moondream2 API
 async function _itRunInference(imageDataUrl, prompt) {
   const RawImage = window._itRawImage;
+  const Tensor   = window._itTensorClass?.Tensor;
   if (!_itModel || !_itProcessor || !_itTokenizer || !RawImage) throw new Error('Model not loaded');
+  if (!Tensor) throw new Error('Tensor class not available — model may not have loaded correctly');
 
-  // Moondream2 vision encoder produces exactly 729 feature vectors (27×27 patches).
-  // The model cannot expand a single <image> token into 729 slots at generate() time.
-  // The prompt must contain 729 copies of the image placeholder token BEFORE tokenizing,
-  // so input_ids has 729 image token positions that align with the vision features.
-  // image_token_id = 50256 (<|endoftext|> / <|im_start|> in the moondream vocab)
-  const IMAGE_TOKEN_ID  = 50256;
-  const IMAGE_SEQ_LEN   = 729;
-  const IMAGE_PLACEHOLDER = Array(IMAGE_SEQ_LEN).fill(IMAGE_TOKEN_ID);
+  // Moondream2: vision encoder produces 729 feature vectors (27×27 patches).
+  // input_ids must contain 729 copies of the image token (50256) followed by the text tokens.
+  const IMAGE_TOKEN_ID = 50256;
+  const IMAGE_SEQ_LEN  = 729;
 
-  // Tokenize the text AFTER the image placeholders
-  const text_after  = `\n\nQuestion: ${prompt}\n\nAnswer:`;
-  const text_inputs = _itTokenizer(text_after, { add_special_tokens: false });
+  try {
+    // Tokenize the text portion only (no <image> tag)
+    const text_after  = `\n\nQuestion: ${prompt}\n\nAnswer:`;
+    const text_inputs = _itTokenizer(text_after, { add_special_tokens: false });
 
-  // Build input_ids manually: [729 image tokens] + [text tokens]
-  const { Tensor } = window._itTensorClass || {};
-  let input_ids;
-  if (Tensor) {
-    // If we have the Tensor class, build a proper 2D tensor [1, seq_len]
-    const text_ids   = Array.from(text_inputs.input_ids.data || text_inputs.input_ids.tolist?.()[0] || []);
-    const all_ids    = [...IMAGE_PLACEHOLDER, ...text_ids];
-    input_ids        = new Tensor('int64', BigInt64Array.from(all_ids.map(BigInt)), [1, all_ids.length]);
-  } else {
-    // Fallback: use the tokenizer output directly and prepend via concat
-    const text_ids = text_inputs.input_ids;
-    input_ids      = text_ids; // will use pixel_values to align features at model level
+    // Extract text token ids as a plain JS number array
+    let text_ids = [];
+    if (text_inputs?.input_ids) {
+      const raw = text_inputs.input_ids;
+      if (typeof raw.tolist === 'function') {
+        const nested = raw.tolist();
+        text_ids = Array.isArray(nested[0]) ? nested[0] : nested;
+      } else if (raw.data) {
+        text_ids = Array.from(raw.data).map(Number);
+      } else if (Array.isArray(raw)) {
+        text_ids = Array.isArray(raw[0]) ? raw[0].map(Number) : raw.map(Number);
+      }
+    }
+
+    // Build full token sequence: [729 × 50256] + text tokens
+    const all_ids = [
+      ...Array(IMAGE_SEQ_LEN).fill(IMAGE_TOKEN_ID),
+      ...text_ids
+    ];
+    const inputLen = all_ids.length;
+
+    // Build input_ids Tensor — use int64 with BigInt if available, else int32
+    let input_ids;
+    try {
+      const bigData = new BigInt64Array(all_ids.map(BigInt));
+      input_ids = new Tensor('int64', bigData, [1, all_ids.length]);
+    } catch(e) {
+      // Fallback to int32 if BigInt64Array unavailable
+      const int32Data = new Int32Array(all_ids);
+      input_ids = new Tensor('int32', int32Data, [1, all_ids.length]);
+    }
+
+    // Process image
+    const image         = await RawImage.fromURL(imageDataUrl);
+    const vision_inputs = await _itProcessor(image);
+
+    // Generate
+    const output = await _itModel.generate({
+      input_ids,
+      ...vision_inputs,
+      do_sample:      false,
+      max_new_tokens:  512,
+    });
+
+    // Decode only the newly generated tokens
+    let outputIds;
+    if (output && typeof output.tolist === 'function') {
+      const rows = output.tolist();
+      outputIds  = (Array.isArray(rows[0]) ? rows[0] : rows).slice(inputLen).map(Number);
+    } else if (Array.isArray(output)) {
+      const row  = Array.isArray(output[0]) ? output[0] : output;
+      outputIds  = row.slice(inputLen).map(Number);
+    } else {
+      throw new Error('Unexpected generate() output: ' + output?.constructor?.name);
+    }
+
+    return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
+
+  } catch(e) {
+    // Surface error in the UI rather than letting it bubble up and blank the page
+    const statusEl = document.getElementById('itExtractStatus');
+    if (statusEl) statusEl.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+      Inference error: ${escHtml(e.message)}</div>`;
+    console.error('_itRunInference error:', e);
+    throw e;
   }
-
-  const inputLen = IMAGE_SEQ_LEN + (text_inputs.input_ids?.dims?.at(-1) || 0);
-
-  // Process image
-  const image         = await RawImage.fromURL(imageDataUrl);
-  const vision_inputs = await _itProcessor(image);
-
-  // Generate
-  const output = await _itModel.generate({
-    input_ids,
-    ...vision_inputs,
-    do_sample:      false,
-    max_new_tokens:  600,
-  });
-
-  // Decode only new tokens
-  let outputIds;
-  if (output && typeof output.tolist === 'function') {
-    outputIds = output.tolist()[0].slice(inputLen);
-  } else if (Array.isArray(output)) {
-    outputIds = (Array.isArray(output[0]) ? output[0] : output).slice(inputLen);
-  } else {
-    throw new Error('Unexpected generate() output type: ' + typeof output);
-  }
-  return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
 }
 
 
@@ -6214,8 +6241,13 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt = _itBuildPrompt(tplData);
 
-    // Run Moondream inference via low-level API
-    const rawText = await _itRunInference(dataUrl, prompt);
+    let rawText = '';
+    try {
+      rawText = await _itRunInference(dataUrl, prompt);
+    } catch(inferErr) {
+      // Error already shown inside _itRunInference — just stop here
+      return;
+    }
 
     // Parse JSON from model output
     const transactions = _itParseModelOutput(rawText, tplData);
