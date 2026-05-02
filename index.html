@@ -5593,9 +5593,8 @@ function baInjectPanel(baId) {
 // ════════════════════════════════════════════════════════════
 
 let _itTab         = 'import';   // 'import' | 'review' | 'templates' | 'log'
-let _itModelReady  = false;      // true once Transformers.js + Moondream loaded
+let _itModelReady  = false;      // true once model loaded
 let _itModelLoading= false;
-let _itPipeline    = null;       // the Transformers.js image-to-text pipeline
 
 function renderImportTransactions(container) {
   _itTab = _itTab || 'import';
@@ -5897,8 +5896,14 @@ function _renderITPage(container) {
 
 function itSetTab(tab) { _itTab = tab; _renderITPage(); }
 
+
 // ── Model Loading ────────────────────────────────────────
-let _itSampleImageDataUrl = null; // temp store for template sample
+// Moondream2 requires the low-level API in v3 — pipeline() does not support it.
+// Classes: AutoProcessor, AutoTokenizer, Moondream1ForConditionalGeneration, RawImage
+let _itSampleImageDataUrl = null;
+let _itProcessor = null;
+let _itTokenizer = null;
+let _itModel     = null;
 
 async function _itLoadModel() {
   if (_itModelReady || _itModelLoading) return;
@@ -5916,37 +5921,45 @@ async function _itLoadModel() {
   try {
     setMsg('Loading Transformers.js runtime…', 5);
 
-    // v3.8.1 — current stable npm release. v4 ships under the "next" tag only
-    // and is not yet reliably available on jsDelivr for CDN use.
     const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
-    const { pipeline, env } = await import(CDN);
+    const {
+      AutoProcessor,
+      AutoTokenizer,
+      Moondream1ForConditionalGeneration,
+      RawImage,
+      env
+    } = await import(CDN);
 
-    // Point WASM runtime files to same CDN base — prevents "Failed to fetch
-    // dynamically imported module" for ort-wasm-*.mjs helper files
+    window._itRawImage = RawImage;
+
     env.backends.onnx.wasm.wasmPaths = CDN + '/dist/';
     env.allowLocalModels = false;
     env.useBrowserCache  = true;
 
-    setMsg('Downloading Moondream vision model (one-time, ~450 MB)…', 10);
-
-    // Xenova/moondream2 is the v3-compatible ONNX repo.
-    // 'image-to-text' is the correct task in v3 for vision+prompt models.
-    _itPipeline = await pipeline(
-      'image-to-text',
-      'Xenova/moondream2',
-      {
-        dtype: 'q4',
-        device: navigator.gpu ? 'webgpu' : 'wasm',
-        progress_callback: (p) => {
-          if (p.status === 'downloading') {
-            const pct = p.total ? Math.round((p.loaded / p.total) * 85) + 10 : 10;
-            setMsg(`Downloading model weights… (${Math.round((p.loaded||0)/1024/1024)} MB)`, pct);
-          } else if (p.status === 'loading') {
-            setMsg('Initializing model…', 96);
-          }
-        }
+    const MODEL_ID = 'Xenova/moondream2';
+    const progressCb = (p) => {
+      if (p.status === 'downloading') {
+        const pct = p.total ? Math.round((p.loaded / p.total) * 75) + 15 : 15;
+        setMsg('Downloading model weights… (' + Math.round((p.loaded||0)/1024/1024) + ' MB)', pct);
+      } else if (p.status === 'loading') {
+        setMsg('Initializing model…', 92);
       }
-    );
+    };
+
+    setMsg('Loading processor and tokenizer…', 10);
+    _itProcessor = await AutoProcessor.from_pretrained(MODEL_ID, { progress_callback: progressCb });
+    _itTokenizer = await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb });
+
+    setMsg('Downloading model weights (one-time, ~450 MB)…', 15);
+    _itModel = await Moondream1ForConditionalGeneration.from_pretrained(MODEL_ID, {
+      dtype: {
+        embed_tokens:         'fp16',
+        vision_encoder:       'fp16',
+        decoder_model_merged: 'q4',
+      },
+      device: navigator.gpu ? 'webgpu' : 'wasm',
+      progress_callback: progressCb,
+    });
 
     _itModelReady   = true;
     _itModelLoading = false;
@@ -5960,6 +5973,32 @@ async function _itLoadModel() {
     console.error('Moondream load error:', e);
   }
 }
+
+// Run inference using the low-level Moondream2 API
+async function _itRunInference(imageDataUrl, prompt) {
+  const RawImage = window._itRawImage;
+  if (!_itModel || !_itProcessor || !_itTokenizer || !RawImage) throw new Error('Model not loaded');
+
+  const text = '<image>\n\nQuestion: ' + prompt + '\n\nAnswer:';
+  const textInputs   = _itTokenizer(text);
+  const image        = await RawImage.fromURL(imageDataUrl);
+  const visionInputs = await _itProcessor(image);
+
+  const output = await _itModel.generate({
+    ...textInputs,
+    ...visionInputs,
+    do_sample:      false,
+    max_new_tokens:  600,
+  });
+
+  const inputLen = textInputs.input_ids.dims[1];
+  const decoded  = _itTokenizer.batch_decode(
+    output.slice(null, [inputLen, null]),
+    { skip_special_tokens: true }
+  );
+  return decoded[0] || '';
+}
+
 
 // ── Visual Fingerprinting ────────────────────────────────
 function _itExtractFingerprint(imageDataUrl) {
@@ -6103,9 +6142,8 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt = _itBuildPrompt(tplData);
 
-    // v3 image-to-text: pass image URL directly, prompt as option
-    const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
-    const rawText = result?.[0]?.generated_text || result?.generated_text || '';
+    // Run Moondream inference via low-level API
+    const rawText = await _itRunInference(dataUrl, prompt);
 
     // Parse JSON from model output
     const transactions = _itParseModelOutput(rawText, tplData);
@@ -6411,8 +6449,7 @@ async function itTestTemplate(id) {
     const prompt  = _itBuildPrompt(t);
     alert('Running extraction test… this may take 10–20 seconds.');
     try {
-      const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
-      const raw = result?.[0]?.generated_text || result?.generated_text || '';
+      const raw    = await _itRunInference(dataUrl, prompt);
       const parsed = _itParseModelOutput(raw, t);
       alert(`Extracted ${parsed.length} transactions:\n\n` + parsed.map(tx=>`${tx.date}  ${tx.description}  $${tx.amount}`).join('\n') + '\n\nRaw output:\n' + raw.slice(0,500));
     } catch(e) { alert('Test failed: ' + e.message); }
