@@ -6115,12 +6115,11 @@ async function _itRunInference(imageDataUrl, prompt) {
     return _itTokenizer.decode(outputIds, { skip_special_tokens: true });
 
   } catch(e) {
-    // Surface error in the UI rather than letting it bubble up and blank the page
     const statusEl = document.getElementById('itExtractStatus');
     if (statusEl) statusEl.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
       Inference error: ${escHtml(e.message)}</div>`;
     console.error('_itRunInference error:', e);
-    throw e;
+    return null; // caller checks for null — does NOT rethrow to avoid blanking page
   }
 }
 
@@ -6196,12 +6195,17 @@ async function itHandleScreenshot(input) {
   const file = input.files[0];
   if (!file || !_itModelReady) return;
 
+  // Declare statusEl OUTSIDE try so catch can always reference it
   const statusEl = document.getElementById('itExtractStatus');
-  if (statusEl) statusEl.innerHTML = `<div class="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600 flex items-center gap-2">
-    <span class="animate-spin inline-block">⏳</span> Reading screenshot…</div>`;
+
+  function showStatus(html) {
+    if (statusEl) statusEl.innerHTML = html;
+  }
+
+  showStatus(`<div class="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-600 flex items-center gap-2">
+    <span>⏳</span> Reading screenshot…</div>`);
 
   try {
-    // Load image as data URL
     const dataUrl = await new Promise((res, rej) => {
       const reader = new FileReader();
       reader.onload = e => res(e.target.result);
@@ -6209,8 +6213,7 @@ async function itHandleScreenshot(input) {
       reader.readAsDataURL(file);
     });
 
-    // Extract fingerprint and match template
-    const fp = await _itExtractFingerprint(dataUrl);
+    const fp    = await _itExtractFingerprint(dataUrl);
     const match = _itMatchTemplate(fp);
 
     let template = null;
@@ -6218,17 +6221,15 @@ async function itHandleScreenshot(input) {
     let suggestedCrId = null;
 
     if (match && match.confidence >= 0.80) {
-      template = match.template;
-      cardName = template.cardNickname;
-      // Get liability account from linked CreditCard
+      template  = match.template;
+      cardName  = template.cardNickname;
       if (template.creditCardId) {
         const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${template.creditCardId}'`)[0];
         if (cc) suggestedCrId = cc.liabilityAccountId;
       }
-      if (statusEl) statusEl.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-        ✓ Detected: <strong>${escHtml(cardName)}</strong> (${Math.round(match.confidence*100)}% confidence)</div>`;
+      showStatus(`<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+        ✓ Detected: <strong>${escHtml(cardName)}</strong> (${Math.round(match.confidence*100)}% confidence)</div>`);
     } else if (match) {
-      // Low confidence — ask user to confirm
       const confirmed = confirm(`Detected card: "${match.template.cardNickname}" (${Math.round(match.confidence*100)}% confidence). Use this template?`);
       if (confirmed) {
         template = match.template;
@@ -6239,20 +6240,17 @@ async function itHandleScreenshot(input) {
         }
       }
     } else {
-      // No match — let user pick manually
       const templates = query(`SELECT id, cardNickname FROM ScreenshotTemplate ORDER BY cardNickname`);
       const cards     = query(`SELECT id, name, liabilityAccountId FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
       if (templates.length) {
-        const opts = templates.map(t => t.cardNickname).join('\n');
-        const pick = prompt(`Could not auto-detect card. Enter template name:\n${opts}`);
+        const pick = prompt(`Could not auto-detect card. Enter template name:\n${templates.map(t => t.cardNickname).join('\n')}`);
         if (pick) {
           template = templates.find(t => t.cardNickname.toLowerCase() === pick.toLowerCase());
           if (template) cardName = template.cardNickname;
         }
       }
       if (!template && cards.length) {
-        const cardOpts = cards.map(c => c.name).join('\n');
-        const pick = prompt(`No template found. Enter credit card name to pre-fill CR account:\n${cardOpts}`);
+        const pick = prompt(`No template found. Enter credit card name:\n${cards.map(c => c.name).join('\n')}`);
         if (pick) {
           const cc = cards.find(c => c.name.toLowerCase() === pick.toLowerCase());
           if (cc) { cardName = cc.name; suggestedCrId = cc.liabilityAccountId; }
@@ -6260,31 +6258,25 @@ async function itHandleScreenshot(input) {
       }
     }
 
-    if (statusEl) statusEl.innerHTML = `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
-      <span>🔍</span> Extracting transactions from screenshot…</div>`;
+    showStatus(`<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 flex items-center gap-2">
+      <span>🔍</span> Extracting transactions… (this may take 10–30 seconds)</div>`);
 
-    // Build extraction prompt
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
-    const prompt = _itBuildPrompt(tplData);
+    const prompt  = _itBuildPrompt(tplData);
 
-    let rawText = '';
-    try {
-      rawText = await _itRunInference(dataUrl, prompt);
-    } catch(inferErr) {
-      // Error already shown inside _itRunInference — just stop here
-      return;
-    }
+    // _itRunInference shows its own error message and does NOT rethrow
+    const rawText = await _itRunInference(dataUrl, prompt);
+    if (rawText === null) return; // inference failed — error already shown
 
-    // Parse JSON from model output
     const transactions = _itParseModelOutput(rawText, tplData);
 
     if (!transactions.length) {
-      if (statusEl) statusEl.innerHTML = `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-        ⚠ No transactions could be extracted. Try a clearer screenshot or check your template settings.</div>`;
+      showStatus(`<div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+        ⚠ No transactions extracted. Try a clearer screenshot or adjust your template settings.<br>
+        <span class="text-xs mt-1 block">Model output: ${escHtml((rawText||'').slice(0,200))}</span></div>`);
       return;
     }
 
-    // Create DraftBatch + DraftTransaction records
     const now     = new Date().toISOString();
     const batchId = genId();
     db.run(`INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,createdAt,updatedAt)
@@ -6292,25 +6284,24 @@ async function itHandleScreenshot(input) {
 
     for (const tx of transactions) {
       const draftId = genId();
-      const desc  = (tx.description||'').replace(/'/g,"''");
-      const date  = tx.date  || '';
-      const amt   = isNaN(+tx.amount) ? 0 : Math.abs(+tx.amount);
-      const raw   = JSON.stringify(tx).replace(/'/g,"''");
+      const desc = (tx.description||'').replace(/'/g,"''");
+      const date = tx.date || '';
+      const amt  = isNaN(+tx.amount) ? 0 : Math.abs(+tx.amount);
+      const raw  = JSON.stringify(tx).replace(/'/g,"''");
       db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,suggestedCrAccountId,drAccountId,status,rawExtracted,createdAt)
         VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},${suggestedCrId?`'${suggestedCrId}'`:'NULL'},NULL,'pending','${raw}','${now}')`);
     }
     syncAfterWrite();
 
-    if (statusEl) statusEl.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
-      ✓ Extracted <strong>${transactions.length} transactions</strong> into draft batch. Go to Review tab to approve.</div>`;
-
-    // Auto-switch to review tab
+    showStatus(`<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-800">
+      ✓ Extracted <strong>${transactions.length} transactions</strong>. Switching to Review tab…</div>`);
     setTimeout(() => { _itTab = 'review'; _renderITPage(); }, 1200);
 
   } catch(e) {
-    if (statusEl) statusEl.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-      Error: ${escHtml(e.message)}</div>`;
-    console.error('Screenshot extraction error:', e);
+    // Safe catch — statusEl is always in scope here
+    showStatus(`<div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+      Error: ${escHtml(e.message || String(e))}</div>`);
+    console.error('itHandleScreenshot error:', e);
   }
 }
 
