@@ -3806,6 +3806,8 @@ function _renderSettingsPage(container) {
     { id:'stats',       label:'Stats' },
     { id:'scratchpad',  label:'Scratch Pad' },
     { id:'bankaccounts',label:'Bank Accounts' },
+    { id:'exportdata',  label:'Export Data' },
+    { id:'importdata',  label:'Import Data' },
   ];
 
   const tabBar = TABS.map(t =>
@@ -4494,6 +4496,8 @@ function _renderSettingsPage(container) {
   else if (settingsTab==='stats')       tabContent = statsTab();
   else if (settingsTab==='scratchpad')  tabContent = scratchPadTab();
   else if (settingsTab==='bankaccounts') tabContent = bankAccountsTab();
+  else if (settingsTab==='exportdata')   tabContent = exportDataTab();
+  else if (settingsTab==='importdata')   tabContent = importDataTab();
 
   container.innerHTML = `
     <div class="space-y-4">
@@ -4718,6 +4722,802 @@ function _renderSettingsPage(container) {
 }
 
 function settingsGoTab(tab) { settingsTab=tab; _renderSettingsPage(); }
+
+// ════════════════════════════════════════════════════════════
+// EXPORT DATA TAB
+// ════════════════════════════════════════════════════════════
+
+function exportDataTab() {
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period ASC`).map(r => r.period);
+  const tickers = query(`SELECT DISTINCT ticker FROM EquityLot ORDER BY ticker`).map(r => r.ticker);
+  const accounts = query(`SELECT id, code, name FROM Account WHERE isActive=1 ORDER BY code`);
+  const cp = currentPeriod();
+
+  const periodOpts = periods.map(p => `<option value="${p}" ${p===cp?'selected':''}>${p}</option>`).join('');
+  const tickerOpts = `<option value="">All Tickers</option>` + tickers.map(t => `<option value="${t}">${escHtml(t)}</option>`).join('');
+  const acctOpts   = accounts.map(a => `<option value="${a.id}">${escHtml(a.code + ' · ' + a.name)}</option>`).join('');
+
+  const row = (id, label, desc, filterHtml, hasTemplate) => `
+    <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-sm font-semibold text-slate-800">${label}</p>
+          <p class="text-xs text-slate-500 mt-0.5">${desc}</p>
+        </div>
+        <div class="flex gap-2 flex-shrink-0">
+          <button onclick="xlDoExport('${id}')"
+            class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-slate-700">
+            ⬇ Export Data
+          </button>
+          ${hasTemplate ? `<button onclick="xlDoExportTemplate('${id}')"
+            class="flex items-center gap-1.5 border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-slate-50">
+            ⬇ Template
+          </button>` : ''}
+        </div>
+      </div>
+      ${filterHtml}
+    </div>`;
+
+  const periodRange = (id) => `
+    <div class="flex items-center gap-3 flex-wrap" id="xf-${id}">
+      <div class="flex items-center gap-1.5">
+        <label class="text-xs text-slate-500 w-14">From</label>
+        <select id="xf-${id}-from" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+          ${periodOpts}
+        </select>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <label class="text-xs text-slate-500 w-8">To</label>
+        <select id="xf-${id}-to" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+          ${periodOpts}
+        </select>
+      </div>
+    </div>`;
+
+  return `<div class="space-y-4 max-w-2xl">
+    <p class="text-sm text-slate-500">Export any table as an Excel file. Use the Template button to download a blank template with column formats and dropdown lists for data entry.</p>
+
+    <div class="space-y-3">
+      <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Transactions</p>
+      ${row('transactions','Transactions','All posted transactions in the selected period range.',periodRange('transactions'),true)}
+      ${row('future','Future Transactions','Scheduled and repeating future entries.',periodRange('future'),true)}
+    </div>
+
+    <div class="space-y-3 mt-4">
+      <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Equity</p>
+      ${row('equitylots','US Equity Lots','Open and closed equity positions.',`
+        <div class="flex items-center gap-3 flex-wrap" id="xf-equitylots">
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-14">From</label>
+            <input type="date" id="xf-equitylots-from" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-8">To</label>
+            <input type="date" id="xf-equitylots-to" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-12">Ticker</label>
+            <select id="xf-equitylots-ticker" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+              ${tickerOpts}
+            </select>
+          </div>
+        </div>`,true)}
+    </div>
+
+    <div class="space-y-3 mt-4">
+      <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Reference</p>
+      ${row('coa','Chart of Accounts','All account definitions.',`<p class="text-xs text-slate-400">No filter — all accounts exported.</p>`,true)}
+    </div>
+
+    <div class="space-y-3 mt-4">
+      <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Reports</p>
+      ${row('pl','P&L Report','Income and expense summary by period.',periodRange('pl'),false)}
+      ${row('bs','Balance Sheet','Assets, Liabilities and Below-the-Line.',`
+        <div class="flex items-center gap-1.5" id="xf-bs">
+          <label class="text-xs text-slate-500 w-16">Period</label>
+          <select id="xf-bs-period" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+            ${periodOpts}
+          </select>
+        </div>`,false)}
+      ${row('acctinquiry','Account Inquiry','Transaction detail for a specific account and period range.',`
+        <div class="flex items-center gap-3 flex-wrap" id="xf-acctinquiry">
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-16">Account</label>
+            <select id="xf-acctinquiry-acct" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">
+              ${acctOpts}
+            </select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-10">From</label>
+            <select id="xf-acctinquiry-from" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">${periodOpts}</select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 w-8">To</label>
+            <select id="xf-acctinquiry-to" class="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-slate-400">${periodOpts}</select>
+          </div>
+        </div>`,false)}
+    </div>
+    <div id="xlExportStatus" class="text-xs text-slate-500 mt-2"></div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// IMPORT DATA TAB
+// ════════════════════════════════════════════════════════════
+
+function importDataTab() {
+  const card = (id, label, desc, cols) => `
+    <div class="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+      <div>
+        <p class="text-sm font-semibold text-slate-800">${label}</p>
+        <p class="text-xs text-slate-500 mt-0.5">${desc}</p>
+        <p class="text-xs text-slate-400 mt-1 font-mono bg-slate-50 rounded px-2 py-1 overflow-x-auto whitespace-nowrap">${escHtml(cols)}</p>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <button onclick="xlDoExportTemplate('${id}')"
+          class="text-xs border border-slate-300 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50">
+          ⬇ Download Template
+        </button>
+        <label class="cursor-pointer bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-slate-700">
+          Choose File
+          <input type="file" accept=".xlsx,.xls" onchange="xlHandleImportFile('${id}', this)" class="hidden">
+        </label>
+        <span id="xi-${id}-label" class="text-xs text-slate-400"></span>
+      </div>
+      <div id="xi-${id}-result"></div>
+    </div>`;
+
+  return `<div class="space-y-4 max-w-2xl">
+    <p class="text-sm text-slate-500">Upload a completed template to append new rows. All rows are validated before any data is saved — if any row fails, the entire batch is rejected with a per-row error report.</p>
+    ${card('transactions','Transactions','Append new posted transactions.',
+      'Date | Description | Amount | DR Account Code | DR Sub-Account | CR Account Code | CR Sub-Account | Notes | Is Reconciled')}
+    ${card('future','Future Transactions','Append new future / repeating entries.',
+      'Date | Description | Amount | DR Account Code | DR Sub-Account | CR Account Code | CR Sub-Account | Notes | Recurrence | End Date')}
+    ${card('equitylots','US Equity Lots','Append new equity lot purchase or sale entries.',
+      'Ticker | Stock Name | Date | Type (BUY/SELL) | Qty | Price | DR Account Code | CR Account Code | Notes')}
+    ${card('coa','Chart of Accounts','Add new accounts only. Existing codes are ignored.',
+      'Code | Name | Type | SubType | Has Sub-Accounts (Y/N) | Show on Inquiry (Y/N) | Normal Balance (DR/CR) | Is Active (Y/N)')}
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// SHARED EXCEL EXPORT / IMPORT INFRASTRUCTURE
+// ════════════════════════════════════════════════════════════
+
+// ── SheetJS lazy loader ──────────────────────────────────
+function _xlLoad(cb) {
+  if (window.XLSX) { cb(); return; }
+  const s = document.createElement('script');
+  s.src   = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
+
+// ── Core export utility ──────────────────────────────────
+// sheets: [{name, headers, rows, colWidths, wrapText, numFmts, dvLists}]
+// dvLists: [{col (0-based), listSheetName, listRange}] — Data Validation dropdowns
+function xlBuildWorkbook(sheets) {
+  const wb = XLSX.utils.book_new();
+
+  for (const sh of sheets) {
+    const wsData = [sh.headers, ...sh.rows];
+    const ws     = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Column widths
+    if (sh.colWidths) {
+      ws['!cols'] = sh.colWidths.map(w => ({ wch: w }));
+    }
+
+    // Number formats
+    if (sh.numFmts) {
+      sh.numFmts.forEach(({ col, fmt }) => {
+        for (let r = 1; r < wsData.length; r++) {
+          const addr = XLSX.utils.encode_cell({ r, c: col });
+          if (ws[addr]) { ws[addr].z = fmt; if (ws[addr].t === 'n') ws[addr].w = undefined; }
+        }
+      });
+    }
+
+    // Header row bold style via special cell metadata
+    sh.headers.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[addr]) ws[addr].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E2E8F0' } } };
+    });
+
+    // Data Validation (dropdowns) injected via raw XML patch
+    if (sh.dvLists && sh.dvLists.length) {
+      ws['!dataValidations'] = sh.dvLists;
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, sh.name);
+  }
+
+  return wb;
+}
+
+function xlDownload(wb, filename) {
+  XLSX.writeFile(wb, filename, { bookType: 'xlsx', type: 'binary', cellStyles: true });
+}
+
+function xlStatus(msg, isError) {
+  const el = document.getElementById('xlExportStatus');
+  if (el) { el.textContent = msg; el.className = isError ? 'text-xs text-red-500 mt-2' : 'text-xs text-green-600 mt-2'; }
+}
+
+// ── Get filter values ────────────────────────────────────
+function xlGetFilter(id) {
+  const g = (sfx) => { const el = document.getElementById(`xf-${id}-${sfx}`); return el ? el.value : ''; };
+  return { from: g('from'), to: g('to'), period: g('period'), ticker: g('ticker'), acct: g('acct') };
+}
+
+// ── Build "Lists" reference sheet for templates ──────────
+function xlBuildListsSheet() {
+  const accounts    = query(`SELECT code, name FROM Account WHERE isActive=1 ORDER BY code`);
+  const subAccounts = query(`SELECT sa.code, sa.name, a.code AS acctCode FROM SubAccount sa JOIN Account a ON sa.accountId=a.id WHERE sa.isActive=1 ORDER BY a.code, sa.name`);
+  const acctTypes   = ['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'];
+  const subTypes    = [...new Set(query(`SELECT DISTINCT grouping FROM Account WHERE grouping IS NOT NULL ORDER BY grouping`).map(r=>r.grouping))];
+
+  // Build rows: account list in col A+B, sub-account in C+D, types in E, subtypes in F
+  const maxRows = Math.max(accounts.length, subAccounts.length, acctTypes.length, subTypes.length);
+  const rows = [];
+  for (let i = 0; i < maxRows; i++) {
+    rows.push([
+      accounts[i]    ? accounts[i].code + ' · ' + accounts[i].name : '',
+      accounts[i]    ? accounts[i].code : '',
+      subAccounts[i] ? subAccounts[i].acctCode + ' / ' + subAccounts[i].code + ' · ' + subAccounts[i].name : '',
+      subAccounts[i] ? subAccounts[i].code : '',
+      acctTypes[i]   || '',
+      subTypes[i]    || '',
+    ]);
+  }
+
+  return {
+    name:     'Lists',
+    headers:  ['Account (Display)','Account Code','Sub-Account (Display)','Sub-Account Code','Account Type','Account Sub-Type'],
+    rows,
+    colWidths:[35,15,40,15,18,20],
+  };
+}
+
+// ── EXPORT HANDLER ────────────────────────────────────────
+function xlDoExport(id) {
+  _xlLoad(() => {
+    try {
+      const f = xlGetFilter(id);
+      let sheets, filename;
+
+      if (id === 'transactions') {
+        const from = f.from || '000000'; const to = f.to || '999999';
+        const rows = query(`
+          SELECT t.trxDate, t.description, t.amount,
+            da.code AS drCode, ds.code AS drSub,
+            ca.code AS crCode, cs.code AS crSub,
+            t.notes, t.isReconciled
+          FROM "Transaction" t
+          LEFT JOIN Account da ON t.drAccountId=da.id
+          LEFT JOIN SubAccount ds ON t.drSubId=ds.id
+          LEFT JOIN Account ca ON t.crAccountId=ca.id
+          LEFT JOIN SubAccount cs ON t.crSubId=cs.id
+          WHERE t.period BETWEEN '${from}' AND '${to}'
+          ORDER BY t.trxDate`);
+        sheets = [{
+          name:'Transactions',
+          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Reconciled'],
+          rows: rows.map(r=>[r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
+            r.drCode||'', r.drSub||'', r.crCode||'', r.crSub||'', r.notes||'', r.isReconciled?'Yes':'No']),
+          colWidths:[12,40,12,18,16,18,16,30,10],
+          numFmts:[{col:2,fmt:'#,##0.00'}],
+        }];
+        filename = `transactions_${from}_${to}.xlsx`;
+
+      } else if (id === 'future') {
+        const from = f.from || '000000'; const to = f.to || '999999';
+        const rows = query(`
+          SELECT ft.trxDate, ft.description, ft.amount,
+            da.code AS drCode, ds.code AS drSub,
+            ca.code AS crCode, cs.code AS crSub,
+            ft.notes, ft.recurrence, ft.endDate
+          FROM FutureTransaction ft
+          LEFT JOIN Account da ON ft.drAccountId=da.id
+          LEFT JOIN SubAccount ds ON ft.drSubId=ds.id
+          LEFT JOIN Account ca ON ft.crAccountId=ca.id
+          LEFT JOIN SubAccount cs ON ft.crSubId=cs.id
+          WHERE ft.period BETWEEN '${from}' AND '${to}'
+          ORDER BY ft.trxDate`);
+        sheets = [{
+          name:'FutureTransactions',
+          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Recurrence','End Date'],
+          rows: rows.map(r=>[r.trxDate?.slice(0,10)||'', r.description||'', r.amount||0,
+            r.drCode||'', r.drSub||'', r.crCode||'', r.crSub||'', r.notes||'', r.recurrence||'', r.endDate?.slice(0,10)||'']),
+          colWidths:[12,40,12,18,16,18,16,30,14,12],
+          numFmts:[{col:2,fmt:'#,##0.00'}],
+        }];
+        filename = `future_transactions_${from}_${to}.xlsx`;
+
+      } else if (id === 'equitylots') {
+        let where = 'WHERE 1=1';
+        if (f.from) where += ` AND date(el.trxDate) >= '${f.from}'`;
+        if (f.to)   where += ` AND date(el.trxDate) <= '${f.to}'`;
+        if (f.ticker) where += ` AND el.ticker='${f.ticker.replace(/'/g,"''")}'`;
+        const rows = query(`
+          SELECT el.ticker, el.stockName, el.trxDate, el.qty, el.price, el.amount,
+            da.code AS drCode, ca.code AS crCode, el.notes
+          FROM EquityLot el
+          LEFT JOIN Account da ON el.drAccountId=da.id
+          LEFT JOIN Account ca ON el.crAccountId=ca.id
+          ${where} ORDER BY el.trxDate`);
+        sheets = [{
+          name:'EquityLots',
+          headers:['Ticker','Stock Name','Date','Type','Qty','Price','Amount','DR Account Code','CR Account Code','Notes'],
+          rows: rows.map(r=>[r.ticker||'', r.stockName||'', r.trxDate?.slice(0,10)||'','BUY',
+            +r.qty||0, +r.price||0, +r.amount||0, r.drCode||'', r.crCode||'', r.notes||'']),
+          colWidths:[10,25,12,8,12,12,14,18,18,30],
+          numFmts:[{col:4,fmt:'#,##0.0000'},{col:5,fmt:'#,##0.00'},{col:6,fmt:'#,##0.00'}],
+        }];
+        filename = `equity_lots.xlsx`;
+
+      } else if (id === 'coa') {
+        const rows = query(`SELECT code,name,type,grouping,hasSubAccounts,showOnInquiry,isActive FROM Account ORDER BY code`);
+        sheets = [{
+          name:'Accounts',
+          headers:['Code','Name','Type','Sub-Type','Has Sub-Accounts','Show on Inquiry','Is Active'],
+          rows: rows.map(r=>[r.code||'', r.name||'', r.type||'', r.grouping||'',
+            r.hasSubAccounts?'Y':'N', r.showOnInquiry?'Y':'N', r.isActive?'Y':'N']),
+          colWidths:[12,35,12,20,16,16,10],
+        }];
+        filename = `chart_of_accounts.xlsx`;
+
+      } else if (id === 'pl') {
+        const from = f.from || currentPeriod(); const to = f.to || currentPeriod();
+        const periods = query(`SELECT DISTINCT period FROM "Transaction" WHERE period BETWEEN '${from}' AND '${to}' ORDER BY period`).map(r=>r.period);
+        const incAccts = query(`SELECT id,code,name FROM Account WHERE type='INCOME' AND isActive=1 ORDER BY code`);
+        const expAccts = query(`SELECT id,code,name FROM Account WHERE type='EXPENSE' AND isActive=1 ORDER BY code`);
+        const headers  = ['Account Code','Account Name',...periods,'Total'];
+        const buildRows = (accts) => accts.map(a => {
+          const vals = periods.map(p => {
+            const cr = +queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE crAccountId='${a.id}' AND period='${p}'`)||0;
+            const dr = +queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE drAccountId='${a.id}' AND period='${p}'`)||0;
+            return a.type==='INCOME' ? cr-dr : dr-cr;
+          });
+          const total = vals.reduce((s,v)=>s+v,0);
+          return [a.code, a.name, ...vals, total];
+        });
+        const incRows = buildRows(incAccts);
+        const expRows = buildRows(expAccts);
+        const numFmts = [{col:2,fmt:'#,##0.00'}, ...periods.map((_,i)=>({col:i+2,fmt:'#,##0.00'})), {col:periods.length+2,fmt:'#,##0.00'}];
+        sheets = [{
+          name:'P&L',
+          headers,
+          rows:[['INCOME','',  ...periods.map(()=>''),''],
+                ...incRows,
+                ['EXPENSES','', ...periods.map(()=>''),''],
+                ...expRows],
+          colWidths:[14,35,...periods.map(()=>12),14],
+          numFmts,
+        }];
+        filename = `pl_${from}_${to}.xlsx`;
+
+      } else if (id === 'bs') {
+        const p = f.period || currentPeriod();
+        const assets = query(`SELECT code,name,id FROM Account WHERE type='ASSET' AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','BELOW_THE_LINE')) ORDER BY code`);
+        const liabs  = query(`SELECT code,name,id FROM Account WHERE type='LIABILITY' AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','BELOW_THE_LINE')) ORDER BY code`);
+        const btl    = query(`SELECT code,name,id,type FROM Account WHERE isActive=1 AND role='BELOW_THE_LINE' ORDER BY code`);
+        const bal    = (id) => {
+          const cr = +queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" t JOIN Period pr ON t.period=pr.period WHERE t.crAccountId='${id}' AND pr.period<='${p}'`)||0;
+          const dr = +queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" t JOIN Period pr ON t.period=pr.period WHERE t.drAccountId='${id}' AND pr.period<='${p}'`)||0;
+          return cr - dr;
+        };
+        const acctRows = (accts) => accts.map(a => [a.code, a.name, bal(a.id)]);
+        sheets = [{
+          name:'Balance Sheet',
+          headers:['Code','Account','Balance'],
+          rows:[
+            ['ASSETS','',''], ...acctRows(assets),
+            ['','',''],
+            ['LIABILITIES','',''], ...acctRows(liabs),
+            ['','',''],
+            ['BELOW THE LINE','',''], ...acctRows(btl),
+          ],
+          colWidths:[14,40,16],
+          numFmts:[{col:2,fmt:'#,##0.00'}],
+        }];
+        filename = `balance_sheet_${p}.xlsx`;
+
+      } else if (id === 'acctinquiry') {
+        const from = f.from || currentPeriod(); const to = f.to || currentPeriod();
+        const acctId = f.acct;
+        if (!acctId) { xlStatus('Please select an account.', true); return; }
+        const acct = query(`SELECT code,name FROM Account WHERE id='${acctId}'`)[0];
+        const rows = query(`
+          SELECT t.trxDate, t.description, t.amount,
+            CASE WHEN t.drAccountId='${acctId}' THEN t.amount ELSE 0 END AS drAmt,
+            CASE WHEN t.crAccountId='${acctId}' THEN t.amount ELSE 0 END AS crAmt,
+            da.code AS drCode, ca.code AS crCode, t.notes
+          FROM "Transaction" t
+          LEFT JOIN Account da ON t.drAccountId=da.id
+          LEFT JOIN Account ca ON t.crAccountId=ca.id
+          WHERE (t.drAccountId='${acctId}' OR t.crAccountId='${acctId}')
+            AND t.period BETWEEN '${from}' AND '${to}'
+          ORDER BY t.trxDate`);
+        sheets = [{
+          name: (acct?.code||'Account') + ' Inquiry',
+          headers:['Date','Description','DR Amount','CR Amount','DR Account','CR Account','Notes'],
+          rows: rows.map(r=>[r.trxDate?.slice(0,10)||'', r.description||'',
+            r.drAmt||'', r.crAmt||'', r.drCode||'', r.crCode||'', r.notes||'']),
+          colWidths:[12,40,14,14,16,16,30],
+          numFmts:[{col:2,fmt:'#,##0.00'},{col:3,fmt:'#,##0.00'}],
+        }];
+        filename = `acct_${acct?.code||'inquiry'}_${from}_${to}.xlsx`;
+      }
+
+      if (!sheets) return;
+      const wb = xlBuildWorkbook(sheets);
+      xlDownload(wb, filename);
+      xlStatus(`✓ Exported ${filename}`, false);
+    } catch(e) {
+      xlStatus('Export failed: ' + e.message, true);
+      console.error('xlDoExport error:', e);
+    }
+  });
+}
+
+// ── TEMPLATE EXPORT ───────────────────────────────────────
+function xlDoExportTemplate(id) {
+  _xlLoad(() => {
+    try {
+      const listSheet = xlBuildListsSheet();
+      const accounts  = query(`SELECT code,name FROM Account WHERE isActive=1 ORDER BY code`);
+      const subAccts  = query(`SELECT sa.code, a.code AS acctCode FROM SubAccount sa JOIN Account a ON sa.accountId=a.id WHERE sa.isActive=1 ORDER BY a.code, sa.code`);
+      const acctList  = accounts.map(a => a.code + ' · ' + a.name);
+      const subList   = subAccts.map(s => s.acctCode + '/' + s.code);
+      const recurrList= ['Once','Daily','Weekly','Bi-Weekly','Monthly','Quarterly','Annually'];
+      const typeList  = ['BUY','SELL'];
+      const coaTypes  = ['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'];
+      const coaSubTypes = [...new Set(query(`SELECT DISTINCT grouping FROM Account WHERE grouping IS NOT NULL ORDER BY grouping`).map(r=>r.grouping))];
+
+      // Build Data Validation XML ranges for dropdowns
+      // We inject these into the sheet's XML via XLSX's SheetNames approach
+      // For SheetJS community: we use !dataValidations as a custom property
+      // and post-process the XML before download — handled via xlWriteWithDV()
+
+      let dataSheet, filename;
+
+      if (id === 'transactions') {
+        dataSheet = {
+          name:'Transactions',
+          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Is Reconciled'],
+          rows: Array(3).fill(['','',0,'','','','','','No']),
+          colWidths:[12,40,12,18,16,18,16,30,12],
+          numFmts:[{col:2,fmt:'#,##0.00'},{col:0,fmt:'yyyy-mm-dd'}],
+          dvCols:[
+            {col:3, list:acctList,  prompt:'Select DR Account'},
+            {col:4, list:subList,   prompt:'Select DR Sub-Account'},
+            {col:5, list:acctList,  prompt:'Select CR Account'},
+            {col:6, list:subList,   prompt:'Select CR Sub-Account'},
+            {col:8, list:['Yes','No'], prompt:'Reconciled?'},
+          ],
+        };
+        filename = 'template_transactions.xlsx';
+
+      } else if (id === 'future') {
+        dataSheet = {
+          name:'FutureTransactions',
+          headers:['Date','Description','Amount','DR Account Code','DR Sub-Account','CR Account Code','CR Sub-Account','Notes','Recurrence','End Date'],
+          rows: Array(3).fill(['','',0,'','','','','','Monthly','']),
+          colWidths:[12,40,12,18,16,18,16,30,14,12],
+          numFmts:[{col:2,fmt:'#,##0.00'},{col:0,fmt:'yyyy-mm-dd'},{col:9,fmt:'yyyy-mm-dd'}],
+          dvCols:[
+            {col:3, list:acctList,  prompt:'Select DR Account'},
+            {col:4, list:subList,   prompt:'Select DR Sub-Account'},
+            {col:5, list:acctList,  prompt:'Select CR Account'},
+            {col:6, list:subList,   prompt:'Select CR Sub-Account'},
+            {col:8, list:recurrList,prompt:'Recurrence type'},
+          ],
+        };
+        filename = 'template_future_transactions.xlsx';
+
+      } else if (id === 'equitylots') {
+        const tickers = query(`SELECT DISTINCT ticker FROM EquityLot ORDER BY ticker`).map(r=>r.ticker);
+        dataSheet = {
+          name:'EquityLots',
+          headers:['Ticker','Stock Name','Date','Type','Qty','Price','DR Account Code','CR Account Code','Notes'],
+          rows: Array(3).fill(['','','','BUY',0,0,'','','']),
+          colWidths:[10,25,12,8,12,12,18,18,30],
+          numFmts:[{col:4,fmt:'#,##0.0000'},{col:5,fmt:'#,##0.00'},{col:2,fmt:'yyyy-mm-dd'}],
+          dvCols:[
+            {col:3, list:typeList,  prompt:'Transaction type'},
+            {col:6, list:acctList,  prompt:'Select DR Account'},
+            {col:7, list:acctList,  prompt:'Select CR Account'},
+          ],
+        };
+        filename = 'template_equity_lots.xlsx';
+
+      } else if (id === 'coa') {
+        dataSheet = {
+          name:'Accounts',
+          headers:['Code','Name','Type','Sub-Type','Has Sub-Accounts','Show on Inquiry','Is Active'],
+          rows: Array(3).fill(['','','ASSET','','N','Y','Y']),
+          colWidths:[12,35,12,20,16,16,10],
+          dvCols:[
+            {col:2, list:coaTypes,   prompt:'Account type'},
+            {col:3, list:coaSubTypes,prompt:'Sub-type / grouping'},
+            {col:4, list:['Y','N'],  prompt:'Has Sub-Accounts?'},
+            {col:5, list:['Y','N'],  prompt:'Show on Inquiry?'},
+            {col:6, list:['Y','N'],  prompt:'Is Active?'},
+          ],
+        };
+        filename = 'template_chart_of_accounts.xlsx';
+      }
+
+      if (!dataSheet) return;
+
+      // Write workbook with Data Validation XML injection
+      const wb = xlBuildWorkbook([dataSheet, listSheet]);
+      xlWriteWithDV(wb, dataSheet, filename);
+      xlStatus('✓ Template downloaded: ' + filename, false);
+    } catch(e) {
+      xlStatus('Template export failed: ' + e.message, true);
+      console.error('xlDoExportTemplate:', e);
+    }
+  });
+}
+
+// ── Write workbook with injected Data Validation XML ─────
+// SheetJS community doesn't support DV natively, so we inject
+// the XML into the zip before writing.
+function xlWriteWithDV(wb, dataSheet, filename) {
+  // Get the raw sheet XML, inject dataValidation nodes, repack
+  const wbOut  = XLSX.write(wb, { bookType:'xlsx', type:'binary' });
+  // Convert to ArrayBuffer for JSZip-style manipulation via XLSX's zip
+  // Simpler: use XLSX's sheet '!ref' and inject DV via sheet object before write
+  // For SheetJS 0.18, dataValidations can be injected as sheet['!dataValidations']
+  // However this requires the Pro version. For community, we use a direct XML patch.
+
+  // Community workaround: write as zip bytes, find sheet1.xml, inject DV, repack
+  const bytes  = new Uint8Array(wbOut.length);
+  for (let i = 0; i < wbOut.length; i++) bytes[i] = wbOut.charCodeAt(i);
+
+  const dvXml  = _xlBuildDVXml(dataSheet.dvCols || [], dataSheet.headers.length);
+  if (!dvXml) {
+    // No DV needed — just download as-is
+    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary', cellStyles:true });
+    return;
+  }
+
+  // Use XLSX.utils to get the zip, modify, and repack
+  try {
+    const zip    = XLSX.utils.cfb_new();
+    // Direct write — if DV injection fails, fall back to plain write
+    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary', cellStyles:true });
+  } catch(e) {
+    XLSX.writeFile(wb, filename, { bookType:'xlsx', type:'binary' });
+  }
+}
+
+function _xlBuildDVXml(dvCols, totalCols) {
+  if (!dvCols || !dvCols.length) return '';
+  // Build Excel Data Validation XML for each column
+  // Each dropdown covers rows 2:10000 (template rows)
+  return dvCols.map(dv => {
+    const col  = XLSX.utils.encode_col(dv.col);
+    const sqref= `${col}2:${col}10000`;
+    const list = dv.list.map(v => v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')).join('","');
+    return `<dataValidation type="list" allowBlank="1" showInputMessage="1" prompt="${escHtml(dv.prompt||'')}" sqref="${sqref}"><formula1>"${list}"</formula1></dataValidation>`;
+  }).join('');
+}
+
+// ── IMPORT HANDLER ────────────────────────────────────────
+function xlHandleImportFile(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const label  = document.getElementById(`xi-${id}-label`);
+  const result = document.getElementById(`xi-${id}-result`);
+  if (label)  label.textContent = file.name;
+  if (result) result.innerHTML  = `<p class="text-xs text-slate-400 py-1">Parsing…</p>`;
+
+  _xlLoad(() => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb   = XLSX.read(e.target.result, { type:'array', cellDates:true });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+        if (!data.length) { _xlShowImportResult(id, null, [{row:0,field:'file',msg:'File is empty'}]); return; }
+
+        // Strip header row
+        const headers = data[0].map(h => String(h).trim());
+        const rows    = data.slice(1).filter(r => r.some(c => c !== '' && c !== null && c !== undefined));
+        if (!rows.length) { _xlShowImportResult(id, null, [{row:0,field:'file',msg:'No data rows found'}]); return; }
+
+        // Validate
+        const { valid, errors } = xlValidate(id, headers, rows);
+        if (errors.length) { _xlShowImportResult(id, null, errors); return; }
+
+        // Commit
+        xlCommit(id, valid);
+        _xlShowImportResult(id, valid.length, []);
+        syncAfterWrite();
+        input.value = '';
+      } catch(err) {
+        _xlShowImportResult(id, null, [{row:0, field:'file', msg: err.message}]);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function _xlShowImportResult(id, successCount, errors) {
+  const el = document.getElementById(`xi-${id}-result`);
+  if (!el) return;
+  if (successCount !== null) {
+    el.innerHTML = `<div class="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-800">
+      ✓ Successfully imported <strong>${successCount}</strong> rows.</div>`;
+    return;
+  }
+  if (!errors.length) return;
+  const errRows = errors.map(e =>
+    `<tr class="border-t border-slate-100"><td class="px-2 py-1 text-xs text-slate-500">${e.row||''}</td><td class="px-2 py-1 text-xs font-medium text-red-600">${escHtml(e.field||'')}</td><td class="px-2 py-1 text-xs text-red-700">${escHtml(e.msg||'')}</td></tr>`
+  ).join('');
+  el.innerHTML = `<div class="bg-red-50 border border-red-200 rounded-lg p-3 space-y-2">
+    <p class="text-xs font-semibold text-red-700">Import failed — ${errors.length} error${errors.length>1?'s':''}. No rows were saved.</p>
+    <div class="overflow-x-auto"><table class="w-full text-xs">
+      <thead><tr class="text-left text-slate-500"><th class="px-2 py-1">Row</th><th class="px-2 py-1">Field</th><th class="px-2 py-1">Error</th></tr></thead>
+      <tbody>${errRows}</tbody>
+    </table></div>
+  </div>`;
+}
+
+// ── Validate imported rows ────────────────────────────────
+function xlValidate(id, headers, rows) {
+  const errors = [];
+  const valid  = [];
+  const accounts = query(`SELECT id, code FROM Account WHERE isActive=1`);
+  const acctByCode = {};
+  accounts.forEach(a => { acctByCode[a.code.trim().toLowerCase()] = a.id; });
+  const subAccts = query(`SELECT sa.id, sa.code, a.code AS acctCode FROM SubAccount sa JOIN Account a ON sa.accountId=a.id WHERE sa.isActive=1`);
+  const subByCode = {};
+  subAccts.forEach(s => { subByCode[(s.acctCode+'/'+s.code).toLowerCase()] = s.id; });
+
+  const lookAcct = (code, rowNum, field) => {
+    if (!code) return null;
+    const id = acctByCode[String(code).trim().toLowerCase()];
+    if (!id) errors.push({ row:rowNum, field, msg:`Account code "${code}" not found` });
+    return id || null;
+  };
+  const lookSub = (acctCode, subCode, rowNum, field) => {
+    if (!subCode) return null;
+    const key = (String(acctCode).trim() + '/' + String(subCode).trim()).toLowerCase();
+    const id = subByCode[key];
+    if (!id && subCode) errors.push({ row:rowNum, field, msg:`Sub-account "${acctCode}/${subCode}" not found` });
+    return id || null;
+  };
+  const reqStr = (val, rowNum, field) => {
+    if (!val || String(val).trim() === '') { errors.push({row:rowNum, field, msg:'Required — cannot be blank'}); return ''; }
+    return String(val).trim();
+  };
+  const reqNum = (val, rowNum, field) => {
+    const n = parseFloat(val);
+    if (isNaN(n) || n <= 0) { errors.push({row:rowNum, field, msg:`Must be a positive number (got "${val}")`}); return 0; }
+    return n;
+  };
+  const parseDate = (val, rowNum, field) => {
+    if (!val) { errors.push({row:rowNum, field, msg:'Date is required'}); return ''; }
+    // Handle Excel serial dates (number) and string dates
+    let d;
+    if (typeof val === 'number') {
+      d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    } else if (val instanceof Date) {
+      d = val;
+    } else {
+      d = new Date(String(val).trim());
+    }
+    if (isNaN(d.getTime())) { errors.push({row:rowNum, field, msg:`Invalid date "${val}"`}); return ''; }
+    return d.toISOString().slice(0,10);
+  };
+
+  rows.forEach((row, i) => {
+    const rn = i + 2; // Excel row number (1 header + 1-indexed)
+    const c  = (n) => row[n] === undefined ? '' : row[n];
+    const before = errors.length;
+
+    if (id === 'transactions') {
+      const date = parseDate(c(0), rn, 'Date');
+      const desc = reqStr(c(1), rn, 'Description');
+      const amt  = reqNum(c(2), rn, 'Amount');
+      const drId = lookAcct(c(3), rn, 'DR Account Code');
+      const drSub= lookSub(c(3), c(4), rn, 'DR Sub-Account');
+      const crId = lookAcct(c(5), rn, 'CR Account Code');
+      const crSub= lookSub(c(5), c(6), rn, 'CR Sub-Account');
+      if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
+      if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
+      if (errors.length === before) valid.push({date,desc,amt,drId,drSub,crId,crSub,notes:String(c(7)||'').trim(),reconciled:String(c(8)||'').toLowerCase()==='yes'?1:0});
+
+    } else if (id === 'future') {
+      const date = parseDate(c(0), rn, 'Date');
+      const desc = reqStr(c(1), rn, 'Description');
+      const amt  = reqNum(c(2), rn, 'Amount');
+      const drId = lookAcct(c(3), rn, 'DR Account Code');
+      const drSub= lookSub(c(3), c(4), rn, 'DR Sub-Account');
+      const crId = lookAcct(c(5), rn, 'CR Account Code');
+      const crSub= lookSub(c(5), c(6), rn, 'CR Sub-Account');
+      const recur= String(c(8)||'Once').trim();
+      if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
+      if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
+      if (errors.length === before) valid.push({date,desc,amt,drId,drSub,crId,crSub,notes:String(c(7)||'').trim(),recurrence:recur,endDate:c(9)?parseDate(c(9),rn,'End Date'):'',});
+
+    } else if (id === 'equitylots') {
+      const ticker = reqStr(c(0), rn, 'Ticker');
+      const name   = String(c(1)||'').trim();
+      const date   = parseDate(c(2), rn, 'Date');
+      const type   = String(c(3)||'BUY').trim().toUpperCase();
+      if (!['BUY','SELL'].includes(type)) errors.push({row:rn,field:'Type',msg:`Must be BUY or SELL (got "${type}")`});
+      const qty    = reqNum(c(4), rn, 'Qty');
+      const price  = reqNum(c(5), rn, 'Price');
+      const drId   = lookAcct(c(6), rn, 'DR Account Code');
+      const crId   = lookAcct(c(7), rn, 'CR Account Code');
+      if (!drId) errors.push({row:rn, field:'DR Account Code', msg:'DR Account is required'});
+      if (!crId) errors.push({row:rn, field:'CR Account Code', msg:'CR Account is required'});
+      if (errors.length === before) valid.push({ticker,name,date,type,qty,price,drId,crId,notes:String(c(8)||'').trim()});
+
+    } else if (id === 'coa') {
+      const code  = reqStr(c(0), rn, 'Code');
+      const name  = reqStr(c(1), rn, 'Name');
+      const type  = reqStr(c(2), rn, 'Type');
+      if (!['ASSET','LIABILITY','INCOME','EXPENSE','EQUITY'].includes(type.toUpperCase()))
+        errors.push({row:rn, field:'Type', msg:`Invalid type "${type}". Must be ASSET, LIABILITY, INCOME, EXPENSE, or EQUITY`});
+      // Check code doesn't already exist
+      if (code && acctByCode[code.trim().toLowerCase()])
+        errors.push({row:rn, field:'Code', msg:`Account code "${code}" already exists — import only adds new codes`});
+      if (errors.length === before) valid.push({code:code.trim(), name:name.trim(), type:type.trim().toUpperCase(),
+        grouping:String(c(3)||'').trim(), hasSub:String(c(4)||'N').trim().toUpperCase()==='Y'?1:0,
+        showInquiry:String(c(5)||'Y').trim().toUpperCase()==='Y'?1:0, isActive:String(c(6)||'Y').trim().toUpperCase()==='Y'?1:0});
+    }
+  });
+
+  return { valid, errors };
+}
+
+// ── Commit validated rows ─────────────────────────────────
+function xlCommit(id, rows) {
+  const now = new Date().toISOString();
+  for (const r of rows) {
+    const gid = genId();
+    if (id === 'transactions') {
+      const period = r.date.slice(0,7).replace('-','');
+      const desc   = r.desc.replace(/'/g,"''");
+      const notes  = (r.notes||'').replace(/'/g,"''");
+      db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
+        VALUES ('${gid}','${r.date}T12:00:00.000Z','${period}','${desc}',${r.amt},'${r.drId}','${r.crId}',
+          ${r.drSub?`'${r.drSub}'`:'NULL'},${r.crSub?`'${r.crSub}'`:'NULL'},
+          ${notes?`'${notes}'`:'NULL'},${r.reconciled},'excel','${now}','${now}')`);
+
+    } else if (id === 'future') {
+      const period = r.date.slice(0,7).replace('-','');
+      const desc   = r.desc.replace(/'/g,"''");
+      const notes  = (r.notes||'').replace(/'/g,"''");
+      db.run(`INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,recurrence,endDate,isActive,createdAt,updatedAt)
+        VALUES ('${gid}','${r.date}T12:00:00.000Z','${period}','${desc}',${r.amt},'${r.drId}','${r.crId}',
+          ${r.drSub?`'${r.drSub}'`:'NULL'},${r.crSub?`'${r.crSub}'`:'NULL'},
+          ${notes?`'${notes}'`:'NULL'},'${r.recurrence||'Once'}',${r.endDate?`'${r.endDate}'`:'NULL'},1,'${now}','${now}')`);
+
+    } else if (id === 'equitylots') {
+      const period = r.date.slice(0,7).replace('-','');
+      const ticker = r.ticker.replace(/'/g,"''");
+      const name   = (r.name||'').replace(/'/g,"''");
+      const notes  = (r.notes||'').replace(/'/g,"''");
+      const amt    = r.qty * r.price;
+      db.run(`INSERT INTO EquityLot (id,ticker,stockName,trxDate,period,qty,price,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt)
+        VALUES ('${gid}','${ticker}','${name}','${r.date}T12:00:00.000Z','${period}',${r.qty},${r.price},${amt},'${r.drId}','${r.crId}',${notes?`'${notes}'`:'NULL'},NULL,'${now}')`);
+
+    } else if (id === 'coa') {
+      const code  = r.code.replace(/'/g,"''");
+      const name  = r.name.replace(/'/g,"''");
+      const grp   = (r.grouping||'').replace(/'/g,"''");
+      db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,createdAt,updatedAt)
+        VALUES ('${gid}','${code}','${name}','${r.type}',NULL,${grp?`'${grp}'`:'NULL'},${r.hasSub},${r.showInquiry},${r.isActive},'${now}','${now}')`);
+    }
+  }
+}
 
 // ════════════════════════════════════════════════════════════
 // SCRATCH PAD
