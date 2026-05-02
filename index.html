@@ -6002,6 +6002,30 @@ async function _itLoadModel() {
 
     _itModelReady   = true;
     _itModelLoading = false;
+
+    // ── Probe: find the actual image token ID at runtime ──
+    // Encode "<image>" and show the resulting token ID on screen.
+    // This runs once after model loads and tells us exactly what ID to use.
+    try {
+      const probeIds = _itTokenizer('<image>', { add_special_tokens: false });
+      let ids = [];
+      if (probeIds?.input_ids) {
+        const raw = probeIds.input_ids;
+        ids = typeof raw.tolist === 'function'
+          ? (raw.tolist()[0] || raw.tolist())
+          : Array.from(raw.data || raw);
+      }
+      const probeMsg = `IMAGE TOKEN PROBE: "<image>" → token IDs: [${ids.join(', ')}]`;
+      console.log(probeMsg);
+      const probeEl = document.getElementById('itModelMsg');
+      if (probeEl) probeEl.textContent = probeMsg;
+      // Also store for use in inference
+      window._itImageTokenId = ids.length === 1 ? Number(ids[0]) : null;
+      console.log('Stored _itImageTokenId:', window._itImageTokenId);
+    } catch(e) {
+      console.warn('Token probe failed:', e.message);
+    }
+
     setMsg('Vision model ready ✓', 100);
     setTimeout(() => _renderITPage(), 500);
 
@@ -6022,7 +6046,9 @@ async function _itRunInference(imageDataUrl, prompt) {
 
   // Moondream2: vision encoder produces 729 feature vectors (27×27 patches).
   // input_ids must contain 729 copies of the image token (50256) followed by the text tokens.
-  const IMAGE_TOKEN_ID = 50256;
+  // Use the image token ID discovered at model-load time via the probe.
+  // Falls back to 50256 only if probe failed — will be corrected after first load.
+  const IMAGE_TOKEN_ID = window._itImageTokenId != null ? window._itImageTokenId : 50256;
   const IMAGE_SEQ_LEN  = 729;
 
   try {
