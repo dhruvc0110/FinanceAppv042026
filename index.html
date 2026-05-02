@@ -340,9 +340,10 @@ function waitForGIS() {
 
 function setupGoogleAuth() {
   tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: OAUTH_CLIENT_ID,
-    scope: OAUTH_SCOPES,
-    callback: handleTokenResponse,
+    client_id:             OAUTH_CLIENT_ID,
+    scope:                 OAUTH_SCOPES,
+    callback:              handleTokenResponse,
+    include_granted_scopes: true,   // accumulate scopes across consent grants
   });
   document.getElementById('loadStatus').textContent = 'Please sign in to continue.';
   document.getElementById('signInSection').style.display = 'block';
@@ -354,7 +355,13 @@ function setupGoogleAuth() {
 // GOOGLE AUTH
 // ════════════════════════════════════════════════════════════
 function startGoogleSignIn() {
-  tokenClient.requestAccessToken({ prompt: 'select_account' });
+  // Force full re-consent once per browser to fix stale scope grants
+  // that occur when an app moves from Testing to Production in Google Cloud.
+  // After the first successful consent we set a flag so subsequent sign-ins
+  // use the lighter 'select_account' prompt.
+  const hasConsented = localStorage.getItem('_scopeConsentV2');
+  const prompt = hasConsented ? 'select_account' : 'consent';
+  tokenClient.requestAccessToken({ prompt });
 }
 
 async function handleTokenResponse(response) {
@@ -364,7 +371,10 @@ async function handleTokenResponse(response) {
   }
   accessToken = response.access_token;
 
-  // Schedule a proactive silent token refresh 5 minutes before expiry
+  // Mark that full consent has been granted — subsequent sign-ins use select_account
+  try { localStorage.setItem('_scopeConsentV2', '1'); } catch(e) {}
+
+  // Schedule proactive silent token refresh 5 minutes before expiry
   // GIS tokens typically expire in 3600 seconds (1 hour)
   const expiresIn = (response.expires_in || 3600) - 300; // refresh 5 min early
   if (window._tokenRefreshTimer) clearTimeout(window._tokenRefreshTimer);
