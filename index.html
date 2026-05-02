@@ -5916,19 +5916,25 @@ async function _itLoadModel() {
   try {
     setMsg('Loading Transformers.js runtime…', 5);
 
-    // Dynamic import — lazy load the library
-    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3/dist/transformers.min.js');
+    // Pinned v4 URL — WASM paths must point to same version so helper files load correctly
+    const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+    const { pipeline, env } = await import(CDN);
 
-    // Use Hugging Face CDN for model weights, cache in browser IndexedDB
-    env.allowLocalModels = false;
+    // Point WASM runtime files to the same CDN base — fixes "Failed to fetch dynamically
+    // imported module" errors caused by the runtime trying to load ort-wasm-*.mjs files
+    env.backends.onnx.wasm.wasmPaths = CDN + '/dist/';
+    env.allowLocalModels  = false;
+    env.useBrowserCache   = true;   // cache model weights in browser Cache Storage
 
     setMsg('Downloading Moondream vision model (one-time, ~450 MB)…', 10);
 
+    // onnx-community/moondream2 is the Transformers.js-compatible ONNX version
+    // 'image-text-to-text' is the correct task for vision+prompt models
     _itPipeline = await pipeline(
-      'image-to-text',
-      'Xenova/moondream2',
+      'image-text-to-text',
+      'onnx-community/moondream2',
       {
-        dtype: 'q4',
+        dtype: { embed_tokens: 'fp16', vision_encoder: 'fp16', decoder_model_merged: 'q4' },
         device: navigator.gpu ? 'webgpu' : 'wasm',
         progress_callback: (p) => {
           if (p.status === 'downloading') {
@@ -5941,18 +5947,15 @@ async function _itLoadModel() {
       }
     );
 
-    _itModelReady  = true;
+    _itModelReady   = true;
     _itModelLoading = false;
     setMsg('Vision model ready ✓', 100);
-
-    // Re-render to update UI state
     setTimeout(() => _renderITPage(), 500);
 
   } catch(e) {
     _itModelLoading = false;
     const msgEl = document.getElementById('itModelMsg');
-    if (msgEl) msgEl.textContent = 'Model load failed: ' + e.message + '. Try reloading the page.';
-    if (msgEl) msgEl.style.color = '#dc2626';
+    if (msgEl) { msgEl.textContent = 'Model load failed: ' + e.message + '. Try reloading the page.'; msgEl.style.color = '#dc2626'; }
     console.error('Moondream load error:', e);
   }
 }
@@ -6099,9 +6102,18 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt = _itBuildPrompt(tplData);
 
-    // Run Moondream inference
-    const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
-    const rawText = result?.[0]?.generated_text || result?.generated_text || '';
+    // Run Moondream inference — image-text-to-text takes messages array
+    const result = await _itPipeline([{
+      role: 'user',
+      content: [
+        { type: 'image', image: dataUrl },
+        { type: 'text',  text: prompt   }
+      ]
+    }], { max_new_tokens: 600 });
+    const rawText = result?.[0]?.generated_text?.at(-1)?.content
+      || result?.[0]?.generated_text
+      || result?.generated_text
+      || '';
 
     // Parse JSON from model output
     const transactions = _itParseModelOutput(rawText, tplData);
@@ -6407,8 +6419,17 @@ async function itTestTemplate(id) {
     const prompt  = _itBuildPrompt(t);
     alert('Running extraction test… this may take 10–20 seconds.');
     try {
-      const result = await _itPipeline(dataUrl, { prompt, max_new_tokens: 600 });
-      const raw    = result?.[0]?.generated_text || result?.generated_text || '';
+      const result = await _itPipeline([{
+        role: 'user',
+        content: [
+          { type: 'image', image: dataUrl },
+          { type: 'text',  text: prompt   }
+        ]
+      }], { max_new_tokens: 600 });
+      const raw = result?.[0]?.generated_text?.at(-1)?.content
+        || result?.[0]?.generated_text
+        || result?.generated_text
+        || '';
       const parsed = _itParseModelOutput(raw, t);
       alert(`Extracted ${parsed.length} transactions:\n\n` + parsed.map(tx=>`${tx.date}  ${tx.description}  $${tx.amount}`).join('\n') + '\n\nRaw output:\n' + raw.slice(0,500));
     } catch(e) { alert('Test failed: ' + e.message); }
