@@ -7696,9 +7696,17 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt  = _itBuildPrompt(tplData);
 
+    // ── DIAGNOSTIC — remove once fixed ──────────────────────
+    console.log('[IT-DEBUG] template obj:', JSON.stringify(template));
+    console.log('[IT-DEBUG] tplData:', JSON.stringify(tplData));
+    console.log('[IT-DEBUG] suggestedCrId BEFORE fix:', suggestedCrId);
+    if (tplData) {
+      const ccCheck = query(`SELECT id, name, liabilityAccountId, paymentAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`);
+      console.log('[IT-DEBUG] CreditCard row for creditCardId', tplData.creditCardId, ':', JSON.stringify(ccCheck));
+    }
+    // ────────────────────────────────────────────────────────
+
     // Ensure suggestedCrId is set from the full template row.
-    // The earlier code may have only had a partial template object (id + cardNickname only)
-    // in the manual-pick path, so re-derive from tplData which always has creditCardId.
     if (tplData?.creditCardId && !suggestedCrId) {
       const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`)[0];
       if (cc?.liabilityAccountId) suggestedCrId = cc.liabilityAccountId;
@@ -7709,6 +7717,9 @@ async function itHandleScreenshot(input) {
       const ccFull = query(`SELECT paymentAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`)[0];
       if (ccFull) paymentAccountId = ccFull.paymentAccountId;
     }
+
+    console.log('[IT-DEBUG] suggestedCrId AFTER fix:', suggestedCrId);
+    console.log('[IT-DEBUG] paymentAccountId:', paymentAccountId);
 
     // _itRunInference shows its own error message and does NOT rethrow
     const rawText = await _itRunInference(dataUrl, prompt);
@@ -7745,16 +7756,17 @@ async function itHandleScreenshot(input) {
       let sugCr = null;
 
       if (txnType === 'payment') {
-        sugDr = suggestedCrId;      // card liability (reduces what you owe)
-        sugCr = paymentAccountId;   // bank account payment came from
+        sugDr = suggestedCrId;
+        sugCr = paymentAccountId;
       } else if (txnType === 'refund') {
-        sugDr = suggestedCrId;      // card liability (reduces what you owe)
-        sugCr = _itLookupMerchantAccount(tx.description);  // reverse the original expense
+        sugDr = suggestedCrId;
+        sugCr = _itLookupMerchantAccount(tx.description);
       } else {
-        // charge — look up merchant history for DR account
         sugDr = _itLookupMerchantAccount(tx.description);
-        sugCr = suggestedCrId;      // card liability
+        sugCr = suggestedCrId;
       }
+
+      console.log(`[IT-DEBUG] tx "${tx.description}" type=${txnType} sugDr=${sugDr} sugCr=${sugCr}`);
 
       db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
         VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},'${txnType}',
