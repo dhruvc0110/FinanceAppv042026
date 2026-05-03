@@ -29,9 +29,14 @@
     #sidebar.collapsed { width: 3.5rem; }
     #sidebar.collapsed .nav-label,
     #sidebar.collapsed .group-label,
-    #sidebar.collapsed .user-info,
     #sidebar.collapsed #userName,
-    #sidebar.collapsed #userEmail { display: none; }
+    #sidebar.collapsed #userEmail,
+    #sidebar.collapsed .sidebar-text { display: none; }
+    /* Collapsed user block — stack avatar then icon buttons, all centred */
+    #sidebar.collapsed #sidebarUser { padding: 4px; }
+    #sidebar.collapsed #sidebarUser > .flex { flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
+    /* sidebar-icon buttons always visible — explicit display:flex to survive collapse */
+    #sidebar .sidebar-icon { display: flex; align-items: center; justify-content: center; }
     .nav-btn.active { background-color: rgb(51 65 85); color: white; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin-anim { animation: spin 0.8s linear infinite; }
@@ -178,16 +183,16 @@
     <div id="sidebarUser" class="flex-shrink-0 px-3 py-2.5 border-b border-slate-700">
       <div class="flex items-center gap-2 min-w-0">
         <div id="userAvatar" class="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white"></div>
-        <div class="user-info min-w-0 flex-1">
+        <div class="sidebar-text min-w-0 flex-1">
           <div id="userName" class="text-xs font-medium text-slate-300 truncate"></div>
           <div id="userEmail" class="text-xs text-slate-500 truncate"></div>
         </div>
         <button onclick="navigate('settings')" data-page="settings" title="Settings"
-          class="nav-btn flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
+          class="sidebar-icon nav-btn flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
         <button onclick="signOut()" title="Sign out"
-          class="user-info flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
+          class="sidebar-icon flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </div>
@@ -3119,13 +3124,13 @@ function generateRepeatables() {
 // P&L PAGE
 // ════════════════════════════════════════════════════════════
 
-let plPeriod   = '';
+let plFrom     = '';
+let plTo       = '';
 let plEditMode = false;
 let plLayouts  = { income: [], expense: [] };
 
 function renderPL(container) {
   plEditMode = false;
-  // Source from Period table (Settings → Periods) plus any tx periods not yet registered there
   const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
@@ -3133,8 +3138,11 @@ function renderPL(container) {
     return;
   }
   const cp = currentPeriod();
-  if (!plPeriod || !periods.includes(plPeriod))
-    plPeriod = periods.includes(cp) ? cp : periods[0];
+  const def = periods.includes(cp) ? cp : periods[0];
+  if (!plFrom || !periods.includes(plFrom)) plFrom = def;
+  if (!plTo   || !periods.includes(plTo))   plTo   = def;
+  // Ensure From <= To
+  if (plFrom > plTo) plTo = plFrom;
   _renderPLPage(container);
 }
 
@@ -3142,9 +3150,11 @@ function _renderPLPage(container) {
   if (!container) container = document.getElementById('pageContent');
 
   const cp       = currentPeriod();
-  const lockRow  = query(`SELECT isLocked FROM Period WHERE period='${plPeriod}'`)[0];
+  // Lock/proj only meaningful for single-period view
+  const singlePeriod = plFrom === plTo;
+  const lockRow  = singlePeriod ? query(`SELECT isLocked FROM Period WHERE period='${plFrom}'`)[0] : null;
   const isLocked = lockRow ? !!lockRow.isLocked : false;
-  const showProj = !isLocked;
+  const showProj = singlePeriod && !isLocked;
 
   // Accounts (excluding EXCLUDED and FLUX_PL roles)
   const incAccts = query(`SELECT id,code,name FROM Account WHERE type='INCOME'  AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL')) ORDER BY code`);
@@ -3152,11 +3162,11 @@ function _renderPLPage(container) {
   const acctMap={};
   [...incAccts,...expAccts].forEach(a=>{ acctMap[a.id]=a; });
 
-  // Actuals
+  // Actuals — sum across the selected period range
   const drMap={}, crMap={};
-  query(`SELECT drAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period='${plPeriod}' GROUP BY drAccountId`)
+  query(`SELECT drAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period BETWEEN '${plFrom}' AND '${plTo}' GROUP BY drAccountId`)
     .forEach(r=>{ drMap[r.aid]=+r.tot||0; });
-  query(`SELECT crAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period='${plPeriod}' GROUP BY crAccountId`)
+  query(`SELECT crAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period BETWEEN '${plFrom}' AND '${plTo}' GROUP BY crAccountId`)
     .forEach(r=>{ crMap[r.aid]=+r.tot||0; });
 
   function getActual(id,type) {
@@ -3164,9 +3174,9 @@ function _renderPLPage(container) {
     return type==='INCOME' ? cr-dr : dr-cr;
   }
 
-  // Budgets
+  // Budgets — sum across range
   const budgetMap={};
-  query(`SELECT accountId,amount,projectedClose FROM BudgetPlan WHERE period='${plPeriod}'`)
+  query(`SELECT accountId, SUM(amount) AS amount, SUM(projectedClose) AS projectedClose FROM BudgetPlan WHERE period BETWEEN '${plFrom}' AND '${plTo}' GROUP BY accountId`)
     .forEach(r=>{ budgetMap[r.accountId]={bgt:+r.amount||0,projR:r.projectedClose}; });
 
   function getLayout(section, accts) {
@@ -3267,7 +3277,9 @@ function _renderPLPage(container) {
   const netA=inc.gA-exp.gA, netB=inc.gB-exp.gB;
 
   const periods=query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
-  const periodOpts=periods.map(p=>`<option value="${p}"${p===plPeriod?' selected':''}>${periodLabel(p)}</option>`).join('');
+  const fromOpts=periods.map(p=>`<option value="${p}"${p===plFrom?' selected':''}>${periodLabel(p)}</option>`).join('');
+  const toOpts  =periods.map(p=>`<option value="${p}"${p===plTo  ?' selected':''}>${periodLabel(p)}</option>`).join('');
+  const rangeLabel = plFrom===plTo ? periodLabel(plFrom) : `${periodLabel(plFrom)} – ${periodLabel(plTo)}`;
 
   const thE=plEditMode?`<th class="px-2 py-2.5 w-20"></th>`:'';
   const thBase=`${thE}
@@ -3298,13 +3310,23 @@ function _renderPLPage(container) {
       <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-xl font-bold text-slate-900">P&amp;L</h1>
-          <p class="text-sm text-slate-500">${periodLabel(plPeriod)}${isLocked?' &mdash; <span class="text-amber-600 font-medium">Locked</span>':''}</p>
+          <p class="text-sm text-slate-500">${rangeLabel}${isLocked?' &mdash; <span class="text-amber-600 font-medium">Locked</span>':''}</p>
         </div>
-        <div class="flex items-center gap-2">
-          <select onchange="plChangePeriod(this.value)"
-            class="border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white">
-            ${periodOpts}
-          </select>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 whitespace-nowrap">From</label>
+            <select onchange="plSetFrom(this.value)"
+              class="border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white">
+              ${fromOpts}
+            </select>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <label class="text-xs text-slate-500 whitespace-nowrap">To</label>
+            <select onchange="plSetTo(this.value)"
+              class="border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white">
+              ${toOpts}
+            </select>
+          </div>
           <button onclick="plToggleEdit()"
             class="${plEditMode?'bg-blue-600 text-white hover:bg-blue-700':'border border-slate-300 text-slate-600 hover:bg-slate-50'} px-3 py-1.5 rounded text-sm font-medium transition">
             ${plEditMode?'Done':'Edit layout'}
