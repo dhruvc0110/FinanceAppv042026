@@ -4259,7 +4259,7 @@ let coaSearchVal   = '';
 let coaExpandedId  = null;
 
 function renderSettings(container) {
-  settingsTab   = 'coa';
+  settingsTab   = 'scratchpad';
   coaTypeFilter = '';
   coaSearchVal  = '';
   coaExpandedId = null;
@@ -4271,26 +4271,51 @@ function _renderSettingsPage(container) {
 
   const IC = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white';
 
-  const TABS = [
-    { id:'coa',         label:'Chart of Accounts' },
-    { id:'repeatable',  label:'Repeatable' },
-    { id:'creditcards', label:'Credit Cards' },
-    { id:'backup',      label:'Backup & Sync' },
-    { id:'periods',     label:'Periods' },
-    { id:'notes',       label:'Notes' },
-    { id:'dashboard',   label:'Dashboard Tiles' },
-    { id:'display',     label:'Display' },
-    { id:'stats',       label:'Stats' },
-    { id:'scratchpad',  label:'Scratch Pad' },
-    { id:'bankaccounts',label:'Bank Accounts' },
-    { id:'exportdata',  label:'Export Data' },
-    { id:'importdata',  label:'Import Data' },
+  // ── Area → Tab two-level structure ──────────────────────
+  const AREAS = [
+    { id:'utilities',       label:'Utilities',       tabs:[
+      { id:'scratchpad', label:'Scratch Pad' },
+      { id:'notes',      label:'Notes' },
+    ]},
+    { id:'configuration',   label:'Configuration',   tabs:[
+      { id:'coa',          label:'Chart of Accounts' },
+      { id:'creditcards',  label:'Credit Cards' },
+      { id:'bankaccounts', label:'Bank Accounts' },
+      { id:'repeatable',   label:'Repeatable' },
+      { id:'periods',      label:'Periods' },
+      { id:'cctemplates',  label:'Credit Card Templates' },
+    ]},
+    { id:'viewsettings',    label:'View Settings',   tabs:[
+      { id:'display',    label:'Display' },
+      { id:'dashboard',  label:'Dashboard Tiles' },
+    ]},
+    { id:'datamanagement',  label:'Data Management', tabs:[
+      { id:'exportdata', label:'Export Data' },
+      { id:'importdata', label:'Import Data' },
+      { id:'backup',     label:'Backup & Sync' },
+    ]},
+    { id:'about',           label:'About',           tabs:[
+      { id:'stats', label:'Stats' },
+      { id:'about', label:'About this App' },
+    ]},
   ];
 
-  const tabBar = TABS.map(t =>
+  // Determine which area the current tab belongs to
+  const activeArea = AREAS.find(a => a.tabs.some(t => t.id === settingsTab)) || AREAS[0];
+  const activeTabs = activeArea.tabs;
+
+  const areaBar = AREAS.map(a =>
+    `<button onclick="settingsGoArea('${a.id}')"
+      class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0
+        ${a.id === activeArea.id ? 'border-slate-900 text-slate-900 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+      ${a.label}
+    </button>`
+  ).join('');
+
+  const tabBar = activeTabs.map(t =>
     `<button onclick="settingsGoTab('${t.id}')"
-      class="px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors flex-shrink-0
-        ${settingsTab===t.id ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+      class="px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors flex-shrink-0
+        ${settingsTab===t.id ? 'border-slate-700 text-slate-800 font-medium' : 'border-transparent text-slate-400 hover:text-slate-600'}">
       ${t.label}
     </button>`
   ).join('');
@@ -4962,24 +4987,27 @@ function _renderSettingsPage(container) {
   }
 
   let tabContent = '';
-  if      (settingsTab==='coa')         tabContent = coaTab();
-  else if (settingsTab==='repeatable')  tabContent = repeatableTab();
-  else if (settingsTab==='creditcards') tabContent = creditCardsTab();
-  else if (settingsTab==='backup')      tabContent = backupTab();
-  else if (settingsTab==='periods')     tabContent = periodsTab();
-  else if (settingsTab==='notes')       tabContent = notesTab();
-  else if (settingsTab==='dashboard')   tabContent = dashboardTilesTab();
-  else if (settingsTab==='display')     tabContent = displayTab();
-  else if (settingsTab==='stats')       tabContent = statsTab();
-  else if (settingsTab==='scratchpad')  tabContent = scratchPadTab();
+  if      (settingsTab==='coa')          tabContent = coaTab();
+  else if (settingsTab==='repeatable')   tabContent = repeatableTab();
+  else if (settingsTab==='creditcards')  tabContent = creditCardsTab();
+  else if (settingsTab==='backup')       tabContent = backupTab();
+  else if (settingsTab==='periods')      tabContent = periodsTab();
+  else if (settingsTab==='notes')        tabContent = notesTab();
+  else if (settingsTab==='dashboard')    tabContent = dashboardTilesTab();
+  else if (settingsTab==='display')      tabContent = displayTab();
+  else if (settingsTab==='stats')        tabContent = statsTab();
+  else if (settingsTab==='scratchpad')   tabContent = scratchPadTab();
   else if (settingsTab==='bankaccounts') tabContent = bankAccountsTab();
   else if (settingsTab==='exportdata')   tabContent = exportDataTab();
   else if (settingsTab==='importdata')   tabContent = importDataTab();
+  else if (settingsTab==='cctemplates')  tabContent = ccTemplatesTab();
+  else if (settingsTab==='about')        tabContent = aboutTab();
 
   container.innerHTML = `
     <div class="space-y-4">
       <h1 class="text-xl font-bold text-slate-900">Settings</h1>
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div class="flex border-b border-slate-200 bg-slate-50 overflow-x-auto">${areaBar}</div>
         <div class="flex border-b border-slate-200 overflow-x-auto">${tabBar}</div>
         <div class="p-5">${tabContent}</div>
       </div>
@@ -5199,6 +5227,173 @@ function _renderSettingsPage(container) {
 }
 
 function settingsGoTab(tab) { settingsTab=tab; _renderSettingsPage(); }
+
+function settingsGoArea(areaId) {
+  // When an area is selected, switch to its first tab
+  const AREA_DEFAULTS = {
+    utilities:      'scratchpad',
+    configuration:  'coa',
+    viewsettings:   'display',
+    datamanagement: 'exportdata',
+    about:          'stats',
+  };
+  settingsTab = AREA_DEFAULTS[areaId] || 'coa';
+  _renderSettingsPage();
+}
+
+// ── Credit Card Templates tab (moved from Import Transactions) ──
+function ccTemplatesTab() {
+  const templates  = query(`SELECT st.*, cc.name AS ccName FROM ScreenshotTemplate st
+    LEFT JOIN CreditCard cc ON st.creditCardId=cc.id ORDER BY st.cardNickname`);
+  const cards = query(`SELECT id, name FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
+  const tplRows = templates.map(t => `
+    <tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(t.cardNickname)}</td>
+      <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.ccName||'—')}</td>
+      <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.dateFormat||'Auto')}</td>
+      <td class="px-3 py-2 text-sm text-slate-500">${t.amountConvention==='positive-charges'?'Positive':'Negative'} charges</td>
+      <td class="px-3 py-2 text-center">
+        <span class="text-xs px-1.5 py-0.5 rounded ${t.fingerprintData?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${t.fingerprintData?'✓ Trained':'No sample'}</span>
+      </td>
+      <td class="px-3 py-2 text-right whitespace-nowrap">
+        <button onclick="itEditTemplate('${t.id}')" class="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+        <button onclick="itDeleteTemplate('${t.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+      </td>
+    </tr>`).join('');
+
+  return `<div class="space-y-4 max-w-2xl">
+    <div class="flex items-center justify-between">
+      <div>
+        <p class="text-sm text-slate-700 font-medium">Credit Card Import Templates</p>
+        <p class="text-sm text-slate-500 mt-0.5">One template per card. Defines how Claude reads each card's screenshot during import.</p>
+      </div>
+      <button onclick="itNewTemplate()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ New Template</button>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <table class="w-full">
+        <thead class="bg-slate-50 border-b border-slate-200"><tr>
+          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Template Name</th>
+          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Credit Card</th>
+          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Date Format</th>
+          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Amounts</th>
+          <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Auto-detect</th>
+          <th class="px-3 py-2.5"></th>
+        </tr></thead>
+        <tbody>${templates.length ? tplRows : '<tr><td colspan="6" class="px-3 py-8 text-sm text-slate-400 text-center">No templates yet. Click + New Template to create one.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <!-- Template modal -->
+    <div id="itTplModal" style="display:none" onclick="if(event.target===this)this.style.display='none'"
+      class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 overflow-y-auto" style="max-height:90vh">
+        <div class="flex items-center justify-between">
+          <h2 id="itTplTitle" class="text-base font-semibold text-slate-900">New Template</h2>
+          <button onclick="document.getElementById('itTplModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+        </div>
+        <input type="hidden" id="itTplId">
+        <div class="grid grid-cols-2 gap-3">
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Template Name</label>
+            <input id="itTplNickname" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Chase Sapphire">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Credit Card Account</label>
+            <select id="itTplCard" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="">— None —</option>
+              ${cards.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Date Format</label>
+            <select id="itTplDateFmt" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="auto">Auto-detect</option>
+              <option value="MM/DD">MM/DD (e.g. 05/15)</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+              <option value="MMM D">MMM D (e.g. May 15)</option>
+              <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Amount Convention</label>
+            <select id="itTplAmtConv" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="negative-charges">Charges show as negative</option>
+              <option value="positive-charges">Charges show as positive</option>
+            </select>
+          </div>
+          <div class="col-span-2 flex items-center gap-2">
+            <input type="checkbox" id="itTplExclPending" checked class="w-4 h-4 accent-slate-700">
+            <label for="itTplExclPending" class="text-sm text-slate-700">Exclude pending transactions</label>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Payment keywords <span class="text-slate-400">(comma-separated)</span></label>
+            <input id="itTplPaymentKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+              placeholder="e.g. Payment Thank You, AUTOPAY, Online Payment">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Refund keywords <span class="text-slate-400">(comma-separated)</span></label>
+            <input id="itTplRefundKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
+              placeholder="e.g. RETURN, CREDIT, REFUND, Reversal">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Extra instructions for Claude <span class="text-slate-400">(optional)</span></label>
+            <textarea id="itTplNotes" rows="3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
+              placeholder="e.g. Merchant name is on the second line. Ignore rows marked Payment."></textarea>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Training Screenshot <span class="text-slate-400">(for auto-detection fingerprint)</span></label>
+            <div class="flex items-center gap-3">
+              <label class="cursor-pointer border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+                Upload sample
+                <input type="file" accept="image/*" onchange="itLoadSample(this)" class="hidden">
+              </label>
+              <span id="itTplSampleName" class="text-xs text-slate-400"></span>
+            </div>
+            <canvas id="itTplSampleCanvas" style="display:none;max-width:100%;border-radius:0.5rem;margin-top:0.5rem;border:1px solid #e2e8f0"></canvas>
+          </div>
+        </div>
+        <p id="itTplErr" style="display:none" class="text-xs text-red-500"></p>
+        <div class="flex gap-3 pt-1">
+          <button onclick="itSaveTemplate()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save Template</button>
+          <button onclick="document.getElementById('itTplModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── About this App tab ────────────────────────────────────────
+function aboutTab() {
+  return `<div class="max-w-xl space-y-5">
+    <div class="space-y-3">
+      <h2 class="text-base font-semibold text-slate-900">About this App</h2>
+      <p class="text-sm text-slate-700 leading-relaxed">
+        This personal finance application is a single-file, browser-based tool built to give you
+        complete visibility and control over your household finances. It runs entirely in your browser —
+        your data is stored in a SQLite database that lives in your own Google Drive account and never
+        passes through any third-party server.
+      </p>
+      <p class="text-sm text-slate-700 leading-relaxed">
+        It supports double-entry bookkeeping, a full chart of accounts, P&amp;L and balance sheet
+        reporting, credit card and bank account tracking, US equity portfolio management,
+        budget planning, and AI-assisted transaction import via screenshot.
+      </p>
+      <p class="text-sm text-slate-700 leading-relaxed">
+        The app is designed to be private, portable, and offline-capable — there is no backend,
+        no subscription, and no data sharing. Your financial data belongs to you.
+      </p>
+    </div>
+    <div class="border-t border-slate-200 pt-4 space-y-1">
+      <p class="text-xs text-slate-500">
+        &copy; ${new Date().getFullYear()} <strong class="text-slate-700">Dhruv Chadha</strong>. All rights reserved.
+      </p>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        All copyright and use of this application is reserved exclusively with Dhruv Chadha.
+        Unauthorised reproduction, distribution, or modification of this application or its
+        source code is strictly prohibited.
+      </p>
+    </div>
+  </div>`;
+}
 
 // ════════════════════════════════════════════════════════════
 // EXPORT DATA TAB
@@ -7076,7 +7271,7 @@ function baInjectPanel(baId) {
 // IMPORT TRANSACTIONS PAGE — Screenshot-based draft import
 // ════════════════════════════════════════════════════════════
 
-let _itTab = 'import';  // 'import' | 'review' | 'templates' | 'log'
+let _itTab = 'import';  // 'import' | 'review' | 'log'
 
 // ── Claude Vision API ─────────────────────────────────────
 // Key stored in localStorage only — never in DB or Drive
@@ -7241,118 +7436,6 @@ function _renderITPage(container) {
     }
 
   // ── Templates Tab ──
-  } else if (_itTab === 'templates') {
-    const cards = query(`SELECT id, name FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
-    const tplRows = templates.map(t => `
-      <tr class="border-t border-slate-100 hover:bg-slate-50">
-        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(t.cardNickname)}</td>
-        <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.ccName||'—')}</td>
-        <td class="px-3 py-2 text-sm text-slate-500">${escHtml(t.dateFormat||'Auto')}</td>
-        <td class="px-3 py-2 text-sm text-slate-500">${t.amountConvention==='positive-charges'?'Positive':'Negative'} charges</td>
-        <td class="px-3 py-2 text-center">
-          <span class="text-xs px-1.5 py-0.5 rounded ${t.fingerprintData?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${t.fingerprintData?'✓ Trained':'No sample'}</span>
-        </td>
-        <td class="px-3 py-2 text-right whitespace-nowrap">
-          <button onclick="itEditTemplate('${t.id}')" class="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
-          <button onclick="itDeleteTemplate('${t.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
-        </td>
-      </tr>`).join('');
-
-    tabContent = `<div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">One template per card. Helps Claude understand each card's screenshot layout.</p>
-        <button onclick="itNewTemplate()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ New Template</button>
-      </div>
-      <div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table class="w-full">
-          <thead class="bg-slate-50 border-b border-slate-200"><tr>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Template Name</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Credit Card</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Date Format</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Amounts</th>
-            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Auto-detect</th>
-            <th class="px-3 py-2.5"></th>
-          </tr></thead>
-          <tbody>${templates.length ? tplRows : '<tr><td colspan="6" class="px-3 py-8 text-sm text-slate-400 text-center">No templates yet.</td></tr>'}</tbody>
-        </table>
-      </div>
-      <!-- Template modal -->
-      <div id="itTplModal" style="display:none" onclick="if(event.target===this)this.style.display='none'"
-        class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 overflow-y-auto" style="max-height:90vh">
-          <div class="flex items-center justify-between">
-            <h2 id="itTplTitle" class="text-base font-semibold text-slate-900">New Template</h2>
-            <button onclick="document.getElementById('itTplModal').style.display='none'" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
-          </div>
-          <input type="hidden" id="itTplId">
-          <div class="grid grid-cols-2 gap-3">
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Template Name</label>
-              <input id="itTplNickname" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="Chase Sapphire">
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Credit Card Account</label>
-              <select id="itTplCard" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
-                <option value="">— None —</option>
-                ${cards.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-slate-500 mb-1">Date Format</label>
-              <select id="itTplDateFmt" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
-                <option value="auto">Auto-detect</option>
-                <option value="MM/DD">MM/DD (e.g. 05/15)</option>
-                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                <option value="MMM D">MMM D (e.g. May 15)</option>
-                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-xs text-slate-500 mb-1">Amount Convention</label>
-              <select id="itTplAmtConv" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
-                <option value="negative-charges">Charges show as negative</option>
-                <option value="positive-charges">Charges show as positive</option>
-              </select>
-            </div>
-            <div class="col-span-2 flex items-center gap-2">
-              <input type="checkbox" id="itTplExclPending" checked class="w-4 h-4 accent-slate-700">
-              <label for="itTplExclPending" class="text-sm text-slate-700">Exclude pending transactions</label>
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Payment keywords <span class="text-slate-400">(comma-separated — how payments appear in your app)</span></label>
-              <input id="itTplPaymentKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
-                placeholder="e.g. Payment Thank You, AUTOPAY, Online Payment">
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Refund keywords <span class="text-slate-400">(comma-separated — how refunds/credits appear)</span></label>
-              <input id="itTplRefundKw" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400"
-                placeholder="e.g. RETURN, CREDIT, REFUND, Reversal">
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Extra instructions for Claude <span class="text-slate-400">(optional)</span></label>
-              <textarea id="itTplNotes" rows="3" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400 resize-none"
-                placeholder="e.g. 'Merchant name is on the second line. Ignore rows marked Payment.'"></textarea>
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Training Screenshot <span class="text-slate-400">(for auto-detection fingerprint)</span></label>
-              <div class="flex items-center gap-3">
-                <label class="cursor-pointer border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
-                  Upload sample
-                  <input type="file" accept="image/*" onchange="itLoadSample(this)" class="hidden">
-                </label>
-                <span id="itTplSampleName" class="text-xs text-slate-400"></span>
-              </div>
-              <canvas id="itTplSampleCanvas" style="display:none;max-width:100%;border-radius:0.5rem;margin-top:0.5rem;border:1px solid #e2e8f0"></canvas>
-            </div>
-          </div>
-          <p id="itTplErr" style="display:none" class="text-xs text-red-500"></p>
-          <div class="flex gap-3 pt-1">
-            <button onclick="itSaveTemplate()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save Template</button>
-            <button onclick="document.getElementById('itTplModal').style.display='none'" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
 
   // ── Log Tab ──
   } else if (_itTab === 'log') {
@@ -7388,7 +7471,6 @@ function _renderITPage(container) {
     <div class="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
       ${tabBtn('import','Import')}
       ${tabBtn('review','Review Drafts', pendingCount||'')}
-      ${tabBtn('templates','Templates')}
       ${tabBtn('log','Import Log')}
     </div>
     <div>${tabContent}</div>
