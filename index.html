@@ -7696,6 +7696,20 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt  = _itBuildPrompt(tplData);
 
+    // Ensure suggestedCrId is set from the full template row.
+    // The earlier code may have only had a partial template object (id + cardNickname only)
+    // in the manual-pick path, so re-derive from tplData which always has creditCardId.
+    if (tplData?.creditCardId && !suggestedCrId) {
+      const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`)[0];
+      if (cc?.liabilityAccountId) suggestedCrId = cc.liabilityAccountId;
+    }
+    // Also refresh paymentAccountId from tplData in case it was missed
+    let paymentAccountId = null;
+    if (tplData?.creditCardId) {
+      const ccFull = query(`SELECT paymentAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`)[0];
+      if (ccFull) paymentAccountId = ccFull.paymentAccountId;
+    }
+
     // _itRunInference shows its own error message and does NOT rethrow
     const rawText = await _itRunInference(dataUrl, prompt);
     if (rawText === null) return; // inference failed — error already shown
@@ -7713,13 +7727,6 @@ async function itHandleScreenshot(input) {
     const batchId = genId();
     db.run(`INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,createdAt,updatedAt)
       VALUES ('${batchId}',${template?`'${template.id}'`:'NULL'},'${cardName.replace(/'/g,"''")}','pending',${transactions.length},0,0,'${now}','${now}')`);
-
-    // Get card payment account for payment entries
-    let paymentAccountId = null;
-    if (template?.creditCardId) {
-      const ccFull = query(`SELECT paymentAccountId FROM CreditCard WHERE id='${template.creditCardId}'`)[0];
-      if (ccFull) paymentAccountId = ccFull.paymentAccountId;
-    }
 
     for (const tx of transactions) {
       const draftId  = genId();
