@@ -7355,7 +7355,8 @@ function _renderITPage(container) {
       tabContent = `<div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-400 text-sm">
         No pending draft batches. Import a screenshot to get started.</div>`;
     } else {
-      const cardAccts = query(`SELECT id, code, name FROM Account WHERE (type='ASSET' OR type='EXPENSE') AND isActive=1 ORDER BY code`);
+      const cardAccts  = query(`SELECT id, code, name FROM Account WHERE (type='ASSET' OR type='EXPENSE') AND isActive=1 ORDER BY code`);
+      const crAccts    = query(`SELECT id, code, name FROM Account WHERE isActive=1 ORDER BY type, code`);
       const batchHtml = pendingBatches.map(batch => {
         const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY date ASC`);
         const allHaveDr = drafts.every(d => d.drAccountId);
@@ -7394,7 +7395,7 @@ function _renderITPage(container) {
               <select onchange="itSetCrAccount('${d.id}',this.value)"
                 class="text-sm border ${crAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-44 focus:outline-none focus:ring-1 focus:ring-slate-400">
                 <option value="">— CR Account —</option>
-                ${cardAccts.map(a=>`<option value="${a.id}" ${d.crAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('')}
+                ${crAccts.map(a=>`<option value="${a.id}" ${d.crAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('')}
               </select>
             </td>
             <td class="px-3 py-2 whitespace-nowrap">
@@ -7696,16 +7697,6 @@ async function itHandleScreenshot(input) {
     const tplData = template ? query(`SELECT * FROM ScreenshotTemplate WHERE id='${template.id}'`)[0] : null;
     const prompt  = _itBuildPrompt(tplData);
 
-    // ── DIAGNOSTIC — remove once fixed ──────────────────────
-    console.log('[IT-DEBUG] template obj:', JSON.stringify(template));
-    console.log('[IT-DEBUG] tplData:', JSON.stringify(tplData));
-    console.log('[IT-DEBUG] suggestedCrId BEFORE fix:', suggestedCrId);
-    if (tplData) {
-      const ccCheck = query(`SELECT id, name, liabilityAccountId, paymentAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`);
-      console.log('[IT-DEBUG] CreditCard row for creditCardId', tplData.creditCardId, ':', JSON.stringify(ccCheck));
-    }
-    // ────────────────────────────────────────────────────────
-
     // Ensure suggestedCrId is set from the full template row.
     if (tplData?.creditCardId && !suggestedCrId) {
       const cc = query(`SELECT liabilityAccountId FROM CreditCard WHERE id='${tplData.creditCardId}'`)[0];
@@ -7718,8 +7709,6 @@ async function itHandleScreenshot(input) {
       if (ccFull) paymentAccountId = ccFull.paymentAccountId;
     }
 
-    console.log('[IT-DEBUG] suggestedCrId AFTER fix:', suggestedCrId);
-    console.log('[IT-DEBUG] paymentAccountId:', paymentAccountId);
 
     // _itRunInference shows its own error message and does NOT rethrow
     const rawText = await _itRunInference(dataUrl, prompt);
@@ -7766,7 +7755,6 @@ async function itHandleScreenshot(input) {
         sugCr = suggestedCrId;
       }
 
-      console.log(`[IT-DEBUG] tx "${tx.description}" type=${txnType} sugDr=${sugDr} sugCr=${sugCr}`);
 
       db.run(`INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
         VALUES ('${draftId}','${batchId}','${date}','${desc}',${amt},'${txnType}',
