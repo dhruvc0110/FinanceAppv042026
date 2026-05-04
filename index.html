@@ -37,6 +37,8 @@
     #sidebar.collapsed #sidebarUser > .flex { flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
     /* sidebar-icon buttons always visible — explicit display:flex to survive collapse */
     #sidebar .sidebar-icon { display: flex; align-items: center; justify-content: center; }
+    /* Collapsed: centre sign-out and settings rows */
+    #sidebar.collapsed .sidebar-icon.w-full { justify-content: center; padding-left: 0; padding-right: 0; }
     .nav-btn.active { background-color: rgb(51 65 85); color: white; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin-anim { animation: spin 0.8s linear infinite; }
@@ -47,6 +49,21 @@
     body.fs-sm { --fs: 12px; }
     body.fs-md { --fs: 14px; }
     body.fs-lg { --fs: 16px; }
+    /* ── Tab / focus navigation ── */
+    :focus-visible {
+      outline: 2px solid #334155 !important;
+      outline-offset: 2px !important;
+      border-radius: 4px;
+    }
+    button:focus-visible, a:focus-visible {
+      outline: 2px solid #334155 !important;
+      outline-offset: 2px !important;
+    }
+    input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid #334155 !important;
+      outline-offset: 0px !important;
+      box-shadow: 0 0 0 3px rgba(51,65,85,0.15);
+    }
     /* Dark mode */
     body.dark-mode {
       --bg-page: #0f172a;
@@ -179,7 +196,16 @@
       </button>
     </div>
 
-    <!-- Avatar + user info + settings -->
+    <!-- Sign Out row — above avatar, below title bar -->
+    <div class="flex-shrink-0 border-b border-slate-700">
+      <button onclick="signOut()"
+        class="sidebar-icon w-full flex items-center gap-2.5 px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 transition">
+        <svg class="flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="sidebar-text text-xs font-medium">Sign Out</span>
+      </button>
+    </div>
+
+    <!-- Avatar + user info -->
     <div id="sidebarUser" class="flex-shrink-0 px-3 py-2.5 border-b border-slate-700">
       <div class="flex items-center gap-2 min-w-0">
         <div id="userAvatar" class="flex-shrink-0 w-7 h-7 rounded-full bg-slate-600 flex items-center justify-center text-xs font-bold text-white"></div>
@@ -187,15 +213,16 @@
           <div id="userName" class="text-xs font-medium text-slate-300 truncate"></div>
           <div id="userEmail" class="text-xs text-slate-500 truncate"></div>
         </div>
-        <button onclick="navigate('settings')" data-page="settings" title="Settings"
-          class="sidebar-icon nav-btn flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
-        <button onclick="signOut()" title="Sign out"
-          class="sidebar-icon flex-shrink-0 p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </button>
       </div>
+    </div>
+
+    <!-- Settings row — below avatar -->
+    <div class="flex-shrink-0 border-b border-slate-700">
+      <button onclick="navigate('settings')" data-page="settings"
+        class="sidebar-icon nav-btn w-full flex items-center gap-2.5 px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 transition">
+        <svg class="flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="sidebar-text text-xs font-medium">Settings</span>
+      </button>
     </div>
 
     <nav class="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
@@ -238,10 +265,18 @@
 
       <button onclick="navigate('transact-equity')" data-page="transact-equity" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-        <span class="nav-label">Equity</span>
+        <span class="nav-label">Buy-Vest-Sell</span>
       </button>
 
     </nav>
+
+    <!-- Clock + Quote tile -->
+    <div id="sidebarQuoteTile" class="flex-shrink-0 border-t border-slate-700 px-3 py-3 space-y-1.5">
+      <div id="sidebarClock" class="text-xs font-mono text-slate-400 tracking-wide"></div>
+      <div id="sidebarQuote" class="sidebar-text text-xs text-slate-500 leading-relaxed italic"></div>
+      <div id="sidebarQuoteAuthor" class="sidebar-text text-xs text-slate-600 font-medium not-italic"></div>
+    </div>
+
   </div><!-- /sidebar -->
 
   <!-- MAIN CONTENT -->
@@ -391,6 +426,200 @@ async function handleTokenResponse(response) {
 
   await loadFromDrive();
 }
+
+}
+
+// ════════════════════════════════════════════════════════════
+// SIDEBAR CLOCK + QUOTE TILE
+// ════════════════════════════════════════════════════════════
+const _QUOTES = [
+  // Sun Tzu
+  {q:"Supreme excellence consists in breaking the enemy's resistance without fighting.",a:"Sun Tzu"},
+  {q:"The greatest victory is that which requires no battle.",a:"Sun Tzu"},
+  {q:"Know yourself and know your enemy; you will not be imperiled in a hundred battles.",a:"Sun Tzu"},
+  {q:"Opportunities multiply as they are seized.",a:"Sun Tzu"},
+  {q:"Move swift as the wind and closely-formed as the wood.",a:"Sun Tzu"},
+  {q:"In the midst of chaos, there is also opportunity.",a:"Sun Tzu"},
+  {q:"The wise warrior avoids the battle.",a:"Sun Tzu"},
+  // Gandhi
+  {q:"Be the change you wish to see in the world.",a:"Mahatma Gandhi"},
+  {q:"Strength does not come from physical capacity. It comes from an indomitable will.",a:"Mahatma Gandhi"},
+  {q:"The best way to find yourself is to lose yourself in the service of others.",a:"Mahatma Gandhi"},
+  {q:"Live as if you were to die tomorrow; learn as if you were to live forever.",a:"Mahatma Gandhi"},
+  {q:"First they ignore you, then they laugh at you, then they fight you, then you win.",a:"Mahatma Gandhi"},
+  {q:"An eye for an eye makes the whole world blind.",a:"Mahatma Gandhi"},
+  {q:"Happiness is when what you think, what you say, and what you do are in harmony.",a:"Mahatma Gandhi"},
+  // Seneca
+  {q:"It is not that I am brave, but that I choose which things to be afraid of.",a:"Seneca"},
+  {q:"We suffer more in imagination than in reality.",a:"Seneca"},
+  {q:"Luck is what happens when preparation meets opportunity.",a:"Seneca"},
+  {q:"Begin at once to live, and count each separate day as a separate life.",a:"Seneca"},
+  {q:"Omnia aliena sunt, tempus tantum nostrum est. All things are alien; time alone is ours.",a:"Seneca"},
+  {q:"Nusquam est qui ubique est. He who is everywhere is nowhere.",a:"Seneca"},
+  {q:"Dum differtur vita transcurrit. While we are postponing, life speeds by.",a:"Seneca"},
+  {q:"Per aspera ad astra. Through hardship to the stars.",a:"Seneca"},
+  // Socrates
+  {q:"The unexamined life is not worth living.",a:"Socrates"},
+  {q:"I know that I know nothing.",a:"Socrates"},
+  {q:"To find yourself, think for yourself.",a:"Socrates"},
+  {q:"Education is the kindling of a flame, not the filling of a vessel.",a:"Socrates"},
+  {q:"He who is not contented with what he has would not be contented with what he would like to have.",a:"Socrates"},
+  {q:"The secret of change is to focus your energy not on fighting the old, but on building the new.",a:"Socrates"},
+  // Plato
+  {q:"Wise men talk because they have something to say; fools because they have to say something.",a:"Plato"},
+  {q:"The first and greatest victory is to conquer yourself.",a:"Plato"},
+  {q:"Every heart sings a song incomplete until another heart whispers back.",a:"Plato"},
+  {q:"Courage is knowing what not to fear.",a:"Plato"},
+  {q:"The beginning is the most important part of the work.",a:"Plato"},
+  {q:"You can discover more about a person in an hour of play than in a year of conversation.",a:"Plato"},
+  {q:"Good actions give strength to ourselves and inspire good actions in others.",a:"Plato"},
+  // Charlie Munger
+  {q:"Invert, always invert: turn a situation or problem upside down.",a:"Charlie Munger"},
+  {q:"It is not supposed to be easy. Anyone who finds it easy is stupid.",a:"Charlie Munger"},
+  {q:"Show me the incentive and I will show you the outcome.",a:"Charlie Munger"},
+  {q:"The best thing a human being can do is to help another human being know more.",a:"Charlie Munger"},
+  {q:"All I want to know is where I'm going to die, so I'll never go there.",a:"Charlie Munger"},
+  {q:"Spend each day trying to be a little wiser than when you woke up.",a:"Charlie Munger"},
+  {q:"It's not supposed to be easy. Anyone who finds it easy is stupid.",a:"Charlie Munger"},
+  // Kafka
+  {q:"In the fight between you and the world, back the world.",a:"Franz Kafka"},
+  {q:"A book must be the axe for the frozen sea within us.",a:"Franz Kafka"},
+  {q:"Productivity is being able to do things that you were never able to do before.",a:"Franz Kafka"},
+  {q:"There is infinite hope, but not for us.",a:"Franz Kafka"},
+  {q:"Don't bend; don't water it down; don't try to make it logical; don't edit your own soul.",a:"Franz Kafka"},
+  {q:"By believing passionately in something that still does not exist, we create it.",a:"Franz Kafka"},
+  // JFK
+  {q:"Ask not what your country can do for you — ask what you can do for your country.",a:"John F. Kennedy"},
+  {q:"Conformity is the jailer of freedom and the enemy of growth.",a:"John F. Kennedy"},
+  {q:"The time to repair the roof is when the sun is shining.",a:"John F. Kennedy"},
+  {q:"Change is the law of life. Those who look only to the past are certain to miss the future.",a:"John F. Kennedy"},
+  {q:"Let us never negotiate out of fear, but let us never fear to negotiate.",a:"John F. Kennedy"},
+  {q:"The rising tide lifts all boats.",a:"John F. Kennedy"},
+  // GB Shaw
+  {q:"Life is not about finding yourself. Life is about creating yourself.",a:"George Bernard Shaw"},
+  {q:"Progress is impossible without change, and those who cannot change their minds cannot change anything.",a:"George Bernard Shaw"},
+  {q:"A life spent making mistakes is not only more honorable but more useful than a life spent doing nothing.",a:"George Bernard Shaw"},
+  {q:"The single biggest problem in communication is the illusion that it has taken place.",a:"George Bernard Shaw"},
+  {q:"The reasonable man adapts himself to the world; the unreasonable one persists. All progress depends on the unreasonable man.",a:"George Bernard Shaw"},
+  {q:"You see things; and you say 'Why?' But I dream things that never were; and I say 'Why not?'",a:"George Bernard Shaw"},
+  // Ayn Rand
+  {q:"The question isn't who is going to let me; it's who is going to stop me.",a:"Ayn Rand"},
+  {q:"Do not let your fire go out, spark by irreplaceable spark.",a:"Ayn Rand"},
+  {q:"Throughout the centuries there were men who took first steps down new roads armed with nothing but their own vision.",a:"Ayn Rand"},
+  {q:"A creative man is motivated by the desire to achieve, not by the desire to beat others.",a:"Ayn Rand"},
+  {q:"Money is only a tool. It will take you wherever you wish, but it will not replace you as the driver.",a:"Ayn Rand"},
+  {q:"The hardest thing to explain is the glaringly evident which everybody has decided not to see.",a:"Ayn Rand"},
+  // Marcus Aurelius
+  {q:"You have power over your mind, not outside events. Realize this, and you will find strength.",a:"Marcus Aurelius"},
+  {q:"The impediment to action advances action. What stands in the way becomes the way.",a:"Marcus Aurelius"},
+  {q:"If it is not right, do not do it; if it is not true, do not say it.",a:"Marcus Aurelius"},
+  {q:"Accept the things to which fate binds you, and love the people with whom fate brings you together.",a:"Marcus Aurelius"},
+  {q:"When you wake up in the morning, think of what a precious privilege it is to be alive.",a:"Marcus Aurelius"},
+  {q:"Confine yourself to the present.",a:"Marcus Aurelius"},
+  {q:"Very little is needed to make a happy life; it is all within yourself, in your way of thinking.",a:"Marcus Aurelius"},
+  // Aristotle
+  {q:"We are what we repeatedly do. Excellence, then, is not an act, but a habit.",a:"Aristotle"},
+  {q:"The more you know, the more you know you don't know.",a:"Aristotle"},
+  {q:"Knowing yourself is the beginning of all wisdom.",a:"Aristotle"},
+  {q:"It is the mark of an educated mind to entertain a thought without accepting it.",a:"Aristotle"},
+  {q:"The whole is more than the sum of its parts.",a:"Aristotle"},
+  {q:"Happiness depends upon ourselves.",a:"Aristotle"},
+  // Einstein
+  {q:"Imagination is more important than knowledge.",a:"Albert Einstein"},
+  {q:"A ship is always safe at shore, but that is not what it's built for.",a:"Albert Einstein"},
+  {q:"Logic will get you from A to B. Imagination will take you everywhere.",a:"Albert Einstein"},
+  {q:"In the middle of difficulty lies opportunity.",a:"Albert Einstein"},
+  {q:"The measure of intelligence is the ability to change.",a:"Albert Einstein"},
+  {q:"Try not to become a person of success, but rather try to become a person of value.",a:"Albert Einstein"},
+  // Churchill
+  {q:"Success is not final; failure is not fatal: it is the courage to continue that counts.",a:"Winston Churchill"},
+  {q:"If you're going through hell, keep going.",a:"Winston Churchill"},
+  {q:"The pessimist sees difficulty in every opportunity. The optimist sees opportunity in every difficulty.",a:"Winston Churchill"},
+  {q:"To improve is to change; to be perfect is to change often.",a:"Winston Churchill"},
+  {q:"We shape our buildings; thereafter they shape us.",a:"Winston Churchill"},
+  {q:"History is written by the victors.",a:"Winston Churchill"},
+  // Nietzsche
+  {q:"That which does not kill us makes us stronger.",a:"Friedrich Nietzsche"},
+  {q:"Without music, life would be a mistake.",a:"Friedrich Nietzsche"},
+  {q:"He who has a why to live can bear almost any how.",a:"Friedrich Nietzsche"},
+  {q:"In individuals, insanity is rare; but in groups, parties, nations and epochs, it is the rule.",a:"Friedrich Nietzsche"},
+  {q:"The higher we soar, the smaller we appear to those who cannot fly.",a:"Friedrich Nietzsche"},
+  // Warren Buffett
+  {q:"Price is what you pay. Value is what you get.",a:"Warren Buffett"},
+  {q:"Rule No. 1: Never lose money. Rule No. 2: Never forget Rule No. 1.",a:"Warren Buffett"},
+  {q:"The stock market is a device for transferring money from the impatient to the patient.",a:"Warren Buffett"},
+  {q:"Someone is sitting in the shade today because someone planted a tree a long time ago.",a:"Warren Buffett"},
+  {q:"It takes 20 years to build a reputation and five minutes to ruin it.",a:"Warren Buffett"},
+  {q:"Risk comes from not knowing what you're doing.",a:"Warren Buffett"},
+  // Emerson
+  {q:"Do not go where the path may lead; go instead where there is no path and leave a trail.",a:"Ralph Waldo Emerson"},
+  {q:"What lies behind you and what lies in front of you pales in comparison to what lies inside of you.",a:"Ralph Waldo Emerson"},
+  {q:"The only way to have a friend is to be one.",a:"Ralph Waldo Emerson"},
+  {q:"Life is a journey, not a destination.",a:"Ralph Waldo Emerson"},
+  // Twain
+  {q:"The two most important days in your life are the day you are born and the day you find out why.",a:"Mark Twain"},
+  {q:"It's not the size of the dog in the fight, it's the size of the fight in the dog.",a:"Mark Twain"},
+  {q:"Whenever you find yourself on the side of the majority, it is time to pause and reflect.",a:"Mark Twain"},
+  {q:"Courage is resistance to fear, mastery of fear — not absence of fear.",a:"Mark Twain"},
+  // Confucius
+  {q:"It does not matter how slowly you go as long as you do not stop.",a:"Confucius"},
+  {q:"The man who asks a question is a fool for a minute; the man who does not ask is a fool for life.",a:"Confucius"},
+  {q:"Choose a job you love, and you will never have to work a day in your life.",a:"Confucius"},
+  {q:"Our greatest glory is not in never falling, but in rising every time we fall.",a:"Confucius"},
+  // Da Vinci
+  {q:"Simplicity is the ultimate sophistication.",a:"Leonardo da Vinci"},
+  {q:"Learning never exhausts the mind.",a:"Leonardo da Vinci"},
+  {q:"I have been impressed with the urgency of doing. Knowing is not enough; we must apply.",a:"Leonardo da Vinci"},
+  // Steve Jobs
+  {q:"Stay hungry. Stay foolish.",a:"Steve Jobs"},
+  {q:"Innovation distinguishes between a leader and a follower.",a:"Steve Jobs"},
+  {q:"The only way to do great work is to love what you do.",a:"Steve Jobs"},
+  {q:"Your time is limited, so don't waste it living someone else's life.",a:"Steve Jobs"},
+  // Peter Drucker
+  {q:"The best way to predict the future is to create it.",a:"Peter Drucker"},
+  {q:"Efficiency is doing things right; effectiveness is doing the right things.",a:"Peter Drucker"},
+  {q:"What gets measured gets managed.",a:"Peter Drucker"},
+  {q:"The most important thing in communication is hearing what isn't said.",a:"Peter Drucker"},
+  // Lao Tzu
+  {q:"A journey of a thousand miles begins with a single step.",a:"Lao Tzu"},
+  {q:"Nature does not hurry, yet everything is accomplished.",a:"Lao Tzu"},
+  {q:"Knowing others is intelligence; knowing yourself is true wisdom.",a:"Lao Tzu"},
+  {q:"To the mind that is still, the whole universe surrenders.",a:"Lao Tzu"},
+  // Pascal
+  {q:"All of humanity's problems stem from man's inability to sit quietly in a room alone.",a:"Blaise Pascal"},
+  {q:"The heart has reasons that reason cannot know.",a:"Blaise Pascal"},
+  // Voltaire
+  {q:"The perfect is the enemy of the good.",a:"Voltaire"},
+  {q:"Judge a man by his questions rather than by his answers.",a:"Voltaire"},
+  {q:"Common sense is not so common.",a:"Voltaire"},
+];
+
+(function _initSidebarQuote() {
+  // Pick one quote per session — stored in sessionStorage so it doesn't change mid-session
+  let idx = parseInt(sessionStorage.getItem('_quoteIdx'));
+  if (isNaN(idx) || idx < 0 || idx >= _QUOTES.length) {
+    idx = Math.floor(Math.random() * _QUOTES.length);
+    sessionStorage.setItem('_quoteIdx', idx);
+  }
+  const quote = _QUOTES[idx];
+
+  // Clock — update every second
+  function _tickClock() {
+    const el = document.getElementById('sidebarClock');
+    if (!el) return;
+    const now = new Date();
+    el.textContent = now.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+      + '  ' + now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+  _tickClock();
+  setInterval(_tickClock, 1000);
+
+  // Quote
+  const qEl = document.getElementById('sidebarQuote');
+  const aEl = document.getElementById('sidebarQuoteAuthor');
+  if (qEl) qEl.textContent = '\u201C' + quote.q + '\u201D';
+  if (aEl) aEl.textContent = '\u2014 ' + quote.a;
+})();
 
 function signOut() {
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
@@ -1479,6 +1708,11 @@ function startApp() {
     db.run(`ALTER TABLE "Transaction" ADD COLUMN importSource TEXT`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
+  // Add templateType to RepeatableTransaction (migration for existing DBs)
+  try {
+    db.run(`ALTER TABLE RepeatableTransaction ADD COLUMN templateType TEXT DEFAULT 'Undefined'`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
   // Screenshot import tables
   try {
     db.run(`CREATE TABLE IF NOT EXISTS ScreenshotTemplate (
@@ -1813,20 +2047,19 @@ function atSetTab(tab) {
 // ── Review Equity (Summary only) ─────────────────────────────
 function renderReviewEquity(container) {
   if (!container) container = document.getElementById('pageContent');
-  // Force summary tab and render the equity page
-  equityTab     = 'summary';
-  equitySortCol = 'ticker';
-  equitySortDir = 1;
+  // Force summary-only mode: no Buy/Vest button, no tab bar
+  equityTab        = 'summary';
+  equitySortCol    = 'ticker';
+  equitySortDir    = 1;
+  window._eqReviewMode = true;
   _renderEquityPage(container);
-  // After render, hide the lots/closed tabs — this is summary-only view
-  // The equity page tab bar is inside a .flex.border-b div; hide non-summary tabs
-  // We add a note to the header instead of hiding tabs (they may still be useful)
 }
 
 // ── Transact Equity ───────────────────────────────────────────
 // Tabs: Transactions (lots with on hand) | Closed Lots | Dividends
 let _teTab = localStorage.getItem('_teTab') || 'lots';
 function renderTransactEquity(container) {
+  window._eqReviewMode = false;  // full transact mode: all tabs + Buy/Vest visible
   _teTab = localStorage.getItem('_teTab') || 'lots';
   equityTab     = _teTab === 'lots' ? 'lots' : _teTab === 'closedlots' ? 'closedlots' : 'lots';
   equitySortCol = 'ticker';
@@ -1858,15 +2091,195 @@ function _renderTEContent() {
   const c = document.getElementById('teContent');
   if (!c) return;
   if (_teTab === 'dividends') {
-    c.innerHTML = `<div class="p-8 text-center text-slate-400 text-sm">Dividends feature coming soon.</div>`;
+    _renderDividendsTab(c);
   } else {
     equityTab = _teTab;
+    window._eqReviewMode = false;
     _renderEquityPage(c);
     // After equity renders, strip its outer tab bar to avoid double tabs
     const innerTabBar = c.querySelector('.flex.border-b.border-slate-200');
     if (innerTabBar) innerTabBar.style.display = 'none';
   }
 }
+function _renderDividendsTab(container) {
+  // Load tickers from open lots
+  const tickers = query(`SELECT DISTINCT ticker FROM EquityLot ORDER BY ticker`).map(r => r.ticker);
+  // Find Dividend Income account (pre-populate CR)
+  const divIncomeAcct = query(`SELECT id, code, name FROM Account WHERE LOWER(name) LIKE '%dividend%income%' AND isActive=1 LIMIT 1`)[0];
+  const ic = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400';
+  const tickerOpts = tickers.length
+    ? tickers.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('')
+    : '<option value="">No tickers available</option>';
+
+  // Load recent dividends
+  const recentDivs = query(`
+    SELECT t.id, t.trxDate, t.description, t.amount,
+      da.name AS drName, ca.name AS crName
+    FROM "Transaction" t
+    LEFT JOIN Account da ON t.drAccountId=da.id
+    LEFT JOIN Account ca ON t.crAccountId=ca.id
+    WHERE t.importSource='Equity' AND t.description LIKE 'Dividend%'
+    ORDER BY t.trxDate DESC LIMIT 20
+  `);
+  const ftDivs = query(`
+    SELECT ft.id, ft.trxDate, ft.description, ft.amount,
+      da.name AS drName, ca.name AS crName
+    FROM FutureTransaction ft
+    LEFT JOIN Account da ON ft.drAccountId=da.id
+    LEFT JOIN Account ca ON ft.crAccountId=ca.id
+    WHERE ft.description LIKE 'Dividend%'
+    ORDER BY ft.trxDate DESC LIMIT 10
+  `);
+
+  const recentRows = recentDivs.map(r => `
+    <tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
+      <td class="px-3 py-2 text-sm text-slate-800">${escHtml(r.description)}</td>
+      <td class="px-3 py-2 text-sm font-medium text-slate-800 text-right">${fmtCurrency(r.amount,2)}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
+      <td class="px-3 py-2 text-xs text-green-600 font-medium">Posted</td>
+    </tr>`).join('');
+
+  const ftRows = ftDivs.map(r => `
+    <tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
+      <td class="px-3 py-2 text-sm text-slate-800">${escHtml(r.description)}</td>
+      <td class="px-3 py-2 text-sm font-medium text-slate-800 text-right">${fmtCurrency(r.amount,2)}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
+      <td class="px-3 py-2 text-xs text-amber-600 font-medium">Scheduled</td>
+    </tr>`).join('');
+
+  const allRows = recentRows + ftRows;
+
+  container.innerHTML = `
+    <div class="p-5 space-y-6 max-w-2xl">
+      <div>
+        <h2 class="text-base font-semibold text-slate-900 mb-1">Record Dividend</h2>
+        <p class="text-xs text-slate-500">Dividends dated today or earlier post directly to Transactions. Future-dated dividends go to Future Transactions.</p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Dividend Date</label>
+            <input id="divDate" type="date" tabindex="1" class="${ic}"
+              value="${new Date().toLocaleDateString('en-CA')}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Ticker</label>
+            <select id="divTicker" tabindex="2" class="${ic}">
+              <option value="">Select ticker…</option>
+              ${tickerOpts}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Dividend Amount</label>
+            <input id="divAmount" type="number" step="0.01" min="0" placeholder="0.00" tabindex="3" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">DR Account <span class="text-slate-400">(cash received)</span></label>
+            <div id="divDrWrap"></div>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">CR Account <span class="text-slate-400">(income)</span></label>
+            <div id="divCrWrap"></div>
+          </div>
+        </div>
+        <p id="divErr" style="display:none" class="text-xs text-red-500"></p>
+        <div class="flex gap-3">
+          <button onclick="divSave()" tabindex="6"
+            class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
+            Save Dividend
+          </button>
+          <button onclick="divClearForm()" tabindex="7"
+            class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+            Clear
+          </button>
+        </div>
+      </div>
+
+      ${(recentDivs.length || ftDivs.length) ? `
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Recent Dividends</h3>
+        <div class="rounded-lg border border-slate-200 overflow-x-auto">
+          <table class="w-full min-w-[600px]">
+            <thead class="bg-slate-50 border-b border-slate-200"><tr>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+              <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+            </tr></thead>
+            <tbody>${allRows}</tbody>
+          </table>
+        </div>
+      </div>` : ''}
+    </div>`;
+
+  // Load account pickers
+  window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
+  document.getElementById('divDrWrap').innerHTML = acctPickerHtml('divDr', '', 'Search DR account…', { tabindex: 4 });
+  document.getElementById('divCrWrap').innerHTML = acctPickerHtml('divCr', divIncomeAcct?.id||'', 'Search CR account…', { tabindex: 5 });
+  if (divIncomeAcct) acctPickerSetValue('divCr', divIncomeAcct.id);
+}
+
+function divClearForm() {
+  document.getElementById('divDate').value   = new Date().toLocaleDateString('en-CA');
+  document.getElementById('divTicker').value = '';
+  document.getElementById('divAmount').value = '';
+  acctPickerSetValue('divDr', '');
+  const divIncomeAcct = query(`SELECT id FROM Account WHERE LOWER(name) LIKE '%dividend%income%' AND isActive=1 LIMIT 1`)[0];
+  acctPickerSetValue('divCr', divIncomeAcct?.id||'');
+  const e = document.getElementById('divErr');
+  if (e) { e.textContent=''; e.style.display='none'; }
+}
+
+function divSave() {
+  const date   = document.getElementById('divDate')?.value;
+  const ticker = document.getElementById('divTicker')?.value;
+  const amount = parseFloat(document.getElementById('divAmount')?.value);
+  const drId   = acctPickerGetValue('divDr');
+  const crId   = acctPickerGetValue('divCr');
+  const showErr = msg => { const e=document.getElementById('divErr'); if(e){e.textContent=msg;e.style.display='block';} };
+
+  if (!date)               return showErr('Dividend date is required.');
+  if (!ticker)             return showErr('Please select a ticker.');
+  if (isNaN(amount)||amount<=0) return showErr('Dividend amount must be a positive number.');
+  if (!drId)               return showErr('DR Account (cash received) is required.');
+  if (!crId)               return showErr('CR Account (income) is required.');
+
+  const today   = new Date().toLocaleDateString('en-CA');
+  const isFuture = date > today;
+  const table   = isFuture ? 'FutureTransaction' : '"Transaction"';
+  const period  = date.slice(0,4)+date.slice(5,7);
+  const trxDate = date+'T12:00:00.000Z';
+  const now     = new Date().toISOString();
+  const id      = genId();
+  const desc    = `Dividend - ${ticker}`;
+
+  try {
+    if (isFuture) {
+      db.run(`INSERT INTO FutureTransaction
+        (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
+        VALUES ('${id}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',NULL,'${now}','${now}')`);
+    } else {
+      db.run(`INSERT INTO "Transaction"
+        (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
+        VALUES ('${id}','${trxDate}','${period}','${desc}',${amount},'${drId}','${crId}',NULL,0,'Equity','${now}','${now}')`);
+    }
+    syncAfterWrite();
+    divClearForm();
+    // Refresh dividends tab to show new entry
+    _renderDividendsTab(document.getElementById('teContent'));
+    const msg = isFuture
+      ? `Dividend scheduled for ${date} — saved to Future Transactions.`
+      : `Dividend posted to Transactions.`;
+    alert(msg);
+  } catch(e) { showErr('Error: '+e.message); }
+}
+
 function teSetTab(tab) {
   _teTab = tab;
   localStorage.setItem('_teTab', tab);
@@ -2335,7 +2748,7 @@ function _dashInjectTileDetail(key, tiles) {
 
 // Page-level state — txF persists across re-renders (filters stay put);
 // txPage and txEditId reset on each fresh navigate('transactions').
-let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'' };
+let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'' };
 let txPage   = 0;
 let txEditId = null;
 const TX_PAGE_SIZE = 50;
@@ -2361,6 +2774,7 @@ function buildTxWhere(f) {
   if (f.drId)     parts.push(`t.drAccountId = '${f.drId}'`);
   if (f.crId)     parts.push(`t.crAccountId = '${f.crId}'`);
   if (f.desc)     parts.push(`t.description LIKE '%${f.desc.replace(/'/g, "''")}%'`);
+  if (f.source)   parts.push(`t.importSource = '${f.source.replace(/'/g,"''")}'`);
   return parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 }
 
@@ -2401,7 +2815,7 @@ function _renderTxPage(container) {
       t.crAccountId, ca.name AS crName,
       t.drSubId, ds.name AS drSubName,
       t.crSubId, cs.name AS crSubName,
-      t.notes, t.isReconciled
+      t.notes, t.isReconciled, t.importSource
     FROM "Transaction" t
     LEFT JOIN Account da ON t.drAccountId = da.id
     LEFT JOIN Account ca ON t.crAccountId = ca.id
@@ -2456,6 +2870,9 @@ function _renderTxPage(container) {
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
         <td class="px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
+        <td class="px-3 py-2 text-xs text-center whitespace-nowrap">
+          \${(()=>{const s=r.importSource||'Manual';const m={'Manual':'bg-slate-100 text-slate-500','Scheduled':'bg-blue-50 text-blue-600','Recurring':'bg-purple-50 text-purple-600','Imported':'bg-amber-50 text-amber-600','Equity':'bg-green-50 text-green-700'};return \`<span class="px-1.5 py-0.5 rounded text-xs font-medium \${m[s]||m.Manual}">${s}</span>\`;})()} 
+        </td>
         <td class="px-3 py-2 text-center">
           <input type="checkbox" ${r.isReconciled ? 'checked' : ''}
             onchange="txToggleReconcile('${r.id}', this.checked)"
@@ -2541,7 +2958,7 @@ function _renderTxPage(container) {
 
       <!-- Filter bar -->
       <div class="bg-white border border-slate-200 rounded-lg p-4">
-        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-3">
           <div>
             <label class="block text-xs text-slate-500 mb-1">From date</label>
             <input id="fDateFrom" type="date" value="${txF.dateFrom}" class="${ic}">
@@ -2561,6 +2978,17 @@ function _renderTxPage(container) {
           <div>
             <label class="block text-xs text-slate-500 mb-1">Description</label>
             <input id="fDesc" type="text" value="${escHtml(txF.desc)}" placeholder="Search&hellip;" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Source</label>
+            <select id="fSource" class="${ic}">
+              <option value="">All sources</option>
+              <option value="Manual" ${txF.source==='Manual'?'selected':''}>Manual</option>
+              <option value="Scheduled" ${txF.source==='Scheduled'?'selected':''}>Scheduled</option>
+              <option value="Recurring" ${txF.source==='Recurring'?'selected':''}>Recurring</option>
+              <option value="Imported" ${txF.source==='Imported'?'selected':''}>Imported</option>
+              <option value="Equity" ${txF.source==='Equity'?'selected':''}>Equity</option>
+            </select>
           </div>
           <div class="flex items-end gap-2">
             <button onclick="txApplyFilters()"
@@ -2587,6 +3015,7 @@ function _renderTxPage(container) {
                 <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
                 <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
                 <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
+                <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Manage Transaction</th>
               </tr>
@@ -2631,38 +3060,38 @@ function _renderTxPage(container) {
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs text-slate-500 mb-1">Date</label>
-            <input id="txFormDate" type="date" class="${ic}">
+            <input id="txFormDate" type="date" tabindex="1" class="${ic}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Amount</label>
-            <input id="txFormAmt" type="number" step="0.01" placeholder="0.00" class="${ic}">
+            <input id="txFormAmt" type="number" step="0.01" placeholder="0.00" tabindex="2" class="${ic}">
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Description</label>
-            <input id="txFormDesc" type="text" placeholder="Description" class="${ic}">
+            <input id="txFormDesc" type="text" placeholder="Description" tabindex="3" class="${ic}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">DR Account</label>
-            ${acctPickerHtml('formDrAcct', '', 'Search DR account\u2026', { subPickerId: 'formDrSub' })}
+            ${acctPickerHtml('formDrAcct', '', 'Search DR account\u2026', { subPickerId: 'formDrSub', tabindex: 4 })}
             ${subPickerHtml('formDrSub', '', 'formDrAcct', '')}
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">CR Account</label>
-            ${acctPickerHtml('formCrAcct', '', 'Search CR account\u2026', { subPickerId: 'formCrSub' })}
+            ${acctPickerHtml('formCrAcct', '', 'Search CR account\u2026', { subPickerId: 'formCrSub', tabindex: 5 })}
             ${subPickerHtml('formCrSub', '', 'formCrAcct', '')}
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
-            <input id="txFormNotes" type="text" placeholder="Optional" class="${ic}">
+            <input id="txFormNotes" type="text" placeholder="Optional" tabindex="6" class="${ic}">
           </div>
         </div>
         <p id="txFormErr" style="display:none" class="text-xs text-red-500"></p>
         <div class="flex gap-3 pt-1">
-          <button onclick="txSaveForm()"
+          <button onclick="txSaveForm()" tabindex="7"
             class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
             Save Transaction
           </button>
-          <button onclick="txHideForm()"
+          <button onclick="txHideForm()" tabindex="8"
             class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
             Cancel
           </button>
@@ -2882,13 +3311,14 @@ function txApplyFilters() {
   txF.drId     = acctPickerGetValue('fDrId');
   txF.crId     = acctPickerGetValue('fCrId');
   txF.desc     = document.getElementById('fDesc')?.value     || '';
+  txF.source   = document.getElementById('fSource')?.value   || '';
   txPage   = 0;
   txEditId = null;
   _renderTxPage();
 }
 
 function txClearFilters() {
-  txF = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'' };
+  txF = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'' };
   txPage   = 0;
   txEditId = null;
   _renderTxPage();
@@ -3020,12 +3450,12 @@ function txSaveForm() {
             '${now}','${now}')`);
       } else {
         db.run(`INSERT INTO "Transaction"
-          (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
+          (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
           VALUES ('${id}','${trxDate}','${period}',
             '${desc.replace(/'/g,"''")}',${amt},'${drId}','${crId}',
             ${drSub?"'"+drSub+"'":'NULL'},${crSub?"'"+crSub+"'":'NULL'},
             ${notes?"'"+notes.replace(/'/g,"''")+"'":'NULL'},
-            0,'${now}','${now}')`);
+            0,'Manual','${now}','${now}')`);
       }
     }
     txHideForm();
@@ -3046,7 +3476,7 @@ function migrateFutureTransactions() {
     db.run(`
       INSERT OR IGNORE INTO "Transaction"
         (id,trxDate,period,description,amount,
-         drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
+         drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
       VALUES (
         '${ft.id}','${ft.trxDate}','${ft.period}',
         '${String(ft.description).replace(/'/g,"''")}',${ft.amount},
@@ -3054,7 +3484,7 @@ function migrateFutureTransactions() {
         ${ft.drSubId?"'"+ft.drSubId+"'":'NULL'},
         ${ft.crSubId?"'"+ft.crSubId+"'":'NULL'},
         ${ft.notes?"'"+String(ft.notes).replace(/'/g,"''")+"'":'NULL'},
-        0,'${ft.createdAt||now}','${now}'
+        0,'Scheduled','${ft.createdAt||now}','${now}'
       )
     `);
     db.run(`DELETE FROM FutureTransaction WHERE id='${ft.id}'`);
@@ -3101,7 +3531,7 @@ function generateRepeatables() {
       db.run(`
         INSERT OR IGNORE INTO "Transaction"
           (id,trxDate,period,description,amount,
-           drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,createdAt,updatedAt)
+           drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
         VALUES (
           '${txId}','${dateStr}T12:00:00.000Z','${cp}',
           '${String(r.description).replace(/'/g,"''")}',${r.amount},
@@ -3109,7 +3539,7 @@ function generateRepeatables() {
           ${r.drSubId?"'"+r.drSubId+"'":'NULL'},
           ${r.crSubId?"'"+r.crSubId+"'":'NULL'},
           ${r.notes?"'"+String(r.notes).replace(/'/g,"''")+"'":'NULL'},
-          0,'${now}','${now}'
+          0,'Recurring','${now}','${now}'
         )
       `);
     }
@@ -4729,56 +5159,82 @@ function _renderSettingsPage(container) {
     const reps = query(`
       SELECT r.id, r.name, r.description, r.amount, r.dayOfMonth,
         r.isAutoGenerate, r.status, r.lastGeneratedPeriod,
+        COALESCE(r.templateType,'Undefined') AS templateType,
         da.code AS drCode, da.name AS drName,
         ca.code AS crCode, ca.name AS crName
       FROM RepeatableTransaction r
       LEFT JOIN Account da ON r.drAccountId=da.id
       LEFT JOIN Account ca ON r.crAccountId=ca.id
-      ORDER BY r.name ASC`);
+      ORDER BY COALESCE(r.templateType,'Undefined'), r.name ASC`);
 
-    const rows = reps.map(r => {
-      const isActive = r.status === 'ACTIVE';
-      return `<tr class="border-t border-slate-100 hover:bg-slate-50 ${isActive?'':'opacity-50'}">
-        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(r.name)}</td>
-        <td class="px-3 py-2 text-sm text-slate-600">${escHtml(r.description||'')}</td>
-        <td class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount,2)}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode||'')} ${escHtml(r.drName||'')}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode||'')} ${escHtml(r.crName||'')}</td>
-        <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth||'&mdash;'}</td>
-        <td class="px-3 py-2 text-center">${r.isAutoGenerate?'<span class="text-green-600 text-xs font-medium">Auto</span>':'<span class="text-slate-300 text-xs">Manual</span>'}</td>
-        <td class="px-3 py-2 text-center">
-          <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${r.status}</span>
-        </td>
-        <td class="px-3 py-2 text-right whitespace-nowrap">
-          <button onclick="repPlay('${r.id}')" class="text-xs text-blue-600 hover:text-blue-800 mr-1" title="Create one-off transaction now">&#9654; Play</button>
-          <button onclick="repShowEdit('${r.id}')" class="text-xs text-slate-400 hover:text-slate-800 mr-1">Edit</button>
-          <button onclick="repToggleStatus('${r.id}','${isActive?'DISABLED':'ACTIVE'}')" class="text-xs text-slate-400 hover:text-slate-800 mr-1">${isActive?'Disable':'Enable'}</button>
-          <button onclick="repDelete('${r.id}')" class="text-xs text-red-400 hover:text-red-600">Del</button>
-        </td>
-      </tr>`;
+    const TYPE_ORDER = ['Income','Expenses','Loans','Undefined'];
+    const TYPE_STYLE = {
+      Income:    'bg-green-50  text-green-800  border-green-200',
+      Expenses:  'bg-red-50    text-red-800    border-red-200',
+      Loans:     'bg-blue-50   text-blue-800   border-blue-200',
+      Undefined: 'bg-slate-50  text-slate-600  border-slate-200',
+    };
+
+    const grouped = {};
+    TYPE_ORDER.forEach(t => { grouped[t] = []; });
+    reps.forEach(r => { const t = r.templateType||'Undefined'; (grouped[t]=grouped[t]||[]).push(r); });
+
+    const thead = `<thead class="bg-slate-50 border-b border-slate-200"><tr>
+      <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</th>
+      <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+      <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+      <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
+      <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
+      <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Day</th>
+      <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Mode</th>
+      <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+      <th class="px-3 py-2.5"></th>
+    </tr></thead>`;
+
+    const sections = TYPE_ORDER.filter(t => grouped[t] && grouped[t].length > 0).map(type => {
+      const style = TYPE_STYLE[type] || TYPE_STYLE.Undefined;
+      const rows = grouped[type].map(r => {
+        const isActive = r.status === 'ACTIVE';
+        return `<tr class="border-t border-slate-100 hover:bg-slate-50 ${isActive?'':'opacity-50'}">
+          <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(r.name)}</td>
+          <td class="px-3 py-2 text-sm text-slate-600">${escHtml(r.description||'')}</td>
+          <td class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount,2)}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode||'')} ${escHtml(r.drName||'')}</td>
+          <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode||'')} ${escHtml(r.crName||'')}</td>
+          <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth||'&mdash;'}</td>
+          <td class="px-3 py-2 text-center">${r.isAutoGenerate?'<span class="text-green-600 text-xs font-medium">Auto</span>':'<span class="text-slate-300 text-xs">Manual</span>'}</td>
+          <td class="px-3 py-2 text-center">
+            <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${r.status}</span>
+          </td>
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            <button onclick="repPlay('${r.id}')" class="text-xs text-blue-600 hover:text-blue-800 mr-1" title="Create one-off transaction now">&#9654; Play</button>
+            <button onclick="repShowEdit('${r.id}')" class="text-xs text-slate-400 hover:text-slate-800 mr-1">Edit</button>
+            <button onclick="repToggleStatus('${r.id}','${isActive?'DISABLED':'ACTIVE'}')" class="text-xs text-slate-400 hover:text-slate-800 mr-1">${isActive?'Disable':'Enable'}</button>
+            <button onclick="repDelete('${r.id}')" class="text-xs text-red-400 hover:text-red-600">Del</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      return `<div>
+        <div class="flex items-center gap-2 px-1 py-2 border-b border-slate-100">
+          <span class="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${style}">${type}</span>
+          <span class="text-xs text-slate-400">${grouped[type].length} template${grouped[type].length!==1?'s':''}</span>
+        </div>
+        <div class="rounded-lg border border-slate-200 overflow-x-auto mt-1">
+          <table class="w-full min-w-[860px]">${thead}<tbody>${rows}</tbody></table>
+        </div>
+      </div>`;
     }).join('');
+
+    const emptyMsg = !reps.length ? `<div class="rounded-lg border border-slate-200 p-8 text-center text-sm text-slate-400">No templates yet — click + New Template to add one.</div>` : '';
 
     return `<div class="space-y-4">
       <div class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Manage recurring transaction templates. <em>Auto</em> templates generate automatically when the Transactions page loads.</p>
+        <p class="text-sm text-slate-500">Manage recurring transaction templates grouped by type. <em>Auto</em> templates generate automatically when the Transactions page loads.</p>
         <button onclick="repShowAdd()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700 flex-shrink-0">+ New Template</button>
       </div>
-      <div class="rounded-lg border border-slate-200 overflow-x-auto">
-        <table class="w-full min-w-[860px]">
-          <thead class="bg-slate-50 border-b border-slate-200"><tr>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
-            <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
-            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
-            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Day</th>
-            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Mode</th>
-            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-            <th class="px-3 py-2.5"></th>
-          </tr></thead>
-          <tbody>${reps.length ? rows : '<tr><td colspan="9" class="px-3 py-6 text-center text-sm text-slate-400">No templates yet</td></tr>'}</tbody>
-        </table>
-      </div>
+      ${emptyMsg}
+      ${sections}
     </div>`;
   }
 
@@ -5102,6 +5558,15 @@ function _renderSettingsPage(container) {
             <input id="repName" type="text" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g. Rent">
           </div>
           <div>
+            <label class="block text-xs text-slate-500 mb-1">Type</label>
+            <select id="repType" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <option value="Undefined">Undefined</option>
+              <option value="Income">Income</option>
+              <option value="Expenses">Expenses</option>
+              <option value="Loans">Loans</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-xs text-slate-500 mb-1">Amount</label>
             <input id="repAmt" type="number" step="0.01" min="0" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="0.00">
           </div>
@@ -5382,6 +5847,27 @@ function aboutTab() {
         no subscription, and no data sharing. Your financial data belongs to you.
       </p>
     </div>
+
+    <!-- API Usage -->
+    <div class="border border-slate-200 rounded-lg p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-slate-800">Anthropic API Usage</h3>
+        <button onclick="aboutFetchApiUsage()" id="apiUsageRefreshBtn"
+          class="text-xs text-slate-500 hover:text-slate-800 border border-slate-300 rounded px-2 py-1 hover:bg-slate-50 transition">
+          &#x21BB; Refresh
+        </button>
+      </div>
+      <div id="apiUsagePanel" class="text-sm text-slate-500">
+        Click Refresh to load usage statistics for the current month.
+      </div>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        Usage data is fetched live from <code class="bg-slate-100 px-1 rounded">api.anthropic.com</code>
+        using your stored API key. Note: detailed usage breakdowns require an Admin-scoped API key.
+        Standard API keys will return a 403 — in that case, check your usage at
+        <a href="https://console.anthropic.com" target="_blank" class="text-blue-500 hover:underline">console.anthropic.com</a>.
+      </p>
+    </div>
+
     <div class="border-t border-slate-200 pt-4 space-y-1">
       <p class="text-xs text-slate-500">
         &copy; ${new Date().getFullYear()} <strong class="text-slate-700">Dhruv Chadha</strong>. All rights reserved.
@@ -5393,6 +5879,104 @@ function aboutTab() {
       </p>
     </div>
   </div>`;
+}
+
+async function aboutFetchApiUsage() {
+  const panel = document.getElementById('apiUsagePanel');
+  const btn   = document.getElementById('apiUsageRefreshBtn');
+  if (!panel) return;
+
+  const apiKey = _itGetApiKey();
+  if (!apiKey) {
+    panel.innerHTML = '<span class="text-amber-600">No API key configured. Add your key in Settings &rarr; Backup &amp; Sync.</span>';
+    return;
+  }
+
+  panel.innerHTML = '<span class="text-slate-400">Fetching usage data&hellip;</span>';
+  if (btn) btn.disabled = true;
+
+  // Build date range: first day of current month to today
+  const now   = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+  const end   = now.toISOString().slice(0,10);
+
+  try {
+    const res = await fetch(`https://api.anthropic.com/v1/usage?start_date=${start}&end_date=${end}`, {
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      }
+    });
+
+    if (res.status === 403) {
+      panel.innerHTML = `
+        <div class="space-y-2">
+          <p class="text-amber-700 font-medium">Admin scope required for usage API.</p>
+          <p class="text-slate-500">Your API key is a standard key. Usage details are only accessible via an Admin API key.<br>
+          View your usage at <a href="https://console.anthropic.com/settings/usage" target="_blank" class="text-blue-500 hover:underline">console.anthropic.com/settings/usage</a>.</p>
+        </div>`;
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      panel.innerHTML = `<span class="text-red-600">Error ${res.status}: ${err?.error?.message || res.statusText}</span>`;
+      return;
+    }
+
+    const data = await res.json();
+    // Aggregate totals across all models
+    const models = data.data || data.usage || [];
+    let totalInput = 0, totalOutput = 0, totalCost = 0;
+    const modelRows = models.map(m => {
+      const inp = m.input_tokens || 0;
+      const out = m.output_tokens || 0;
+      const cost = m.cost_usd || 0;
+      totalInput  += inp;
+      totalOutput += out;
+      totalCost   += cost;
+      return `<tr class="border-t border-slate-100">
+        <td class="px-3 py-1.5 text-xs text-slate-700 font-mono">${escHtml(m.model||m.model_id||'—')}</td>
+        <td class="px-3 py-1.5 text-xs text-right text-slate-600">${inp.toLocaleString()}</td>
+        <td class="px-3 py-1.5 text-xs text-right text-slate-600">${out.toLocaleString()}</td>
+        <td class="px-3 py-1.5 text-xs text-right text-slate-700 font-medium">$${cost.toFixed(4)}</td>
+      </tr>`;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="space-y-3">
+        <div class="grid grid-cols-3 gap-3">
+          <div class="bg-slate-50 border border-slate-200 rounded p-3 text-center">
+            <div class="text-xs text-slate-500 mb-0.5">Input Tokens</div>
+            <div class="text-base font-bold text-slate-800">${totalInput.toLocaleString()}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-200 rounded p-3 text-center">
+            <div class="text-xs text-slate-500 mb-0.5">Output Tokens</div>
+            <div class="text-base font-bold text-slate-800">${totalOutput.toLocaleString()}</div>
+          </div>
+          <div class="bg-slate-50 border border-slate-200 rounded p-3 text-center">
+            <div class="text-xs text-slate-500 mb-0.5">Est. Cost (USD)</div>
+            <div class="text-base font-bold text-green-700">$${totalCost.toFixed(4)}</div>
+          </div>
+        </div>
+        ${modelRows ? `<div class="rounded border border-slate-200 overflow-hidden">
+          <table class="w-full">
+            <thead class="bg-slate-50 border-b border-slate-200"><tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Model</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Input</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Output</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Cost</th>
+            </tr></thead>
+            <tbody>${modelRows}</tbody>
+          </table>
+        </div>` : '<p class="text-slate-400 text-xs">No usage data returned for this period.</p>'}
+        <p class="text-xs text-slate-400">Period: ${start} to ${end}</p>
+      </div>`;
+  } catch(e) {
+    panel.innerHTML = `<span class="text-red-600">Network error: ${escHtml(e.message)}</span>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -7816,7 +8400,7 @@ function _itLookupMerchantAccount(description) {
     for (const like of searches) {
       const row = query(
         `SELECT drAccountId FROM "Transaction"
-         WHERE importSource='screenshot'
+         WHERE importSource='Imported'
            AND UPPER(description) LIKE ${like}
            AND drAccountId IS NOT NULL
          ORDER BY trxDate DESC LIMIT 1`
@@ -7920,7 +8504,7 @@ function itApproveDraft(draftId) {
   const amt    = parseFloat(d.amount)||0;
 
   db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
-    VALUES ('${txId}','${date}','${period}','${desc}',${amt},'${d.drAccountId}','${d.crAccountId}',NULL,NULL,NULL,0,'screenshot','${now}','${now}')`);
+    VALUES ('${txId}','${date}','${period}','${desc}',${amt},'${d.drAccountId}','${d.crAccountId}',NULL,NULL,NULL,0,'Imported','${now}','${now}')`);
 
   db.run(`UPDATE DraftTransaction SET status='approved' WHERE id='${draftId}'`);
   _itCheckBatchComplete(d.batchId);
@@ -8420,6 +9004,7 @@ function repShowAdd() {
   document.getElementById('repModalTitle').textContent = 'New Template';
   document.getElementById('repModalId').value  = '';
   document.getElementById('repName').value     = '';
+  document.getElementById('repType').value     = 'Undefined';
   document.getElementById('repDesc').value     = '';
   document.getElementById('repAmt').value      = '';
   document.getElementById('repDay').value      = '';
@@ -8437,6 +9022,7 @@ function repShowEdit(id) {
   document.getElementById('repModalTitle').textContent = 'Edit Template';
   document.getElementById('repModalId').value  = id;
   document.getElementById('repName').value     = r.name||'';
+  document.getElementById('repType').value     = r.templateType||'Undefined';
   document.getElementById('repDesc').value     = r.description||'';
   document.getElementById('repAmt').value      = r.amount||'';
   document.getElementById('repDay').value      = r.dayOfMonth||'';
@@ -8458,16 +9044,17 @@ function _repClearErr() {
 }
 
 function repSave() {
-  const id     = document.getElementById('repModalId').value;
-  const name   = document.getElementById('repName').value.trim();
-  const desc   = document.getElementById('repDesc').value.trim();
-  const amt    = parseFloat(document.getElementById('repAmt').value);
-  const dom    = document.getElementById('repDay').value.trim();
-  const notes  = document.getElementById('repNotes').value.trim() || null;
-  const auto   = document.getElementById('repAutoGen').checked ? 1 : 0;
-  const active = document.getElementById('repActive').checked ? 'ACTIVE' : 'DISABLED';
-  const drId   = acctPickerGetValue('repDrAcct');
-  const crId   = acctPickerGetValue('repCrAcct');
+  const id       = document.getElementById('repModalId').value;
+  const name     = document.getElementById('repName').value.trim();
+  const desc     = document.getElementById('repDesc').value.trim();
+  const amt      = parseFloat(document.getElementById('repAmt').value);
+  const dom      = document.getElementById('repDay').value.trim();
+  const notes    = document.getElementById('repNotes').value.trim() || null;
+  const auto     = document.getElementById('repAutoGen').checked ? 1 : 0;
+  const active   = document.getElementById('repActive').checked ? 'ACTIVE' : 'DISABLED';
+  const tType    = document.getElementById('repType')?.value || 'Undefined';
+  const drId     = acctPickerGetValue('repDrAcct');
+  const crId     = acctPickerGetValue('repCrAcct');
 
   const showErr = msg => {
     const e=document.getElementById('repModalErr');
@@ -8492,15 +9079,16 @@ function repSave() {
         dayOfMonth=${domVal===null?'NULL':domVal},
         drAccountId='${drId}', crAccountId='${crId}',
         notes=${notesSQL}, isAutoGenerate=${auto}, status='${active}',
+        templateType='${tType}',
         updatedAt='${now}'
         WHERE id='${id}'`);
     } else {
       db.run(`INSERT INTO RepeatableTransaction
         (id,name,description,amount,dayOfMonth,drAccountId,crAccountId,
-         notes,isAutoGenerate,status,createdAt,updatedAt)
+         notes,isAutoGenerate,status,templateType,createdAt,updatedAt)
         VALUES ('${genId()}','${nameE}','${descE}',${amt},
           ${domVal===null?'NULL':domVal},'${drId}','${crId}',
-          ${notesSQL},'${auto}','${active}','${now}','${now}')`);
+          ${notesSQL},'${auto}','${active}','${tType}','${now}','${now}')`);
     }
     syncAfterWrite();
     repHideModal();
@@ -9424,7 +10012,7 @@ function _renderEquityPage(container) {
             <div class="text-xl font-bold text-slate-800">${fmtCurrency(totalValue,2)}</div>
             <div class="text-xs ${totalUnreal>=0?'text-green-600':'text-red-600'} mt-0.5">${totalUnreal>=0?'+':''}${fmtCurrency(totalUnreal,2)} unrealized</div>
           </div>`:''}
-          <button onclick="eqOpenBuyModal('')" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ Buy / Vest</button>
+          ${window._eqReviewMode ? '' : `<button onclick="eqOpenBuyModal('')" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">+ Buy / Vest</button>`}
           <button onclick="eqRefreshPrices()" id="eqRefreshBtn" class="border border-slate-300 text-slate-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-50 flex items-center gap-1.5" title="Fetch latest prices from Yahoo Finance for all open positions">&#x21BB; Prices</button>
         </div>
       </div>
@@ -9432,9 +10020,9 @@ function _renderEquityPage(container) {
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div class="flex border-b border-slate-200 overflow-x-auto">
           ${tabBtn('summary','Summary')}
-          ${tabBtn('lots','Lots with On Hand ('+onHandCount+')')}
-          ${tabBtn('closedlots','Closed Lots ('+closedCount+')')}
-        </div>
+          ${tabBtn('summary','Summary')}
+          ${window._eqReviewMode ? '' : tabBtn('lots','Lots with On Hand ('+onHandCount+')')}
+          ${window._eqReviewMode ? '' : tabBtn('closedlots','Closed Lots ('+closedCount+')')}
         <div class="overflow-x-auto" style="max-height:65vh;overflow-y:auto;">${tabContent}</div>
       </div>
     </div>
@@ -10463,8 +11051,8 @@ function eqSaveBuy() {
     const txId  = genId();
     const lotId = genId();
     // Create transaction
-    db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
-      VALUES ('${txId}','${trxDate}','${period}','Buy ${tickerE}',${amount},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
+    db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
+      VALUES ('${txId}','${trxDate}','${period}','Buy ${tickerE}',${amount},'${drId}','${crId}',${notesSQL},0,'Equity','${now}','${now}')`);
     // Create lot
     db.run(`INSERT INTO EquityLot (id,ticker,stockName,trxDate,period,qty,price,amount,drAccountId,crAccountId,notes,linkedTxId,createdAt)
       VALUES ('${lotId}','${tickerE}','${sNameE}','${trxDate}','${period}',${qty},${price},${amount},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
@@ -10508,8 +11096,8 @@ function eqSaveSell() {
   try {
     const txId = genId();
     // Create transaction
-    db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,createdAt,updatedAt)
-      VALUES ('${txId}','${trxDate}','${period}','Sell ${tickerE}',${proceeds},'${drId}','${crId}',${notesSQL},0,'${now}','${now}')`);
+    db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
+      VALUES ('${txId}','${trxDate}','${period}','Sell ${tickerE}',${proceeds},'${drId}','${crId}',${notesSQL},0,'Equity','${now}','${now}')`);
     // Create one EquityLotSale per lot allocated
     for (const a of allocations) {
       const lotProceeds = a.qty * price;
