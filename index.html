@@ -1538,8 +1538,11 @@ function acctPickerOnKeyDown(e, input) {
     return;
   }
   if (e.key === 'Tab') {
+    // Auto-select the highlighted option or sole option, then always let Tab move focus naturally
     const target = cur || (opts.length === 1 ? opts[0] : null);
-    if (target) { e.preventDefault(); acctPickerSelect(target); }
+    if (target) acctPickerSelect(target);
+    drop.classList.add('hidden');
+    // Do NOT call e.preventDefault() — let Tab move to the next focusable element
     return;
   }
 }
@@ -2184,19 +2187,19 @@ function _renderDividendsTab(container) {
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs text-slate-500 mb-1">Dividend Date</label>
-            <input id="divDate" type="date" tabindex="1" class="${ic}"
+            <input id="divDate" type="date" class="${ic}"
               value="${new Date().toLocaleDateString('en-CA')}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Ticker</label>
-            <select id="divTicker" tabindex="2" class="${ic}">
+            <select id="divTicker" class="${ic}">
               <option value="">Select ticker…</option>
               ${tickerOpts}
             </select>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Dividend Amount</label>
-            <input id="divAmount" type="number" step="0.01" min="0" placeholder="0.00" tabindex="3" class="${ic}">
+            <input id="divAmount" type="number" step="0.01" min="0" placeholder="0.00" class="${ic}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">DR Account <span class="text-slate-400">(cash received)</span></label>
@@ -2209,11 +2212,11 @@ function _renderDividendsTab(container) {
         </div>
         <p id="divErr" style="display:none" class="text-xs text-red-500"></p>
         <div class="flex gap-3">
-          <button onclick="divSave()" tabindex="6"
+          <button onclick="divSave()"
             class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
             Save Dividend
           </button>
-          <button onclick="divClearForm()" tabindex="7"
+          <button onclick="divClearForm()"
             class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
             Clear
           </button>
@@ -2241,8 +2244,8 @@ function _renderDividendsTab(container) {
 
   // Load account pickers
   window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
-  document.getElementById('divDrWrap').innerHTML = acctPickerHtml('divDr', '', 'Search DR account…', { tabindex: 4 });
-  document.getElementById('divCrWrap').innerHTML = acctPickerHtml('divCr', divIncomeAcct?.id||'', 'Search CR account…', { tabindex: 5 });
+  document.getElementById('divDrWrap').innerHTML = acctPickerHtml('divDr', '', 'Search DR account…', {});
+  document.getElementById('divCrWrap').innerHTML = acctPickerHtml('divCr', divIncomeAcct?.id||'', 'Search CR account…', {});
   if (divIncomeAcct) acctPickerSetValue('divCr', divIncomeAcct.id);
 }
 
@@ -3092,38 +3095,38 @@ function _renderTxPage(container) {
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs text-slate-500 mb-1">Date</label>
-            <input id="txFormDate" type="date" tabindex="1" class="${ic}">
+            <input id="txFormDate" type="date" class="${ic}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Amount</label>
-            <input id="txFormAmt" type="number" step="0.01" placeholder="0.00" tabindex="2" class="${ic}">
+            <input id="txFormAmt" type="number" step="0.01" placeholder="0.00" class="${ic}">
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Description</label>
-            <input id="txFormDesc" type="text" placeholder="Description" tabindex="3" class="${ic}">
+            <input id="txFormDesc" type="text" placeholder="Description" class="${ic}">
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">DR Account</label>
-            ${acctPickerHtml('formDrAcct', '', 'Search DR account\u2026', { subPickerId: 'formDrSub', tabindex: 4 })}
+            ${acctPickerHtml('formDrAcct', '', 'Search DR account\u2026', { subPickerId: 'formDrSub' })}
             ${subPickerHtml('formDrSub', '', 'formDrAcct', '')}
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">CR Account</label>
-            ${acctPickerHtml('formCrAcct', '', 'Search CR account\u2026', { subPickerId: 'formCrSub', tabindex: 5 })}
+            ${acctPickerHtml('formCrAcct', '', 'Search CR account\u2026', { subPickerId: 'formCrSub' })}
             ${subPickerHtml('formCrSub', '', 'formCrAcct', '')}
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
-            <input id="txFormNotes" type="text" placeholder="Optional" tabindex="6" class="${ic}">
+            <input id="txFormNotes" type="text" placeholder="Optional" class="${ic}">
           </div>
         </div>
         <p id="txFormErr" style="display:none" class="text-xs text-red-500"></p>
         <div class="flex gap-3 pt-1">
-          <button onclick="txSaveForm()" tabindex="7"
+          <button onclick="txSaveForm()"
             class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
             Save Transaction
           </button>
-          <button onclick="txHideForm()" tabindex="8"
+          <button onclick="txHideForm()"
             class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
             Cancel
           </button>
