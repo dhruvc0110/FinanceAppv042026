@@ -197,11 +197,11 @@
     </div>
 
     <!-- Sign Out row — above avatar, below title bar -->
-    <div class="flex-shrink-0 border-b border-slate-700">
+    <div class="flex-shrink-0 border-b border-slate-700 px-2 py-1">
       <button onclick="signOut()"
-        class="sidebar-icon w-full flex items-center gap-2.5 px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 transition">
-        <svg class="flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span class="sidebar-text text-xs font-medium">Sign Out</span>
+        class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="nav-label">Sign Out</span>
       </button>
     </div>
 
@@ -217,11 +217,11 @@
     </div>
 
     <!-- Settings row — below avatar -->
-    <div class="flex-shrink-0 border-b border-slate-700">
+    <div class="flex-shrink-0 border-b border-slate-700 px-2 py-1">
       <button onclick="navigate('settings')" data-page="settings"
-        class="sidebar-icon nav-btn w-full flex items-center gap-2.5 px-3 py-2 text-slate-400 hover:text-white hover:bg-slate-800 transition">
-        <svg class="flex-shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="sidebar-text text-xs font-medium">Settings</span>
+        class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span>
       </button>
     </div>
 
@@ -591,6 +591,24 @@ const _QUOTES = [
   {q:"The perfect is the enemy of the good.",a:"Voltaire"},
   {q:"Judge a man by his questions rather than by his answers.",a:"Voltaire"},
   {q:"Common sense is not so common.",a:"Voltaire"},
+  // Stoic & Ancient additions
+  {q:"No man is free who is not master of himself.",a:"Epictetus"},
+  {q:"Seek not that the things which happen should happen as you wish; but wish the things which happen to be as they are, and you will have a tranquil flow of life.",a:"Epictetus"},
+  {q:"We have two ears and one mouth so that we can listen twice as much as we speak.",a:"Epictetus"},
+  {q:"He who conquers himself is the mightiest warrior.",a:"Confucius"},
+  {q:"The superior man is satisfied and composed; the mean man is always full of distress.",a:"Confucius"},
+  // Moderns
+  {q:"Whether you think you can or think you can't, you're right.",a:"Henry Ford"},
+  {q:"If you always do what you've always done, you'll always get what you've always got.",a:"Henry Ford"},
+  {q:"The two most powerful warriors are patience and time.",a:"Leo Tolstoy"},
+  {q:"Everyone thinks of changing the world, but no one thinks of changing himself.",a:"Leo Tolstoy"},
+  {q:"All that we are is the result of what we have thought.",a:"Buddha"},
+  {q:"Three things cannot be long hidden: the sun, the moon, and the truth.",a:"Buddha"},
+  {q:"The mind is everything. What you think, you become.",a:"Buddha"},
+  {q:"Integrity is doing the right thing, even when no one is watching.",a:"C.S. Lewis"},
+  {q:"You can't go back and change the beginning, but you can start where you are and change the ending.",a:"C.S. Lewis"},
+  {q:"Not all those who wander are lost.",a:"J.R.R. Tolkien"},
+  {q:"It is our choices that show what we truly are, far more than our abilities.",a:"J.K. Rowling"},
 ];
 
 (function _initSidebarQuote() {
@@ -2095,9 +2113,13 @@ function _renderTEContent() {
     equityTab = _teTab;
     window._eqReviewMode = false;
     _renderEquityPage(c);
-    // After equity renders, strip its outer tab bar to avoid double tabs
-    const innerTabBar = c.querySelector('.flex.border-b.border-slate-200');
-    if (innerTabBar) innerTabBar.style.display = 'none';
+    // Hide the inner equity tab bar (Summary/Lots/Closed) to avoid double tab bars.
+    // The equity tab bar sits inside .bg-white.border.rounded-lg; target it specifically.
+    const eqCard = c.querySelector('.bg-white.border.border-slate-200.rounded-lg.overflow-hidden');
+    if (eqCard) {
+      const innerBar = eqCard.querySelector('.flex.border-b.border-slate-200');
+      if (innerBar) innerBar.style.display = 'none';
+    }
   }
 }
 function _renderDividendsTab(container) {
@@ -2766,6 +2788,19 @@ function fmtDate(d) {
 
 function isoDate(d) { return String(d || '').slice(0, 10); }
 
+function _txSourceBadge(src) {
+  const s = src || 'Manual';
+  const map = {
+    'Manual':    'bg-slate-100 text-slate-500',
+    'Scheduled': 'bg-blue-50 text-blue-600',
+    'Recurring': 'bg-purple-50 text-purple-600',
+    'Imported':  'bg-amber-50 text-amber-600',
+    'Equity':    'bg-green-50 text-green-700',
+  };
+  const cls = map[s] || map['Manual'];
+  return '<span class="px-1.5 py-0.5 rounded text-xs font-medium ' + cls + '">' + escHtml(s) + '</span>';
+}
+
 function buildTxWhere(f) {
   const parts = [];
   if (f.dateFrom) parts.push(`substr(t.trxDate,1,10) >= '${f.dateFrom}'`);
@@ -2869,9 +2904,7 @@ function _renderTxPage(container) {
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
         <td class="px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
-        <td class="px-3 py-2 text-xs text-center whitespace-nowrap">
-          \${(()=>{const s=r.importSource||'Manual';const m={'Manual':'bg-slate-100 text-slate-500','Scheduled':'bg-blue-50 text-blue-600','Recurring':'bg-purple-50 text-purple-600','Imported':'bg-amber-50 text-amber-600','Equity':'bg-green-50 text-green-700'};return \`<span class="px-1.5 py-0.5 rounded text-xs font-medium \${m[s]||m.Manual}">${s}</span>\`;})()} 
-        </td>
+        <td class="px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
         <td class="px-3 py-2 text-center">
           <input type="checkbox" ${r.isReconciled ? 'checked' : ''}
             onchange="txToggleReconcile('${r.id}', this.checked)"
@@ -10019,9 +10052,9 @@ function _renderEquityPage(container) {
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div class="flex border-b border-slate-200 overflow-x-auto">
           ${tabBtn('summary','Summary')}
-          ${tabBtn('summary','Summary')}
           ${window._eqReviewMode ? '' : tabBtn('lots','Lots with On Hand ('+onHandCount+')')}
           ${window._eqReviewMode ? '' : tabBtn('closedlots','Closed Lots ('+closedCount+')')}
+        </div>
         <div class="overflow-x-auto" style="max-height:65vh;overflow-y:auto;">${tabContent}</div>
       </div>
     </div>
