@@ -3591,6 +3591,7 @@ function generateRepeatables() {
 
 let plFrom     = '';
 let plTo       = '';
+let plPeriod   = '';  // active single period for projected-close edits (= plFrom when plFrom===plTo)
 let plEditMode = false;
 let plLayouts  = { income: [], expense: [] };
 
@@ -3608,6 +3609,7 @@ function renderPL(container) {
   if (!plTo   || !periods.includes(plTo))   plTo   = def;
   // Ensure From <= To
   if (plFrom > plTo) plTo = plFrom;
+  plPeriod = (plFrom === plTo) ? plFrom : '';
   _renderPLPage(container);
 }
 
@@ -3696,7 +3698,8 @@ function _renderPLPage(container) {
       const act=getActual(item.id,type);
       const bd=budgetMap[item.id]||{bgt:0,projR:null};
       const bgt=bd.bgt, projR=bd.projR;
-      const proj=(projR!==null&&projR!==undefined)?+projR:bgt;
+      const remaining=Math.max(0,bgt-act);
+      const proj=(projR!==null&&projR!==undefined)?+projR:remaining;
       const vb=type==='INCOME'?act-bgt:bgt-act;
       const vp=showProj?(type==='INCOME'?proj-bgt:bgt-proj):0;
       const isDefault=projR===null||projR===undefined;
@@ -3716,9 +3719,9 @@ function _renderPLPage(container) {
         <td class="px-3 py-1.5 text-sm ${vb>=0?'text-green-700':'text-red-600'} text-right">${fmtCurrency(vb,2)}</td>
         ${showProj?`<td id="proj-${item.id}"
           class="px-3 py-1.5 text-sm text-slate-700 text-right cursor-pointer hover:bg-blue-50 select-none"
-          onclick="plEditProj('${item.id}',${projRSafe},${+bgt||0})"
+          onclick="plEditProj('${item.id}',${projRSafe},${+bgt||0},${+act||0})"
           title="Click to edit projected close">
-          ${fmtCurrency(proj,2)}${isDefault?'<span class="text-slate-300 text-xs ml-1">bgt</span>':''}
+          ${fmtCurrency(proj,2)}${isDefault?'<span class="text-slate-300 text-xs ml-1" title="Defaulting to Budget − Actuals (Remaining)">rem</span>':''}
         </td>`:''}
       </tr>`;
     }
@@ -3836,7 +3839,7 @@ function _renderPLPage(container) {
     </div>`;
 }
 
-function plChangePeriod(v) { plPeriod=v; _renderPLPage(); }
+function plChangePeriod(v) { plPeriod=v; plFrom=v; plTo=v; _renderPLPage(); }
 function plToggleEdit()    { plEditMode=!plEditMode; _renderPLPage(); }
 
 function plSaveLayout(section) {
@@ -3875,23 +3878,34 @@ function plDelSub(section,id) {
   plSaveLayout(section); _renderPLPage();
 }
 
-function plEditProj(accountId,currentProj,budget) {
-  const cell=document.getElementById('proj-'+accountId); if (!cell) return;
-  const cur=(currentProj!==null&&currentProj!==undefined)?String(currentProj):'';
-  const inp=document.createElement('input');
-  inp.type='number'; inp.step='0.01'; inp.min='0'; inp.value=cur;
-  inp.placeholder='Blank = budget default ('+fmtCurrency(budget,2)+')';
-  inp.className='w-full border border-blue-400 rounded px-2 py-0.5 text-sm text-right bg-blue-50 focus:outline-none';
-  cell.innerHTML=''; cell.appendChild(inp); inp.focus(); inp.select();
+function plEditProj(accountId, currentProj, budget, actual) {
+  const cell = document.getElementById('proj-' + accountId);
+  if (!cell) return;
+
+  // Default = Remaining (Budget − Actuals), but only when user has never set a value.
+  // Once the user has set a value (currentProj !== null), respect it as-is.
+  const remaining  = Math.max(0, (budget || 0) - (actual || 0));
+  const defaultVal = (currentProj !== null && currentProj !== undefined) ? +currentProj : remaining;
+
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.step = '0.01'; inp.min = '0';
+  inp.value = String(defaultVal);
+  inp.className = 'w-full border border-blue-400 rounded px-2 py-0.5 text-sm text-right bg-blue-50 focus:outline-none';
+  inp.title = (currentProj === null || currentProj === undefined)
+    ? 'Defaulting to Remaining (Budget − Actuals = ' + fmtCurrency(remaining, 2) + ')'
+    : 'Your custom projected close';
+  cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); inp.select();
 
   function save() {
-    const v=inp.value.trim();
+    const v = inp.value.trim();
+    if (!plPeriod) { _renderPLPage(); return; }  // guard: should not happen in single-period view
     try {
-      const exists=queryVal(`SELECT COUNT(*) FROM BudgetPlan WHERE accountId='${accountId}' AND period='${plPeriod}'`);
-      if (v==='') {
+      const exists = queryVal(`SELECT COUNT(*) FROM BudgetPlan WHERE accountId='${accountId}' AND period='${plPeriod}'`);
+      if (v === '') {
+        // Blank → revert to system default (remaining); clear any stored override
         if (exists) db.run(`UPDATE BudgetPlan SET projectedClose=NULL WHERE accountId='${accountId}' AND period='${plPeriod}'`);
       } else {
-        const n=Math.max(0,parseFloat(v)||0);
+        const n = Math.max(0, parseFloat(v) || 0);
         if (exists) {
           db.run(`UPDATE BudgetPlan SET projectedClose=${n} WHERE accountId='${accountId}' AND period='${plPeriod}'`);
         } else {
@@ -3899,14 +3913,14 @@ function plEditProj(accountId,currentProj,budget) {
         }
       }
       syncAfterWrite();
-    } catch(e) { alert('Save failed: '+e.message); }
+    } catch(e) { alert('Save failed: ' + e.message); }
     _renderPLPage();
   }
 
-  inp.addEventListener('blur',save);
-  inp.addEventListener('keydown',e=>{
-    if (e.key==='Enter')  { e.preventDefault(); inp.blur(); }
-    if (e.key==='Escape') { _renderPLPage(); }
+  inp.addEventListener('blur', save);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') { _renderPLPage(); }
   });
 }
 
