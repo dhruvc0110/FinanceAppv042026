@@ -11052,62 +11052,48 @@ function eqBuyCalcAmount() {
 }
 
 function eqSellUpdatePreview() {
-  const modal  = document.getElementById('eqSellModal');
+  const modal = document.getElementById('eqSellModal');
   if (!modal) return;
-  const ticker = modal.querySelector('#eqSellTickerSel').value;
-  const qty    = parseFloat(modal.querySelector('#eqSellQty').value)   || 0;
-  const price  = parseFloat(modal.querySelector('#eqSellPrice').value) || 0;
-  const prev   = modal.querySelector('#eqSellPreview');
+  const lotId = modal.dataset.lotId;
+  const qty   = parseFloat(modal.querySelector('#eqSellQty').value)   || 0;
+  const price = parseFloat(modal.querySelector('#eqSellPrice').value) || 0;
+  const prev  = modal.querySelector('#eqSellPreview');
   if (!prev) return;
 
-  if (!ticker || qty <= 0) { prev.innerHTML=''; return; }
+  if (!lotId || qty <= 0) { prev.innerHTML = ''; return; }
 
-  const { allocations, totalCostBasis, shortfall } = eqCalcFIFO(ticker, qty);
-  const proceeds = qty * price;
-  const gl       = proceeds - totalCostBasis;
+  const lot = query(`
+    SELECT CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS price,
+      COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId='${lotId}'),0) AS soldQty
+    FROM EquityLot WHERE id='${lotId}'`)[0];
+  if (!lot) return;
 
-  if (shortfall > 0.001) {
-    prev.innerHTML = `<p class="text-xs text-red-600">Only ${(qty-shortfall).toFixed(4)} shares available for FIFO — reduce quantity.</p>`;
+  const remaining  = lot.qty - lot.soldQty;
+  if (qty > remaining + 0.000001) {
+    prev.innerHTML = `<p class="text-xs text-red-600 mt-2">Only ${remaining.toFixed(4)} shares available in this lot.</p>`;
     return;
   }
 
-  const lotRows = allocations.map(a =>
-    `<tr class="border-t border-slate-100 text-xs">
-      <td class="px-2 py-1 text-slate-500">${fmtDate(a.lotDate)}</td>
-      <td class="px-2 py-1 text-right text-slate-700">${a.qty.toFixed(4)}</td>
-      <td class="px-2 py-1 text-right text-slate-500">${fmtCurrency(a.costPerShare,4)}</td>
-      <td class="px-2 py-1 text-right text-slate-700">${fmtCurrency(a.costBasis,2)}</td>
-    </tr>`).join('');
+  const costBasis = qty * lot.price;
+  const proceeds  = qty * price;
+  const gl        = proceeds - costBasis;
 
   prev.innerHTML = `
-    <div class="border border-slate-200 rounded-lg overflow-hidden mt-2">
-      <div class="bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600 border-b border-slate-200">FIFO Allocation</div>
-      <table class="w-full text-xs">
-        <thead class="border-b border-slate-100"><tr>
-          <th class="px-2 py-1 text-left text-slate-400">Lot date</th>
-          <th class="px-2 py-1 text-right text-slate-400">Qty used</th>
-          <th class="px-2 py-1 text-right text-slate-400">Cost/share</th>
-          <th class="px-2 py-1 text-right text-slate-400">Cost basis</th>
-        </tr></thead>
-        <tbody>${lotRows}</tbody>
-      </table>
-      <div class="grid grid-cols-3 gap-0 border-t border-slate-200">
-        <div class="px-3 py-2 text-center border-r border-slate-200">
-          <div class="text-xs text-slate-500">Proceeds</div>
-          <div class="text-sm font-bold text-slate-800">${fmtCurrency(proceeds,2)}</div>
-        </div>
-        <div class="px-3 py-2 text-center border-r border-slate-200">
-          <div class="text-xs text-slate-500">Cost Basis</div>
-          <div class="text-sm font-bold text-slate-700">${fmtCurrency(totalCostBasis,2)}</div>
-        </div>
-        <div class="px-3 py-2 text-center">
-          <div class="text-xs text-slate-500">Realized G/L</div>
-          <div class="text-sm font-bold ${gl>=0?'text-green-700':'text-red-600'}">${gl>=0?'+':''}${fmtCurrency(gl,2)}</div>
-        </div>
+    <div class="grid grid-cols-3 gap-0 border border-slate-200 rounded-lg overflow-hidden mt-2">
+      <div class="px-3 py-2 text-center border-r border-slate-200">
+        <div class="text-xs text-slate-500">Proceeds</div>
+        <div class="text-sm font-bold text-slate-800">${fmtCurrency(proceeds, 2)}</div>
+      </div>
+      <div class="px-3 py-2 text-center border-r border-slate-200">
+        <div class="text-xs text-slate-500">Cost Basis</div>
+        <div class="text-sm font-bold text-slate-700">${fmtCurrency(costBasis, 2)}</div>
+      </div>
+      <div class="px-3 py-2 text-center">
+        <div class="text-xs text-slate-500">Realized G/L</div>
+        <div class="text-sm font-bold ${gl >= 0 ? 'text-green-700' : 'text-red-600'}">${gl >= 0 ? '+' : ''}${fmtCurrency(gl, 2)}</div>
       </div>
     </div>`;
 }
-
 // ── Save handlers ──────────────────────────────────────────
 function eqSaveBuy() {
   const modal  = document.getElementById('eqBuyModal');
