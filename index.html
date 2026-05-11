@@ -10894,30 +10894,31 @@ function eqOpenBuyModal(prefillTicker) {
   modalDiv.style.display = 'flex';
 }
 
-function eqOpenSellModal(prefillTicker) {
+function eqOpenSellModal(lotId) {
   window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
   window._txSubs = {};
 
-  // Only tickers with remaining shares
-  const lotData = query(`
-    SELECT el.ticker, CAST(el.qty AS REAL) AS qty,
+  const lot = query(`
+    SELECT el.id, el.ticker, el.stockName, el.trxDate,
+      CAST(el.qty AS REAL) AS qty, CAST(el.price AS REAL) AS price,
       COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId=el.id),0) AS soldQty
-    FROM EquityLot el`);
-  const sharesByTicker = {};
-  lotData.forEach(l => {
-    const rem = l.qty - l.soldQty;
-    if (rem > 0.000001) sharesByTicker[l.ticker] = (sharesByTicker[l.ticker]||0) + rem;
-  });
-  const activeTickers = Object.keys(sharesByTicker).sort();
+    FROM EquityLot el WHERE el.id='${lotId}'`)[0];
+  if (!lot) return;
 
-  const modalDiv = document.getElementById('eqSellModal');
+  const remaining = lot.qty - lot.soldQty;
+  const modalDiv  = document.getElementById('eqSellModal');
   if (!modalDiv) return;
 
-  const tickerOpts = activeTickers.map(t =>
-    `<option value="${escHtml(t)}" ${t===prefillTicker?'selected':''}>${escHtml(t)} &mdash; ${sharesByTicker[t].toFixed(4)} shares available</option>`
-  ).join('');
-  modalDiv.querySelector('#eqSellTickerSel').innerHTML = '<option value="">Select ticker\u2026</option>' + tickerOpts;
-  modalDiv.querySelector('#eqSellDate').value     = new Date().toISOString().slice(0,10);
+  // Store the lotId on the modal for use in eqSaveSell
+  modalDiv.dataset.lotId = lotId;
+
+  // Show lot info in the ticker slot
+  modalDiv.querySelector('#eqSellTickerSel').innerHTML =
+    `<option value="${escHtml(lot.id)}" selected>
+      ${escHtml(lot.ticker)} — bought ${fmtDate(lot.trxDate)} @ ${fmtCurrency(lot.price,4)} — ${remaining.toFixed(4)} shares available
+    </option>`;
+
+  modalDiv.querySelector('#eqSellDate').value     = new Date().toLocaleDateString('en-CA');
   modalDiv.querySelector('#eqSellQty').value      = '';
   modalDiv.querySelector('#eqSellPrice').value    = '';
   modalDiv.querySelector('#eqSellNotes').value    = '';
@@ -10926,10 +10927,8 @@ function eqOpenSellModal(prefillTicker) {
   document.getElementById('eqSellDrWrap').innerHTML = acctPickerHtml('eqSellDr','','DR account (cash received)\u2026',{isFilter:true});
   document.getElementById('eqSellCrWrap').innerHTML = acctPickerHtml('eqSellCr','','CR account (investment)\u2026',{isFilter:true});
 
-  if (prefillTicker) modalDiv.querySelector('#eqSellTickerSel').value = prefillTicker;
   modalDiv.style.display = 'flex';
 }
-
 // ── Field change handlers ──────────────────────────────────
 let _eqTickerLookupTimer = null;
 
