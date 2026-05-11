@@ -9176,10 +9176,10 @@ function repPlay(id) {
 
   // Default to today, or dayOfMonth in current month if set
   const now = new Date();
-  let date = now.toISOString().slice(0,10);
+  let date = now.toLocaleDateString('en-CA');
   if (r.dayOfMonth) {
     const d = new Date(now.getFullYear(), now.getMonth(), +r.dayOfMonth);
-    date = d.toISOString().slice(0,10);
+    date = d.toLocaleDateString('en-CA');
   }
 
   // Navigate to Transactions first so txFormModal exists in the DOM,
