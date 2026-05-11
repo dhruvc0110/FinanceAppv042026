@@ -930,7 +930,7 @@ function _initCoreSchema() {
       id TEXT PRIMARY KEY, title TEXT NOT NULL,
       body TEXT NOT NULL DEFAULT '',
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
-    ``CREATE TABLE IF NOT EXISTS DuplicateReview (
+    `CREATE TABLE IF NOT EXISTS DuplicateReview (
       id TEXT PRIMARY KEY, txARef TEXT NOT NULL, txBRef TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'FLAGGED', deleteRef TEXT, reviewedAt TEXT,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
@@ -1808,6 +1808,39 @@ function startApp() {
   ['txnType','suggestedDrAccountId','crAccountId'].forEach(col => {
     try { db.run(`ALTER TABLE DraftTransaction ADD COLUMN ${col} TEXT`); } catch(e) {}
   });
+  // Migration: remove UNIQUE constraint on EquityLotSale.linkedTxId
+  // A multi-lot FIFO sale creates multiple EquityLotSale rows all sharing one linkedTxId.
+  // If the live DB has a UNIQUE index on that column the second INSERT throws.
+  try {
+    const hasUniqueConstraint = (() => {
+      try {
+        db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,createdAt,linkedTxId)
+          VALUES ('__mig_a__','__x__','2000-01-01','200001',1,1,'2000-01-01T00:00:00Z','__same__')`);
+        db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,createdAt,linkedTxId)
+          VALUES ('__mig_b__','__x__','2000-01-01','200001',1,1,'2000-01-01T00:00:00Z','__same__')`);
+        db.run(`DELETE FROM EquityLotSale WHERE id IN ('__mig_a__','__mig_b__')`);
+        return false;
+      } catch(e) {
+        db.run(`DELETE FROM EquityLotSale WHERE id IN ('__mig_a__','__mig_b__')`);
+        return true;
+      }
+    })();
+    if (hasUniqueConstraint) {
+      db.run(`ALTER TABLE EquityLotSale RENAME TO EquityLotSale_old`);
+      db.run(`CREATE TABLE EquityLotSale (
+        id TEXT PRIMARY KEY, lotId TEXT NOT NULL,
+        trxDate TEXT NOT NULL, period TEXT NOT NULL,
+        qty REAL NOT NULL, price REAL NOT NULL,
+        proceeds REAL, costBasis REAL, gainLoss REAL,
+        drAccountId TEXT, crAccountId TEXT,
+        notes TEXT, linkedTxId TEXT, createdAt TEXT NOT NULL)`);
+      db.run(`INSERT INTO EquityLotSale SELECT * FROM EquityLotSale_old`);
+      db.run(`DROP TABLE EquityLotSale_old`);
+      syncAfterWrite();
+      console.log('EquityLotSale: removed UNIQUE constraint on linkedTxId');
+    }
+  } catch(e) { console.warn('EquityLotSale migration (non-fatal):', e.message); }
+
   navigate('dashboard');
 }
 // ════════════════════════════════════════════════════════════
