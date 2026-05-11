@@ -10430,11 +10430,17 @@ async function eqFetchOneTicker(ticker) {
 function eqUnwindSale(saleId, ticker) {
   if (!confirm(`Unwind this sale of ${ticker}? The lot will return to "Lots with On Hand".`)) return;
   try {
-    // Find the linked Transaction and delete it too if it exists
     const sale = query(`SELECT linkedTxId FROM EquityLotSale WHERE id='${saleId}'`)[0];
     db.run(`DELETE FROM EquityLotSale WHERE id='${saleId}'`);
     if (sale && sale.linkedTxId) {
-      db.run(`DELETE FROM "Transaction" WHERE id='${sale.linkedTxId}'`);
+      // Only delete the transaction if no other lot sales still reference it.
+      // A multi-lot FIFO sale shares one linkedTxId across several EquityLotSale rows.
+      const remainingRefs = queryVal(
+        `SELECT COUNT(*) FROM EquityLotSale WHERE linkedTxId='${sale.linkedTxId}'`
+      ) || 0;
+      if (remainingRefs === 0) {
+        db.run(`DELETE FROM "Transaction" WHERE id='${sale.linkedTxId}'`);
+      }
     }
     syncAfterWrite();
     equityTab = 'closedlots';
