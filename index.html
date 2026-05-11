@@ -3840,6 +3840,8 @@ function _renderPLPage(container) {
 }
 
 function plChangePeriod(v) { plPeriod=v; plFrom=v; plTo=v; _renderPLPage(); }
+function plSetFrom(v) { plFrom=v; if(plFrom>plTo) plTo=plFrom; plPeriod=(plFrom===plTo)?plFrom:''; _renderPLPage(); }
+function plSetTo(v)   { plTo=v;   if(plTo<plFrom) plFrom=plTo;  plPeriod=(plFrom===plTo)?plFrom:''; _renderPLPage(); }
 function plToggleEdit()    { plEditMode=!plEditMode; _renderPLPage(); }
 
 function plSaveLayout(section) {
