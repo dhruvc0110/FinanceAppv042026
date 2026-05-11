@@ -9905,7 +9905,7 @@ function _renderEquityPage(container) {
         ${sTr(mp?fmtCurrency(mktVal,2):'&mdash;',mp?'text-slate-700':'text-slate-300')}
         ${sTr(mp?`<span class="${glCls}">${unreal>=0?'+':''}${fmtCurrency(unreal,2)}</span>`:'&mdash;','')}
         <td class="px-3 py-2 text-right whitespace-nowrap">
-          <button onclick="eqOpenSellModal('${escHtml(lot.ticker)}')"
+          <button onclick="eqOpenSellModal('${escHtml(lot.id)}')"
             class="text-xs border border-slate-200 hover:border-slate-400 rounded px-2 py-0.5 text-slate-500 hover:text-slate-800">
             Sell
           </button>
