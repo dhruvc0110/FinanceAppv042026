@@ -11140,7 +11140,7 @@ function eqSaveBuy() {
 
 function eqSaveSell() {
   const modal  = document.getElementById('eqSellModal');
-  const ticker = modal.querySelector('#eqSellTickerSel').value;
+  const lotId  = modal.dataset.lotId;
   const date   = modal.querySelector('#eqSellDate').value;
   const qty    = parseFloat(modal.querySelector('#eqSellQty').value);
   const price  = parseFloat(modal.querySelector('#eqSellPrice').value);
@@ -11148,45 +11148,45 @@ function eqSaveSell() {
   const drId   = acctPickerGetValue('eqSellDr');
   const crId   = acctPickerGetValue('eqSellCr');
 
-  const errEl  = modal.querySelector('#eqSellErr');
-  const showErr= msg => { if(errEl){errEl.textContent=msg;errEl.style.display='block';} };
-  if (!ticker)            return showErr('Select a ticker.');
+  const errEl   = modal.querySelector('#eqSellErr');
+  const showErr = msg => { if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; } };
+
+  if (!lotId)             return showErr('No lot selected.');
   if (!date)              return showErr('Date is required.');
   if (isNaN(qty)||qty<=0) return showErr('Quantity must be positive.');
   if (isNaN(price)||price<=0) return showErr('Sale price must be positive.');
   if (!drId)              return showErr('DR account is required.');
   if (!crId)              return showErr('CR account is required.');
 
-  const { allocations, totalCostBasis, shortfall } = eqCalcFIFO(ticker, qty);
-  if (shortfall > 0.001)  return showErr(`Only ${(qty-shortfall).toFixed(4)} shares available — reduce quantity.`);
-  if (!allocations.length) return showErr('No lots found for this ticker.');
+  const lot = query(`
+    SELECT el.ticker, CAST(el.qty AS REAL) AS qty, CAST(el.price AS REAL) AS costPerShare,
+      COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId=el.id),0) AS soldQty
+    FROM EquityLot el WHERE el.id='${lotId}'`)[0];
+  if (!lot) return showErr('Lot not found.');
 
-  const proceeds = qty * price;
-  const gainLoss = proceeds - totalCostBasis;
-  const now      = new Date().toISOString();
-  const period   = date.slice(0,4)+date.slice(5,7);
-  const trxDate  = date+'T12:00:00.000Z';
-  const tickerE  = ticker.replace(/'/g,"''");
-  const notesSQL = notes?`'${notes.replace(/'/g,"''")}' `:'NULL';
+  const remaining = lot.qty - lot.soldQty;
+  if (qty > remaining + 0.000001) return showErr(`Only ${remaining.toFixed(4)} shares available in this lot.`);
+
+  const costBasis = qty * lot.costPerShare;
+  const proceeds  = qty * price;
+  const gainLoss  = proceeds - costBasis;
+  const now       = new Date().toISOString();
+  const period    = date.slice(0,4) + date.slice(5,7);
+  const trxDate   = date + 'T12:00:00.000Z';
+  const tickerE   = lot.ticker.replace(/'/g,"''");
+  const notesSQL  = notes ? `'${notes.replace(/'/g,"''")}' ` : 'NULL';
 
   try {
     const txId = genId();
-    // Create transaction
     db.run(`INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
       VALUES ('${txId}','${trxDate}','${period}','Sell ${tickerE}',${proceeds},'${drId}','${crId}',${notesSQL},0,'Equity','${now}','${now}')`);
-    // Create one EquityLotSale per lot allocated
-    for (const a of allocations) {
-      const lotProceeds = a.qty * price;
-      const lotGL       = lotProceeds - a.costBasis;
-      db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,proceeds,costBasis,gainLoss,drAccountId,crAccountId,notes,linkedTxId,createdAt)
-        VALUES ('${genId()}','${a.lotId}','${trxDate}','${period}',${a.qty},${price},${lotProceeds},${a.costBasis},${lotGL},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
-    }
+    db.run(`INSERT INTO EquityLotSale (id,lotId,trxDate,period,qty,price,proceeds,costBasis,gainLoss,drAccountId,crAccountId,notes,linkedTxId,createdAt)
+      VALUES ('${genId()}','${lotId}','${trxDate}','${period}',${qty},${price},${proceeds},${costBasis},${gainLoss},'${drId}','${crId}',${notesSQL},'${txId}','${now}')`);
     syncAfterWrite();
-    modal.style.display='none';
+    modal.style.display = 'none';
     _renderEquityPage();
-  } catch(e) { showErr('Error: '+e.message); }
+  } catch(e) { showErr('Error: ' + e.message); }
 }
-
 // ════════════════════════════════════════════════════════════
 // GLOBAL CONTROLS — Font Size & Dark Mode
 // ════════════════════════════════════════════════════════════
