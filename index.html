@@ -3578,7 +3578,7 @@ function generateRepeatables() {
         )
       `);
     }
-    db.run(`INSERT OR IGNORE INTO RepeatableGenLog (id,repeatableId,period,generatedAt) VALUES ('${logId}','${r.id}','${cp}','${now}')`);
+    db.run(`INSERT OR IGNORE INTO RepeatableGenLog (id,repeatableId,period,createdAt) VALUES ('${logId}','${r.id}','${cp}','${now}')`);
     didWrite = true;
   }
   if (didWrite) syncAfterWrite();
