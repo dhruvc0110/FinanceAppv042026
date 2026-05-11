@@ -927,10 +927,10 @@ function _initCoreSchema() {
       id TEXT PRIMARY KEY, title TEXT NOT NULL,
       body TEXT NOT NULL DEFAULT '',
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
-    `CREATE TABLE IF NOT EXISTS DuplicateReview (
-      id TEXT PRIMARY KEY, txAId TEXT NOT NULL, txBId TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending', reviewedAt TEXT,
-      createdAt TEXT NOT NULL)`,
+    ``CREATE TABLE IF NOT EXISTS DuplicateReview (
+      id TEXT PRIMARY KEY, txARef TEXT NOT NULL, txBRef TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'FLAGGED', deleteRef TEXT, reviewedAt TEXT,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS SectionLayout (
       id TEXT PRIMARY KEY, section TEXT NOT NULL, config TEXT NOT NULL,
       updatedAt TEXT NOT NULL)`,
