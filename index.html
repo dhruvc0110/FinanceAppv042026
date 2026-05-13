@@ -10369,8 +10369,17 @@ function _renderEquityPage(container) {
     const lots = tickerGroups[ticker];
 
     const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
-    const totalCostBasis = lots.reduce((s,l) => s + (+l.salesCostBasis||0), 0);
-    const totalRealGL    = lots.reduce((s,l) => s + ((+l.saleAmount||0) - (+l.salesCostBasis||0)), 0);
+    const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
+    const totalCostBasis = lots.reduce((s,l) => {
+      const qty = +l.qty||0, price = +l.price||0;
+      return s + (+l.salesCostBasis > 0 ? +l.salesCostBasis : qty * price);
+    }, 0);
+    const totalRealGL    = lots.reduce((s,l) => {
+      const qty = +l.qty||0, price = +l.price||0;
+      const cb  = +l.salesCostBasis > 0 ? +l.salesCostBasis : qty * price;
+      const pr  = +l.saleAmount || +l.amount || 0;
+      return s + (pr - cb);
+    }, 0);
     const wAvgCost       = totalQty > 0 ? totalCostBasis / totalQty : 0;
     const glCls          = totalRealGL >= 0 ? 'text-green-700' : 'text-red-600';
 
@@ -10396,8 +10405,13 @@ function _renderEquityPage(container) {
 
     // Individual lot rows — hidden by default
     for (const lot of lots) {
-      const costBasis = +lot.salesCostBasis || 0;
-      const proceeds  = +lot.saleAmount    || 0;
+      const qty       = +lot.qty   || 0;
+      const price     = +lot.price || 0;
+      // Robust field access — handles both possible SQL alias names
+      const costBasis = +lot.salesCostBasis > 0
+        ? +lot.salesCostBasis
+        : (qty * price);
+      const proceeds  = +lot.saleAmount || +lot.amount || 0;
       const realGL    = proceeds - costBasis;
       const lotGlCls  = realGL >= 0 ? 'text-green-700' : 'text-red-600';
       const saleId    = lot.saleId || lot.id;
@@ -10406,8 +10420,8 @@ function _renderEquityPage(container) {
         <tr class="border-t border-slate-100 hover:bg-slate-50" style="display:none">
           <td class="px-3 py-2 text-sm text-slate-400 pl-7">&#8627; ${escHtml(ticker)}</td>
           ${sTr(fmtDate(lot.trxDate),'text-slate-600 whitespace-nowrap','left')}
-          ${sTr((+lot.qty)%1===0?(+lot.qty).toLocaleString():(+lot.qty).toFixed(4),'text-slate-600')}
-          ${sTr(fmtCurrency(+lot.price,4),'text-slate-600')}
+          ${sTr(qty%1===0?qty.toLocaleString():qty.toFixed(4),'text-slate-600')}
+          ${sTr(fmtCurrency(price,4),'text-slate-600')}
           ${sTr(fmtCurrency(costBasis,2),'text-slate-700')}
           ${sTr(fmtCurrency(proceeds,2),'text-slate-700')}
           ${sTr(fmtCurrency(costBasis,2),'text-slate-500')}
