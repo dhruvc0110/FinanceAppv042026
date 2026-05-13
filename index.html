@@ -10368,19 +10368,35 @@ function _renderEquityPage(container) {
   for (const ticker of sortedTickers) {
     const lots = tickerGroups[ticker];
 
-    const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
-    const totalCostBasis = lots.reduce((s,l) => {
-      const qty = +l.qty||0, price = +l.price||0;
-      return s + (+l.salesCostBasis > 0 ? +l.salesCostBasis : qty * price);
-    }, 0);
-    const totalRealGL    = lots.reduce((s,l) => {
-      const qty = +l.qty||0, price = +l.price||0;
-      const cb  = +l.costBasis || +l.salesCostBasis || (qty * price);
-      const pr  = +l.proceeds || 0;
-      return s + (pr - cb);
-    }, 0);
-    const wAvgCost       = totalQty > 0 ? totalCostBasis / totalQty : 0;
-    const glCls          = totalRealGL >= 0 ? 'text-green-700' : 'text-red-600';
+    // Fetch actual sale records from EquityLotSale for every lot in this ticker
+    const allSales = [];
+    lots.forEach(lot => {
+      const sales = query(`
+        SELECT id, CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS salePrice,
+               CAST(proceeds AS REAL) AS proceeds,
+               CAST(costBasis AS REAL) AS costBasis,
+               CAST(gainLoss AS REAL) AS gainLoss
+        FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate ASC`);
+      sales.forEach(s => allSales.push({
+        saleId:   s.id,
+        buyDate:  lot.trxDate,
+        buyPrice: +lot.price,
+        qty:      +s.qty,
+        proceeds: +s.proceeds,
+        costBasis:+s.costBasis,
+        gainLoss: +s.gainLoss
+      }));
+    });
+
+    if (!allSales.length) continue;
+
+    // Collapsed aggregates
+    const totalQty      = allSales.reduce((s,x) => s + x.qty, 0);
+    const totalCostBasis= allSales.reduce((s,x) => s + x.costBasis, 0);
+    const totalProceeds = allSales.reduce((s,x) => s + x.proceeds, 0);
+    const totalGainLoss = allSales.reduce((s,x) => s + x.gainLoss, 0);
+    const wAvgBuyPrice  = totalQty > 0 ? totalCostBasis / totalQty : 0;
+    const glCls         = totalGainLoss >= 0 ? 'text-green-700' : 'text-red-600';
 
     // Collapsed header row
     allRows += `
@@ -10388,43 +10404,35 @@ function _renderEquityPage(container) {
           onclick="${rowToggle}">
         <td class="px-3 py-2.5 text-sm font-bold text-slate-800">
           <span data-arr class="text-slate-400 mr-1">&#9658;</span>${escHtml(ticker)}
-          <span class="ml-1.5 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">${lots.length}</span>
+          <span class="ml-1.5 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">${allSales.length}</span>
         </td>
         <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
         ${sTr(totalQty%1===0?totalQty.toLocaleString():totalQty.toFixed(4),'font-semibold text-slate-800')}
-        ${sTr(fmtCurrency(wAvgCost,4),'text-slate-600')}
+        ${sTr(fmtCurrency(wAvgBuyPrice,4),'text-slate-600')}
         ${sTr(fmtCurrency(totalCostBasis,2),'font-medium text-slate-700')}
         <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
         <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
         <td class="px-3 py-2.5 text-sm text-right font-semibold">
-          <span class="${glCls}">${totalRealGL>=0?'+':''}${fmtCurrency(totalRealGL,2)}</span>
+          <span class="${glCls}">${totalGainLoss>=0?'+':''}${fmtCurrency(totalGainLoss,2)}</span>
         </td>
         <td class="px-3 py-2.5"></td>
       </tr>`;
 
-    // Individual lot rows — hidden by default
-    for (const lot of lots) {
-      const qty       = +lot.qty   || 0;
-      const price     = +lot.price || 0;
-      // Robust field access — handles both possible SQL alias names
-      const costBasis = +lot.costBasis || +lot.salesCostBasis || (qty * price);
-      const proceeds  = +lot.proceeds || 0;      
-      const realGL    = proceeds - costBasis;
-      const lotGlCls  = realGL >= 0 ? 'text-green-700' : 'text-red-600';
-      const saleId    = lot.saleId || lot.id;
-
+    // Individual sale rows — hidden by default
+    for (const s of allSales) {
+      const sGlCls = s.gainLoss >= 0 ? 'text-green-700' : 'text-red-600';
       allRows += `
         <tr class="border-t border-slate-100 hover:bg-slate-50" style="display:none">
           <td class="px-3 py-2 text-sm text-slate-400 pl-7">&#8627; ${escHtml(ticker)}</td>
-          ${sTr(fmtDate(lot.trxDate),'text-slate-600 whitespace-nowrap','left')}
-          ${sTr(qty%1===0?qty.toLocaleString():qty.toFixed(4),'text-slate-600')}
-          ${sTr(fmtCurrency(price,4),'text-slate-600')}
-          ${sTr(fmtCurrency(costBasis,2),'text-slate-700')}
-          ${sTr(fmtCurrency(proceeds,2),'text-slate-700')}
-          ${sTr(fmtCurrency(costBasis,2),'text-slate-500')}
-          ${sTr(`<span class="${lotGlCls}">${realGL>=0?'+':''}${fmtCurrency(realGL,2)}</span>`,'')}
+          ${sTr(fmtDate(s.buyDate),'text-slate-600 whitespace-nowrap','left')}
+          ${sTr(s.qty%1===0?s.qty.toLocaleString():s.qty.toFixed(4),'text-slate-600')}
+          ${sTr(fmtCurrency(s.buyPrice,4),'text-slate-600')}
+          ${sTr(fmtCurrency(s.costBasis,2),'text-slate-700')}
+          ${sTr(fmtCurrency(s.proceeds,2),'text-slate-700')}
+          ${sTr(fmtCurrency(s.costBasis,2),'text-slate-500')}
+          ${sTr(`<span class="${sGlCls}">${s.gainLoss>=0?'+':''}${fmtCurrency(s.gainLoss,2)}</span>`,'')}
           <td class="px-3 py-2 text-right whitespace-nowrap">
-            <button onclick="event.stopPropagation();eqUnwindSale('${escHtml(saleId)}')"
+            <button onclick="event.stopPropagation();eqUnwindSale('${escHtml(s.saleId)}')"
               class="text-xs border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-400 hover:text-red-600">Unwind</button>
           </td>
         </tr>`;
@@ -10445,7 +10453,7 @@ function _renderEquityPage(container) {
           ${sTh('ticker','Ticker','left')}
           <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Buy Date</th>
           ${sTh('qty','Qty Sold')}
-          ${sTh('price','Cost/Share')}
+          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Cost/Share</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Total Cost</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Proceeds</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Sales Cost Basis</th>
