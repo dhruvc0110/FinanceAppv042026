@@ -9386,13 +9386,11 @@ function repPlay(id) {
   const r = query(`SELECT * FROM RepeatableTransaction WHERE id='${id}'`)[0];
   if (!r) return;
 
-  // Ensure account data is available for pickers
   window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
   const subs = query("SELECT id,accountId,code,name FROM SubAccount WHERE isActive=1 ORDER BY name ASC");
   window._txSubs = {};
-  subs.forEach(s=>{ (window._txSubs[s.accountId]=window._txSubs[s.accountId]||[]).push(s); });
+  subs.forEach(s => { (window._txSubs[s.accountId] = window._txSubs[s.accountId] || []).push(s); });
 
-  // Default to today, or dayOfMonth in current month if set
   const now = new Date();
   let date = now.toLocaleDateString('en-CA');
   if (r.dayOfMonth) {
@@ -9400,6 +9398,29 @@ function repPlay(id) {
     date = d.toLocaleDateString('en-CA');
   }
 
+  // Force the Transactions subtab so txFormModal is rendered into the DOM
+  _txComboTab = 'transactions';
+  localStorage.setItem('_txComboTab', 'transactions');
+  navigate('transactions');
+
+  setTimeout(() => {
+    _txSaveToFuture = false;
+    document.getElementById('txFormTitle').textContent = '\u25B6 Play: ' + r.name;
+    document.getElementById('txFormEditId').value = '';
+    document.getElementById('txFormDate').value   = date;
+    document.getElementById('txFormAmt').value    = r.amount;
+    document.getElementById('txFormDesc').value   = r.description || '';
+    document.getElementById('txFormNotes').value  = r.notes || '';
+    acctPickerSetValue('formDrAcct', r.drAccountId);
+    acctPickerRefreshSub('formDrSub', r.drAccountId);
+    if (r.drSubId) acctPickerSetValue('formDrSub', r.drSubId);
+    acctPickerSetValue('formCrAcct', r.crAccountId);
+    acctPickerRefreshSub('formCrSub', r.crAccountId);
+    if (r.crSubId) acctPickerSetValue('formCrSub', r.crSubId);
+    _txClearFormErr();
+    document.getElementById('txFormModal').style.display = 'flex';
+  }, 150);
+}
   // Navigate to Transactions first so txFormModal exists in the DOM,
   // then open the form pre-filled
   navigate('transactions');
