@@ -10203,24 +10203,23 @@ function _renderEquityPage(container) {
   function lotsOnHandTab() {
   if (!openLots.length) return `<div class="px-4 py-8 text-center text-sm text-slate-400">No open lots.</div>`;
 
-  // Group by ticker
   const tickerGroups = {};
   openLots.forEach(lot => {
     if (!tickerGroups[lot.ticker]) tickerGroups[lot.ticker] = [];
     tickerGroups[lot.ticker].push(lot);
   });
   const sortedTickers = Object.keys(tickerGroups).sort();
+  const anyManualPrice = sortedTickers.some(t => priceInfoMap[t]?.isManual);
 
   let allRows = '';
 
   for (const ticker of sortedTickers) {
-    const lots      = tickerGroups[ticker];
-    const isExpanded = _eqLotsAllExpanded || _eqLotsExpanded.has(ticker);
-    const mp        = priceMap[ticker] || 0;
-    const isManual  = !!(priceInfoMap[ticker]?.isManual);
-    const mpCls     = isManual && mp ? 'price-manual' : '';
+    const lots     = tickerGroups[ticker];
+    const mp       = priceMap[ticker] || 0;
+    const isManual = !!(priceInfoMap[ticker]?.isManual);
+    const mpCls    = isManual && mp ? 'price-manual' : '';
+    const tKey     = ticker.replace(/[^a-zA-Z0-9]/g, '_');
 
-    // Aggregated values for collapsed row
     const totalQtyBought = lots.reduce((s,l) => s + (+l.qty||0), 0);
     const totalRem       = lots.reduce((s,l) => s + (l.qty - l.soldQty), 0);
     const totalCostBasis = lots.reduce((s,l) => s + (l.qty - l.soldQty) * l.price, 0);
@@ -10231,54 +10230,12 @@ function _renderEquityPage(container) {
     const manualBadge    = isManual && mp
       ? `<span class="ml-1 text-amber-500 text-xs font-bold" title="Manually set price">✎</span>` : '';
 
-    if (isExpanded) {
-      // ── Expanded: group header ──────────────────────────────
-      allRows += `<tr class="border-t-2 border-slate-300 bg-slate-100 cursor-pointer select-none"
-          onclick="eqToggleLotsTicker('${escHtml(ticker)}')">
-        <td colspan="9" class="px-3 py-2 text-sm font-bold text-slate-700">
-          <span class="text-slate-500 mr-1">▾</span>${escHtml(ticker)}
-          <span class="text-xs font-normal text-slate-400 ml-2">
-            ${lots.length} lot${lots.length!==1?'s':''} — click to collapse
-          </span>
-        </td>
-      </tr>`;
-
-      // ── Individual lot rows ─────────────────────────────────
-      for (const lot of lots) {
-        const rem      = lot.qty - lot.soldQty;
-        const lotMkt   = mp ? rem * mp : 0;
-        const lotGL    = mp ? lotMkt - rem * lot.price : 0;
-        const lotGlCls = lotGL >= 0 ? 'text-green-700' : 'text-red-600';
-        const sales    = query(`SELECT CAST(qty AS REAL) AS qty, trxDate FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate`);
-        const salesDetail = sales.map(s=>`${fmtDate(s.trxDate)}: −${(+s.qty).toFixed(4)}`).join(' · ');
-
-        allRows += `<tr class="border-t border-slate-100 hover:bg-slate-50">
-          <td class="px-3 py-2 text-sm text-slate-400 pl-7">↳ ${escHtml(lot.ticker)}</td>
-          ${sTr(fmtDate(lot.trxDate),'text-slate-600 whitespace-nowrap','left')}
-          ${sTr(lot.qty%1===0?(+lot.qty).toLocaleString():(+lot.qty).toFixed(4),'text-slate-600')}
-          ${sTr(rem.toFixed(4),'font-medium text-slate-800')}
-          ${sTr(fmtCurrency(lot.price,4),'text-slate-600')}
-          ${sTr(fmtCurrency(rem*lot.price,2),'text-slate-700')}
-          <td class="px-3 py-2 text-sm text-right ${mp?'text-slate-700':'text-slate-300'} ${mpCls}">
-            ${mp?fmtCurrency(lotMkt,2):'&mdash;'}
-          </td>
-          ${sTr(mp?`<span class="${lotGlCls}">${lotGL>=0?'+':''}${fmtCurrency(lotGL,2)}</span>`:'&mdash;','')}
-          <td class="px-3 py-2 text-right whitespace-nowrap">
-            <button onclick="eqOpenSellModal('${escHtml(lot.id)}')"
-              class="text-xs border border-slate-200 hover:border-slate-400 rounded px-2 py-0.5 text-slate-500 hover:text-slate-800">Sell</button>
-            <button onclick="eqOpenSplitModal('${escHtml(lot.id)}','${escHtml(lot.ticker)}')"
-              class="text-xs border border-slate-200 hover:border-amber-400 rounded px-2 py-0.5 text-slate-500 hover:text-amber-700 ml-1">Split</button>
-          </td>
-        </tr>
-        ${salesDetail?`<tr><td colspan="9" class="px-3 pb-1.5 pt-0 text-xs text-slate-400 italic pl-10">${salesDetail}</td></tr>`:''}`;
-      }
-
-    } else {
-      // ── Collapsed summary row ────────────────────────────────
-      allRows += `<tr class="border-t border-slate-200 hover:bg-blue-50 cursor-pointer select-none"
-          onclick="eqToggleLotsTicker('${escHtml(ticker)}')">
+    // Collapsed header row — always visible
+    allRows += `
+      <tr class="border-t border-slate-200 hover:bg-blue-50 cursor-pointer select-none"
+          onclick="eqToggleTicker('${tKey}')">
         <td class="px-3 py-2.5 text-sm font-bold text-slate-800">
-          <span class="text-slate-400 mr-1">▸</span>${escHtml(ticker)}
+          <span id="eqArrow_${tKey}" class="text-slate-400 mr-1">▸</span>${escHtml(ticker)}
           <span class="ml-1.5 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">${lots.length}</span>
         </td>
         <td class="px-3 py-2.5 text-xs text-slate-400 italic">multiple</td>
@@ -10294,17 +10251,47 @@ function _renderEquityPage(container) {
         </td>
         <td class="px-3 py-2.5"></td>
       </tr>`;
+
+    // Individual lot rows — hidden by default, toggled via CSS
+    for (const lot of lots) {
+      const rem      = lot.qty - lot.soldQty;
+      const lotMkt   = mp ? rem * mp : 0;
+      const lotGL    = mp ? lotMkt - rem * lot.price : 0;
+      const lotGlCls = lotGL >= 0 ? 'text-green-700' : 'text-red-600';
+      const sales    = query(`SELECT CAST(qty AS REAL) AS qty, trxDate FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate`);
+      const salesDetail = sales.map(s=>`${fmtDate(s.trxDate)}: −${(+s.qty).toFixed(4)}`).join(' · ');
+
+      allRows += `
+        <tr class="eqDetail_${tKey} border-t border-slate-100 hover:bg-slate-50" style="display:none">
+          <td class="px-3 py-2 text-sm text-slate-400 pl-7">↳ ${escHtml(lot.ticker)}</td>
+          ${sTr(fmtDate(lot.trxDate),'text-slate-600 whitespace-nowrap','left')}
+          ${sTr(lot.qty%1===0?(+lot.qty).toLocaleString():(+lot.qty).toFixed(4),'text-slate-600')}
+          ${sTr(rem.toFixed(4),'font-medium text-slate-800')}
+          ${sTr(fmtCurrency(lot.price,4),'text-slate-600')}
+          ${sTr(fmtCurrency(rem*lot.price,2),'text-slate-700')}
+          <td class="px-3 py-2 text-sm text-right ${mp?'text-slate-700':'text-slate-300'} ${mpCls}">
+            ${mp?fmtCurrency(lotMkt,2):'&mdash;'}
+          </td>
+          ${sTr(mp?`<span class="${lotGlCls}">${lotGL>=0?'+':''}${fmtCurrency(lotGL,2)}</span>`:'&mdash;','')}
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            <button onclick="event.stopPropagation();eqOpenSellModal('${escHtml(lot.id)}')"
+              class="text-xs border border-slate-200 hover:border-slate-400 rounded px-2 py-0.5 text-slate-500 hover:text-slate-800">Sell</button>
+            <button onclick="event.stopPropagation();eqOpenSplitModal('${escHtml(lot.id)}','${escHtml(lot.ticker)}')"
+              class="text-xs border border-slate-200 hover:border-amber-400 rounded px-2 py-0.5 text-slate-500 hover:text-amber-700 ml-1">Split</button>
+          </td>
+        </tr>
+        ${salesDetail?`<tr class="eqDetail_${tKey}" style="display:none"><td colspan="9" class="px-3 pb-1.5 pt-0 text-xs text-slate-400 italic pl-10">${salesDetail}</td></tr>`:''}`;
     }
   }
 
   return `
     <div class="px-3 pt-2.5 pb-1 flex items-center gap-2">
-      <button onclick="eqToggleAllLots()"
+      <button id="eqExpandAllBtn" onclick="eqToggleAllLots()"
         class="text-xs border border-slate-300 rounded px-2.5 py-1 text-slate-500 hover:text-slate-800 hover:border-slate-400 transition-colors">
-        ${_eqLotsAllExpanded ? '▾ Collapse All' : '▸ Expand All'}
+        ▸ Expand All
       </button>
-      ${isManual?'':''}
       <span class="text-xs text-slate-400">Click any row to expand / collapse</span>
+      ${anyManualPrice ? '<span class="text-xs text-amber-500 ml-3 font-medium">✎ = manually set price</span>' : ''}
     </div>
     <table class="w-full min-w-[840px]">
       <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
@@ -10315,27 +10302,13 @@ function _renderEquityPage(container) {
           ${sTh('rem','Remaining')}
           ${sTh('price','Cost/Share')}
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Cost Basis</th>
-          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">
-            Mkt Value
-            ${Object.values(priceInfoMap).some(p=>p.isManual)?'<span class="ml-1 text-amber-400 text-xs font-bold" title="✎ = manually set price">✎</span>':''}
-          </th>
+          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Mkt Value</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Unrealized G/L</th>
           <th class="px-3 py-2.5 w-20"></th>
         </tr>
       </thead>
       <tbody>${allRows}</tbody>
     </table>`;
-}
-  function eqToggleLotsTicker(ticker) {
-  if (_eqLotsExpanded.has(ticker)) _eqLotsExpanded.delete(ticker);
-  else _eqLotsExpanded.add(ticker);
-  document.getElementById('teContent') ? _renderTEContent() : _renderEquityPage();
-}
-
-function eqToggleAllLots() {
-  _eqLotsAllExpanded = !_eqLotsAllExpanded;
-  if (!_eqLotsAllExpanded) _eqLotsExpanded.clear();
-  document.getElementById('teContent') ? _renderTEContent() : _renderEquityPage();
 }
   // ── Closed Lots tab ────────────────────────────────────────
   function closedLotsTab() {
