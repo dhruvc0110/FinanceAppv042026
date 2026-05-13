@@ -4485,8 +4485,8 @@ function budgetCopy() {
   } catch(e) { alert('Copy failed: ' + e.message); }
 }
 // ── Budget cell notes ─────────────────────────────────────────
-let _bnAcctId = null, _bnPeriod = null, _bnCellRect = null;
-
+let _bnAcctId = null, _bnPeriod = null;
+  
 function ensureBudgetNoteTable() {
   db.run(`CREATE TABLE IF NOT EXISTS BudgetNote (
     id TEXT PRIMARY KEY,
@@ -4523,26 +4523,25 @@ function budgetNoteOpen(event, accountId, period) {
   document.getElementById('bnText').focus();
 
   // Anchor connector to the right-clicked cell
-  const td = event.target.closest('td');
-  _bnCellRect = td ? td.getBoundingClientRect() : null;
   _bnUpdateConnector();
 }
 
 function _bnUpdateConnector() {
-  const modal  = document.getElementById('bnModal');
-  const svg    = document.getElementById('bnSvg');
-  const line   = document.getElementById('bnLine');
-  if (!modal || !svg || !line || !_bnCellRect) return;
+  const modal = document.getElementById('bnModal');
+  const svg   = document.getElementById('bnSvg');
+  const line  = document.getElementById('bnLine');
+  if (!modal || !svg || !line || !_bnAcctId || !_bnPeriod) return;
 
+  const cell = document.querySelector(`[data-bn="${_bnAcctId}_${_bnPeriod}"]`);
+  if (!cell) { svg.style.display = 'none'; return; }
+
+  const cr = cell.getBoundingClientRect();
   const mr = modal.getBoundingClientRect();
   svg.style.display = 'block';
 
-  // Cell anchor point — centre of the cell
-  const x1 = _bnCellRect.left + _bnCellRect.width  / 2;
-  const y1 = _bnCellRect.top  + _bnCellRect.height / 2;
-
-  // Modal anchor — nearest horizontal edge midpoint
-  const x2 = mr.left < x1 ? mr.right  : mr.left;
+  const x1 = cr.left + cr.width  / 2;
+  const y1 = cr.top  + cr.height / 2;
+  const x2 = mr.left < x1 ? mr.right : mr.left;
   const y2 = mr.top  + mr.height / 2;
 
   line.setAttribute('x1', x1); line.setAttribute('y1', y1);
