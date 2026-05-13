@@ -1766,7 +1766,10 @@ function startApp() {
   try {
     db.run(`ALTER TABLE RepeatableTransaction ADD COLUMN templateType TEXT DEFAULT 'Undefined'`);
   } catch(e) { /* column already exists — safe to ignore */ }
-
+  
+//Manual Price call out
+  try { db.run(`ALTER TABLE MarketPrice ADD COLUMN isManual INTEGER NOT NULL DEFAULT 0`); } catch(e) {}
+  
   // Screenshot import tables
   try {
     db.run(`CREATE TABLE IF NOT EXISTS ScreenshotTemplate (
@@ -11031,9 +11034,9 @@ async function eqRefreshPrices() {
       try {
         const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
         if (exists) {
-          db.run(`UPDATE MarketPrice SET price=${price}, updatedAt='${now}' WHERE ticker='${tE}'`);
+          db.run(`UPDATE MarketPrice SET price=${price}, isManual=0, updatedAt='${now}' WHERE ticker='${tE}'`);
         } else {
-          db.run(`INSERT INTO MarketPrice (ticker,price,updatedAt) VALUES ('${tE}',${price},'${now}')`);
+          db.run(`INSERT INTO MarketPrice (ticker,price,isManual,updatedAt) VALUES ('${tE}',${price},0,'${now}')`);
         }
         updated++;
       } catch(e) { failed.push(ticker); }
@@ -11066,8 +11069,8 @@ async function eqFetchOneTicker(ticker) {
     const tE  = ticker.replace(/'/g,"''");
     try {
       const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
-      if (exists) db.run(`UPDATE MarketPrice SET price=${price}, updatedAt='${now}' WHERE ticker='${tE}'`);
-      else         db.run(`INSERT INTO MarketPrice (ticker,price,updatedAt) VALUES ('${tE}',${price},'${now}')`);
+      if (exists) db.run(`UPDATE MarketPrice SET price=${price}, isManual=0, updatedAt='${now}' WHERE ticker='${tE}'`);
+      else         db.run(`INSERT INTO MarketPrice (ticker,price,isManual,updatedAt) VALUES ('${tE}',${price},0,'${now}')`);
       syncAfterWrite();
     } catch(e) { console.error('Price save:', e.message); }
     _renderEquityPage();
@@ -11114,10 +11117,10 @@ function eqEditPrice(ticker, currentPrice) {
     const tE  = ticker.replace(/'/g,"''");
     try {
       const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
-      if (exists) {
-        db.run(`UPDATE MarketPrice SET price=${v}, updatedAt='${now}' WHERE ticker='${tE}'`);
+      iif (exists) {
+        db.run(`UPDATE MarketPrice SET price=${v}, isManual=1, updatedAt='${now}' WHERE ticker='${tE}'`);
       } else {
-        db.run(`INSERT INTO MarketPrice (ticker,price,updatedAt) VALUES ('${tE}',${v},'${now}')`);
+        db.run(`INSERT INTO MarketPrice (ticker,price,isManual,updatedAt) VALUES ('${tE}',${v},1,'${now}')`);
       }
       syncAfterWrite();
     } catch(e) { console.error('Price save:', e.message); }
