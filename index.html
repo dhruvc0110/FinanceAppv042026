@@ -3469,8 +3469,7 @@ function txDeleteRow(id) {
 function txShowNewForm() {
   document.getElementById('txFormTitle').textContent = 'New Transaction';
   document.getElementById('txFormEditId').value      = '';
-  document.getElementById('txFormDate').value        = new Date().toISOString().slice(0,10);
-  document.getElementById('txFormAmt').value         = '';
+document.getElementById('txFormDate').value        = new Date().toLocaleDateString('en-CA');  document.getElementById('txFormAmt').value         = '';
   document.getElementById('txFormDesc').value        = '';
   document.getElementById('txFormNotes').value       = '';
   acctPickerSetValue('formDrAcct', '');
@@ -3479,7 +3478,7 @@ function txShowNewForm() {
   acctPickerRefreshSub('formCrSub', '');
   _txClearFormErr();
   document.getElementById('txFormModal').style.display = 'flex';
-  setTimeout(() => document.getElementById('txFormDesc')?.focus(), 50);
+  setTimeout(() => document.getElementById('txFormDate')?.focus(), 50);
 }
 
 function txHideForm() {
