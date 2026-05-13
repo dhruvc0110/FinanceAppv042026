@@ -10073,11 +10073,16 @@ function _renderEquityPage(container) {
 
   const priceMap     = {};
 const priceInfoMap = {};
-// Load prices first — simple query that always works
-query(`SELECT ticker, CAST(price AS REAL) AS price FROM MarketPrice`)
+// Add isManual column if it doesn't exist yet
+const mpCols = query(`PRAGMA table_info(MarketPrice)`).map(r => r.name);
+if (!mpCols.includes('isManual')) {
+  try { db.run(`ALTER TABLE MarketPrice ADD COLUMN isManual INTEGER DEFAULT 0`); } catch(e) {}
+}
+// Now load prices and manual flag together
+query(`SELECT ticker, CAST(price AS REAL) AS price, COALESCE(isManual,0) AS isManual FROM MarketPrice`)
   .forEach(r => {
     priceMap[r.ticker]     = +r.price || 0;
-    priceInfoMap[r.ticker] = { isManual: false };
+    priceInfoMap[r.ticker] = { isManual: !!r.isManual };
   });
 // Load manual flag separately — fails silently if isManual column absent
 query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
