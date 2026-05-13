@@ -3478,7 +3478,7 @@ function txSaveForm() {
 
   if (!date)                    return showErr('Date is required.');
   if (!desc)                    return showErr('Description is required.');
-  if (isNaN(amt) || amt <= 0)   return showErr('Amount must be a positive number.');
+  if (isNaN(amt) || amt < 0)   return showErr('Amount must be a positive number.');
   if (!drId)                    return showErr('DR Account is required — search and select from the list.');
   if (!crId)                    return showErr('CR Account is required — search and select from the list.');
   if (drId === crId && drSub === crSub) return showErr('DR and CR cannot be the same account and sub-account.');
