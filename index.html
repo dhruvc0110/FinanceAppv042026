@@ -2852,9 +2852,8 @@ function buildTxWhere(f) {
 function _renderTransactionsInner(container) {
   txPage   = 0;
   txEditId = null;
-  // Fire-and-forget on-load tasks (errors silently swallowed)
   try { migrateFutureTransactions(); } catch(e) { console.warn('migrate:', e.message); }
-  try { generateRepeatables();       } catch(e) { console.warn('gen:', e.message); }
+  // generateRepeatables() removed — user must hit ▶ Play manually
   _renderTxPage(container);
 }
 
