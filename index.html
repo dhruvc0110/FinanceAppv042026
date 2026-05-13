@@ -10369,7 +10369,6 @@ function _renderEquityPage(container) {
     const lots = tickerGroups[ticker];
 
     const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
-    const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
     const totalCostBasis = lots.reduce((s,l) => {
       const qty = +l.qty||0, price = +l.price||0;
       return s + (+l.salesCostBasis > 0 ? +l.salesCostBasis : qty * price);
