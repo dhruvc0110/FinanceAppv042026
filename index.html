@@ -11,138 +11,12 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
+ <style>
     :root {
       --fs: 14px;
       --bg-page: #f8fafc;
       --bg-card: #ffffff;
-      --bg-header: #f1f5f9;function repPlay(id) {
-  const r = query(`SELECT * FROM RepeatableTransaction WHERE id='${id}'`)[0];
-  if (!r) return;
-
-  window._acctPickerAccounts = query(
-    "SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC"
-  );
-  const subs = query("SELECT id,accountId,code,name FROM SubAccount WHERE isActive=1 ORDER BY name ASC");
-  window._txSubs = {};
-  subs.forEach(s => { (window._txSubs[s.accountId] = window._txSubs[s.accountId] || []).push(s); });
-
-  const now = new Date();
-  let date = now.toLocaleDateString('en-CA');
-  if (r.dayOfMonth) {
-    const d = new Date(now.getFullYear(), now.getMonth(), +r.dayOfMonth);
-    date = d.toLocaleDateString('en-CA');
-  }
-
-  // Remove any stale instance
-  document.getElementById('repPlayModal')?.remove();
-
-  const IC = 'width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.375rem 0.5rem;font-size:0.875rem;color:#1e293b;outline:none;background:white';
-
-  const modal = document.createElement('div');
-  modal.id = 'repPlayModal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
-  modal.onclick = e => { if (e.target === modal) modal.remove(); };
-
-  modal.innerHTML = `
-    <div style="background:white;border-radius:0.75rem;box-shadow:0 20px 60px rgba(0,0,0,0.25);width:100%;max-width:480px;padding:1.5rem;display:flex;flex-direction:column;gap:1rem;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <h2 style="margin:0;font-size:0.9rem;font-weight:600;color:#0f172a">&#9654; Play: ${escHtml(r.name)}</h2>
-        <button onclick="document.getElementById('repPlayModal').remove()" style="background:none;border:none;font-size:1.25rem;color:#94a3b8;cursor:pointer;line-height:1">&times;</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <div>
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">Date</label>
-          <input id="rpDate" type="date" value="${date}" style="${IC}">
-        </div>
-        <div>
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">Amount</label>
-          <input id="rpAmt" type="number" step="0.01" min="0" value="${r.amount}" placeholder="0.00" style="${IC}">
-        </div>
-        <div style="grid-column:1/-1">
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">Description</label>
-          <input id="rpDesc" type="text" value="${escHtml(r.description || '')}" style="${IC}">
-        </div>
-        <div>
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">DR Account</label>
-          <div id="rpDrWrap"></div>
-        </div>
-        <div>
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">CR Account</label>
-          <div id="rpCrWrap"></div>
-        </div>
-        <div style="grid-column:1/-1">
-          <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem">Notes</label>
-          <input id="rpNotes" type="text" value="${escHtml(r.notes || '')}" style="${IC}">
-        </div>
-      </div>
-      <p id="rpErr" style="display:none;font-size:0.75rem;color:#dc2626;margin:0"></p>
-      <div style="display:flex;gap:0.75rem">
-        <button onclick="repPlaySave()"
-          style="flex:1;background:#0f172a;color:white;border:none;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:500;cursor:pointer">
-          Save Transaction
-        </button>
-        <button onclick="document.getElementById('repPlayModal').remove()"
-          style="padding:0.5rem 1rem;border:1px solid #cbd5e1;border-radius:0.5rem;font-size:0.875rem;color:#475569;background:white;cursor:pointer">
-          Cancel
-        </button>
-      </div>
-    </div>`;
-
-  document.body.appendChild(modal);
-
-  document.getElementById('rpDrWrap').innerHTML = acctPickerHtml('rpDr', r.drAccountId || '', 'Search DR account\u2026', {});
-  document.getElementById('rpCrWrap').innerHTML = acctPickerHtml('rpCr', r.crAccountId || '', 'Search CR account\u2026', {});
-}
-
-function repPlaySave() {
-  const date  = document.getElementById('rpDate')?.value;
-  const amt   = parseFloat(document.getElementById('rpAmt')?.value);
-  const desc  = document.getElementById('rpDesc')?.value?.trim();
-  const drId  = acctPickerGetValue('rpDr');
-  const crId  = acctPickerGetValue('rpCr');
-  const notes = document.getElementById('rpNotes')?.value?.trim() || null;
-
-  const showErr = msg => {
-    const e = document.getElementById('rpErr');
-    if (e) { e.textContent = msg; e.style.display = 'block'; }
-  };
-
-  if (!date)              return showErr('Date is required.');
-  if (!desc)              return showErr('Description is required.');
-  if (isNaN(amt) || amt < 0) return showErr('Amount must be zero or a positive number.');
-  if (!drId)              return showErr('DR Account is required.');
-  if (!crId)              return showErr('CR Account is required.');
-
-  const today   = new Date().toLocaleDateString('en-CA');
-  const isFuture = date > today;
-  const period  = date.slice(0, 4) + date.slice(5, 7);
-  const trxDate = date + 'T12:00:00.000Z';
-  const now     = new Date().toISOString();
-  const txId    = genId();
-  const dE      = desc.replace(/'/g, "''");
-  const nSQL    = notes ? `'${notes.replace(/'/g, "''")}'` : 'NULL';
-
-  try {
-    if (isFuture) {
-      db.run(`INSERT INTO FutureTransaction
-        (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
-        VALUES ('${txId}','${trxDate}','${period}','${dE}',${amt},'${drId}','${crId}',${nSQL},'${now}','${now}')`);
-    } else {
-      db.run(`INSERT INTO "Transaction"
-        (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
-        VALUES ('${txId}','${trxDate}','${period}','${dE}',${amt},'${drId}','${crId}',${nSQL},0,'Repeatable','${now}','${now}')`);
-    }
-    syncAfterWrite();
-    document.getElementById('repPlayModal')?.remove();
-
-    const toast = document.createElement('div');
-    toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;color:white;padding:0.75rem 1.25rem;border-radius:0.5rem;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.2)';
-    toast.textContent = isFuture ? '\u2713 Saved to Future Transactions' : '\u2713 Transaction saved';
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  } catch(e) { showErr('Error: ' + e.message); }
-}
+      --bg-header: #f1f5f9;
       --border: #e2e8f0;
       --text-primary: #1e293b;
       --text-secondary: #64748b;
@@ -158,48 +32,22 @@ function repPlaySave() {
     #sidebar.collapsed #userName,
     #sidebar.collapsed #userEmail,
     #sidebar.collapsed .sidebar-text { display: none; }
-    /* Collapsed user block — stack avatar then icon buttons, all centred */
     #sidebar.collapsed #sidebarUser { padding: 4px; }
     #sidebar.collapsed #sidebarUser > .flex { flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
-    /* sidebar-icon buttons always visible — explicit display:flex to survive collapse */
     #sidebar .sidebar-icon { display: flex; align-items: center; justify-content: center; }
-    /* Collapsed: centre sign-out and settings rows */
     #sidebar.collapsed .sidebar-icon.w-full { justify-content: center; padding-left: 0; padding-right: 0; }
     .nav-btn.active { background-color: rgb(51 65 85); color: white; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin-anim { animation: spin 0.8s linear infinite; }
     .ap-hl { background-color: rgb(241 245 249) !important; }
-    /* Sticky table headers */
     .sticky-thead thead th { position: sticky; top: 0; z-index: 10; background: var(--bg-header); }
-    /* Font size classes */
     body.fs-sm { --fs: 12px; }
     body.fs-md { --fs: 14px; }
     body.fs-lg { --fs: 16px; }
-    /* ── Tab / focus navigation ── */
-    :focus-visible {
-      outline: 2px solid #334155 !important;
-      outline-offset: 2px !important;
-      border-radius: 4px;
-    }
-    button:focus-visible, a:focus-visible {
-      outline: 2px solid #334155 !important;
-      outline-offset: 2px !important;
-    }
-    input:focus-visible, select:focus-visible, textarea:focus-visible {
-      outline: 2px solid #334155 !important;
-      outline-offset: 0px !important;
-      box-shadow: 0 0 0 3px rgba(51,65,85,0.15);
-    }
-    /* Dark mode */
-    body.dark-mode {
-      --bg-page: #0f172a;
-      --bg-card: #1e293b;
-      --bg-header: #1e293b;
-      --border: #334155;
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-    }
+    :focus-visible { outline: 2px solid #334155 !important; outline-offset: 2px !important; border-radius: 4px; }
+    button:focus-visible, a:focus-visible { outline: 2px solid #334155 !important; outline-offset: 2px !important; }
+    input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid #334155 !important; outline-offset: 0px !important; box-shadow: 0 0 0 3px rgba(51,65,85,0.15); }
+    body.dark-mode { --bg-page: #0f172a; --bg-card: #1e293b; --bg-header: #1e293b; --border: #334155; --text-primary: #f1f5f9; --text-secondary: #94a3b8; --text-muted: #64748b; }
     body.dark-mode #mainApp { background: var(--bg-page); }
     body.dark-mode #pageContent { background: var(--bg-page); }
     body.dark-mode .bg-white { background: var(--bg-card) !important; }
@@ -224,28 +72,15 @@ function repPlaySave() {
     body.dark-mode #syncBar { background: #1e293b; border-color: #334155; }
     body.dark-mode thead th { background: #1e293b !important; }
     body.dark-mode .ap-hl { background: #334155 !important; }
-    /* Global controls — rendered inline in Settings page */
-    .gc-btn {
-      background: #1e293b;
-      color: #e2e8f0;
-      border: 1px solid #334155;
-      border-radius: 0.5rem;
-      padding: 0.4rem 0.85rem;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.15s;
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
+    .gc-btn { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.5rem; padding: 0.4rem 0.85rem; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.15s; display: inline-flex; align-items: center; gap: 0.4rem; }
     .gc-btn:hover { background: #334155; }
     body.dark-mode .gc-btn { background: #334155; border-color: #475569; }
-    /* Range selector buttons */
     .range-btn { padding: 0.2rem 0.6rem; border-radius: 0.375rem; font-size: 11px; font-weight: 600; cursor: pointer; border: 1px solid #e2e8f0; background: white; color: #64748b; transition: all 0.15s; }
     .range-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
     body.dark-mode .range-btn { background: #1e293b; border-color: #334155; color: #94a3b8; }
     body.dark-mode .range-btn.active { background: #475569; color: #f1f5f9; }
+    .price-manual { background: #fffbeb !important; }
+    body.dark-mode .price-manual { background: #422006 !important; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
