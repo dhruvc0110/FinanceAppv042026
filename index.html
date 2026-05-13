@@ -10375,8 +10375,8 @@ function _renderEquityPage(container) {
     }, 0);
     const totalRealGL    = lots.reduce((s,l) => {
       const qty = +l.qty||0, price = +l.price||0;
-      const cb  = +l.salesCostBasis > 0 ? +l.salesCostBasis : qty * price;
-      const pr  = +l.saleAmount || +l.amount || 0;
+      const cb  = +l.costBasis || +l.salesCostBasis || (qty * price);
+      const pr  = +l.proceeds || 0;
       return s + (pr - cb);
     }, 0);
     const wAvgCost       = totalQty > 0 ? totalCostBasis / totalQty : 0;
@@ -10407,10 +10407,8 @@ function _renderEquityPage(container) {
       const qty       = +lot.qty   || 0;
       const price     = +lot.price || 0;
       // Robust field access — handles both possible SQL alias names
-      const costBasis = +lot.salesCostBasis > 0
-        ? +lot.salesCostBasis
-        : (qty * price);
-      const proceeds  = +lot.saleAmount || +lot.amount || 0;
+      const costBasis = +lot.costBasis || +lot.salesCostBasis || (qty * price);
+      const proceeds  = +lot.proceeds || 0;      
       const realGL    = proceeds - costBasis;
       const lotGlCls  = realGL >= 0 ? 'text-green-700' : 'text-red-600';
       const saleId    = lot.saleId || lot.id;
