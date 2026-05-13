@@ -11117,7 +11117,7 @@ function eqEditPrice(ticker, currentPrice) {
     const tE  = ticker.replace(/'/g,"''");
     try {
       const exists = queryVal(`SELECT COUNT(*) FROM MarketPrice WHERE ticker='${tE}'`);
-      iif (exists) {
+      if (exists) {
         db.run(`UPDATE MarketPrice SET price=${v}, isManual=1, updatedAt='${now}' WHERE ticker='${tE}'`);
       } else {
         db.run(`INSERT INTO MarketPrice (ticker,price,isManual,updatedAt) VALUES ('${tE}',${v},1,'${now}')`);
