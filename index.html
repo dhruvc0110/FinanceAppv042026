@@ -2355,6 +2355,14 @@ function teSetTab(tab) {
 // Tabs: Transactions | Future Transactions | Import Transactions | Duplicates
 let _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
 
+const _TX_COMBO_TABS = [
+  { id: 'transactions',        label: 'Transactions' },
+  { id: 'future-transactions', label: 'Future Transactions' },
+  { id: 'repeatable',          label: 'Repeatable' },
+  { id: 'import-transactions', label: 'Import Transactions' },
+  { id: 'duplicates',          label: 'Duplicates' },
+];
+
 function renderTransactions(container) {
   _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
   _renderTxComboPage(container);
@@ -2363,15 +2371,9 @@ function _renderTxComboPage(container) {
   if (!container) container = document.getElementById('pageContent');
   const wrap = document.createElement('div');
   wrap.className = 'flex flex-col h-full';
-  const tabs = [
-    { id: 'transactions',        label: 'Transactions' },
-    { id: 'future-transactions', label: 'Future Transactions' },
-    { id: 'import-transactions', label: 'Import Transactions' },
-    { id: 'duplicates',          label: 'Duplicates' },
-  ];
   const tabBar = document.createElement('div');
   tabBar.className = 'flex-shrink-0';
-  tabBar.innerHTML = _pageTabBar(tabs, _txComboTab, 'txComboSetTab');
+  tabBar.innerHTML = _pageTabBar(_TX_COMBO_TABS, _txComboTab, 'txComboSetTab');
   const content = document.createElement('div');
   content.id = 'txComboContent';
   content.className = 'flex-1 overflow-auto';
@@ -2386,20 +2388,15 @@ function _renderTxComboContent() {
   if (!c) return;
   if      (_txComboTab === 'transactions')        _renderTransactionsInner(c);
   else if (_txComboTab === 'future-transactions') renderFutureTransactions(c);
+  else if (_txComboTab === 'repeatable')          renderRepeatableInner(c);
   else if (_txComboTab === 'import-transactions') renderImportTransactions(c);
   else if (_txComboTab === 'duplicates')          renderDuplicates(c);
 }
 function txComboSetTab(tab) {
   _txComboTab = tab;
   localStorage.setItem('_txComboTab', tab);
-  const tabs = [
-    { id: 'transactions',        label: 'Transactions' },
-    { id: 'future-transactions', label: 'Future Transactions' },
-    { id: 'import-transactions', label: 'Import Transactions' },
-    { id: 'duplicates',          label: 'Duplicates' },
-  ];
   const barEl = document.querySelector('#txComboContent')?.previousElementSibling;
-  if (barEl) barEl.innerHTML = _pageTabBar(tabs, _txComboTab, 'txComboSetTab');
+  if (barEl) barEl.innerHTML = _pageTabBar(_TX_COMBO_TABS, _txComboTab, 'txComboSetTab');
   _renderTxComboContent();
 }
 
@@ -5270,7 +5267,6 @@ function _renderSettingsPage(container) {
       <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
       <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
       <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Day</th>
-      <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Mode</th>
       <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
       <th class="px-3 py-2.5"></th>
     </tr></thead>`;
@@ -5286,7 +5282,6 @@ function _renderSettingsPage(container) {
           <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode||'')} ${escHtml(r.drName||'')}</td>
           <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode||'')} ${escHtml(r.crName||'')}</td>
           <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth||'&mdash;'}</td>
-          <td class="px-3 py-2 text-center">${r.isAutoGenerate?'<span class="text-green-600 text-xs font-medium">Auto</span>':'<span class="text-slate-300 text-xs">Manual</span>'}</td>
           <td class="px-3 py-2 text-center">
             <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${r.status}</span>
           </td>
@@ -8786,6 +8781,192 @@ let dupDollarTol = 0;
 let dupFromDate  = '';  // YYYY-MM-DD — empty = no lower bound
 let dupToDate    = '';  // YYYY-MM-DD — empty = no upper bound
 
+// ════════════════════════════════════════════════════════════
+// REPEATABLE — standalone tab inside Transactions
+// ════════════════════════════════════════════════════════════
+function renderRepeatableInner(container) {
+  if (!container) container = document.getElementById('pageContent');
+
+  // Load account pickers for the modal
+  window._acctPickerAccounts = query(
+    "SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC"
+  );
+  const subs = query("SELECT id,accountId,code,name FROM SubAccount WHERE isActive=1 ORDER BY name ASC");
+  window._txSubs = {};
+  subs.forEach(s => { (window._txSubs[s.accountId] = window._txSubs[s.accountId] || []).push(s); });
+
+  const IC = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400';
+  const reps = query(`
+    SELECT r.id, r.name, r.description, r.amount, r.dayOfMonth,
+      r.status, COALESCE(r.templateType,'Undefined') AS templateType,
+      da.code AS drCode, da.name AS drName,
+      ca.code AS crCode, ca.name AS crName
+    FROM RepeatableTransaction r
+    LEFT JOIN Account da ON r.drAccountId=da.id
+    LEFT JOIN Account ca ON r.crAccountId=ca.id
+    ORDER BY COALESCE(r.templateType,'Undefined'), r.name ASC`);
+
+  const TYPE_ORDER = ['Income','Expenses','Loans','Undefined'];
+  const TYPE_STYLE = {
+    Income:    'bg-green-50  text-green-800  border-green-200',
+    Expenses:  'bg-red-50    text-red-800    border-red-200',
+    Loans:     'bg-blue-50   text-blue-800   border-blue-200',
+    Undefined: 'bg-slate-50  text-slate-600  border-slate-200',
+  };
+
+  const grouped = {};
+  TYPE_ORDER.forEach(t => { grouped[t] = []; });
+  reps.forEach(r => { (grouped[r.templateType] = grouped[r.templateType] || []).push(r); });
+
+  const thead = `<thead class="bg-slate-50 border-b border-slate-200"><tr>
+    <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Name</th>
+    <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+    <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+    <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
+    <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
+    <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Day</th>
+    <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+    <th class="px-3 py-2.5"></th>
+  </tr></thead>`;
+
+  const sections = TYPE_ORDER.filter(t => grouped[t] && grouped[t].length > 0).map(type => {
+    const style = TYPE_STYLE[type] || TYPE_STYLE.Undefined;
+    const rows = grouped[type].map(r => {
+      const isActive = r.status === 'ACTIVE';
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50 ${isActive ? '' : 'opacity-50'}">
+        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(r.name)}</td>
+        <td class="px-3 py-2 text-sm text-slate-600">${escHtml(r.description || '')}</td>
+        <td class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount, 2)}</td>
+        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode || '')} ${escHtml(r.drName || '')}</td>
+        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode || '')} ${escHtml(r.crName || '')}</td>
+        <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth || '&mdash;'}</td>
+        <td class="px-3 py-2 text-center">
+          <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}">${r.status}</span>
+        </td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">
+          <button onclick="repPlay('${r.id}')"
+            class="text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700 mr-1 font-medium"
+            title="Create a transaction from this template now">&#9654; Play</button>
+          <button onclick="repShowEdit('${r.id}')" class="text-xs text-slate-400 hover:text-slate-800 mr-1">Edit</button>
+          <button onclick="repToggleStatus('${r.id}','${isActive ? 'DISABLED' : 'ACTIVE'}')"
+            class="text-xs text-slate-400 hover:text-slate-800 mr-1">${isActive ? 'Disable' : 'Enable'}</button>
+          <button onclick="repDelete('${r.id}')" class="text-xs text-red-400 hover:text-red-600">Del</button>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div>
+      <div class="flex items-center gap-2 px-1 py-2 border-b border-slate-100">
+        <span class="text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${style}">${type}</span>
+        <span class="text-xs text-slate-400">${grouped[type].length} template${grouped[type].length !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="rounded-lg border border-slate-200 overflow-x-auto mt-1">
+        <table class="w-full min-w-[760px]">${thead}<tbody>${rows}</tbody></table>
+      </div>
+    </div>`;
+  }).join('');
+
+  const emptyMsg = !reps.length
+    ? `<div class="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-400 text-sm">
+        No templates yet. Click <strong>+ New Template</strong> to add one.
+      </div>` : '';
+
+  container.innerHTML = `
+    <div class="p-5 space-y-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 class="text-xl font-bold text-slate-900">Repeatable Templates</h1>
+          <p class="text-sm text-slate-500">
+            Hit <strong class="text-blue-600">&#9654; Play</strong> to create a transaction from a template.
+            Templates never generate automatically.
+          </p>
+        </div>
+        <button onclick="repShowAdd()"
+          class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700 flex-shrink-0">
+          + New Template
+        </button>
+      </div>
+      ${emptyMsg}
+      ${sections}
+    </div>
+
+    <!-- Repeatable create/edit modal — rendered here so it works from the Transactions page -->
+    <div id="repModal" style="display:none"
+      onclick="if(event.target===this)repHideModal()"
+      class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 id="repModalTitle" class="text-base font-semibold text-slate-900">New Template</h2>
+          <button onclick="repHideModal()" class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+        </div>
+        <input type="hidden" id="repModalId">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Template Name</label>
+            <input id="repName" type="text" class="${IC}" placeholder="e.g. Rent">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Type</label>
+            <select id="repType" class="${IC}">
+              <option value="Undefined">Undefined</option>
+              <option value="Income">Income</option>
+              <option value="Expenses">Expenses</option>
+              <option value="Loans">Loans</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Amount <span class="text-slate-400">($0 is allowed)</span></label>
+            <input id="repAmt" type="number" step="0.01" min="0" class="${IC}" placeholder="0.00">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Day of Month <span class="text-slate-400">(1–28, optional)</span></label>
+            <input id="repDay" type="number" min="1" max="28" class="${IC}" placeholder="e.g. 15">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Transaction Description</label>
+            <input id="repDesc" type="text" class="${IC}" placeholder="Appears on each generated transaction">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">DR Account</label>
+            <div id="repDrPickerWrap"></div>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">CR Account</label>
+            <div id="repCrPickerWrap"></div>
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
+            <input id="repNotes" type="text" class="${IC}">
+          </div>
+          <div class="col-span-2 flex gap-5 pt-1">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="repActive" checked class="w-4 h-4 accent-slate-700">
+              <span class="text-sm text-slate-700">Active</span>
+            </label>
+          </div>
+        </div>
+        <p id="repModalErr" style="display:none" class="text-xs text-red-500"></p>
+        <div class="flex gap-3 pt-1">
+          <button onclick="repSave()"
+            class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">
+            Save Template
+          </button>
+          <button onclick="repHideModal()"
+            class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  // Mount account pickers after innerHTML is set
+  document.getElementById('repDrPickerWrap').innerHTML =
+    acctPickerHtml('repDrAcct', '', 'Search DR account\u2026', { subPickerId: 'repDrSub' }) +
+    subPickerHtml('repDrSub', '', 'repDrAcct', '');
+  document.getElementById('repCrPickerWrap').innerHTML =
+    acctPickerHtml('repCrAcct', '', 'Search CR account\u2026', { subPickerId: 'repCrSub' }) +
+    subPickerHtml('repCrSub', '', 'repCrAcct', '');
+}
+  
 function renderDuplicates(container) {
   dupTab = 'pending';
   _renderDupPage(container);
@@ -9084,17 +9265,16 @@ function _repLoadPickers(drId, crId) {
     subPickerHtml('repCrSub', '', 'repCrAcct', crId||'');
 }
 
-function repShowAdd() {
+ffunction repShowAdd() {
   document.getElementById('repModalTitle').textContent = 'New Template';
-  document.getElementById('repModalId').value  = '';
-  document.getElementById('repName').value     = '';
-  document.getElementById('repType').value     = 'Undefined';
-  document.getElementById('repDesc').value     = '';
-  document.getElementById('repAmt').value      = '';
-  document.getElementById('repDay').value      = '';
-  document.getElementById('repNotes').value    = '';
-  document.getElementById('repAutoGen').checked= false;
-  document.getElementById('repActive').checked = true;
+  document.getElementById('repModalId').value   = '';
+  document.getElementById('repName').value      = '';
+  document.getElementById('repType').value      = 'Undefined';
+  document.getElementById('repDesc').value      = '';
+  document.getElementById('repAmt').value       = '';
+  document.getElementById('repDay').value       = '';
+  document.getElementById('repNotes').value     = '';
+  document.getElementById('repActive').checked  = true;
   _repLoadPickers('', '');
   _repClearErr();
   document.getElementById('repModal').style.display = 'flex';
@@ -9104,15 +9284,14 @@ function repShowEdit(id) {
   const r = query(`SELECT * FROM RepeatableTransaction WHERE id='${id}'`)[0];
   if (!r) return;
   document.getElementById('repModalTitle').textContent = 'Edit Template';
-  document.getElementById('repModalId').value  = id;
-  document.getElementById('repName').value     = r.name||'';
-  document.getElementById('repType').value     = r.templateType||'Undefined';
-  document.getElementById('repDesc').value     = r.description||'';
-  document.getElementById('repAmt').value      = r.amount||'';
-  document.getElementById('repDay').value      = r.dayOfMonth||'';
-  document.getElementById('repNotes').value    = r.notes||'';
-  document.getElementById('repAutoGen').checked= !!r.isAutoGenerate;
-  document.getElementById('repActive').checked = r.status==='ACTIVE';
+  document.getElementById('repModalId').value   = id;
+  document.getElementById('repName').value      = r.name || '';
+  document.getElementById('repType').value      = r.templateType || 'Undefined';
+  document.getElementById('repDesc').value      = r.description || '';
+  document.getElementById('repAmt').value       = r.amount !== undefined ? r.amount : '';
+  document.getElementById('repDay').value       = r.dayOfMonth || '';
+  document.getElementById('repNotes').value     = r.notes || '';
+  document.getElementById('repActive').checked  = r.status === 'ACTIVE';
   _repLoadPickers(r.drAccountId, r.crAccountId);
   _repClearErr();
   document.getElementById('repModal').style.display = 'flex';
@@ -9134,35 +9313,37 @@ function repSave() {
   const amt      = parseFloat(document.getElementById('repAmt').value);
   const dom      = document.getElementById('repDay').value.trim();
   const notes    = document.getElementById('repNotes').value.trim() || null;
-  const auto     = document.getElementById('repAutoGen').checked ? 1 : 0;
   const active   = document.getElementById('repActive').checked ? 'ACTIVE' : 'DISABLED';
   const tType    = document.getElementById('repType')?.value || 'Undefined';
   const drId     = acctPickerGetValue('repDrAcct');
   const crId     = acctPickerGetValue('repCrAcct');
 
   const showErr = msg => {
-    const e=document.getElementById('repModalErr');
-    if (e) { e.textContent=msg; e.style.display='block'; }
+    const e = document.getElementById('repModalErr');
+    if (e) { e.textContent = msg; e.style.display = 'block'; }
   };
-  if (!name)              return showErr('Template name is required.');
-  if (!desc)              return showErr('Transaction description is required.');
-  if (isNaN(amt)||amt<=0) return showErr('Amount must be a positive number.');
-  if (!drId)              return showErr('DR Account is required.');
-  if (!crId)              return showErr('CR Account is required.');
 
-  const domVal   = dom ? Math.min(28, Math.max(1, parseInt(dom)||1)) : null;
+  if (!name)            return showErr('Template name is required.');
+  if (!desc)            return showErr('Transaction description is required.');
+  if (isNaN(amt)||amt<0) return showErr('Amount must be zero or a positive number.');
+  if (!drId)            return showErr('DR Account is required.');
+  if (!crId)            return showErr('CR Account is required.');
+
+  const domVal   = dom ? Math.min(28, Math.max(1, parseInt(dom) || 1)) : null;
   const now      = new Date().toISOString();
-  const nameE    = name.replace(/'/g,"''");
-  const descE    = desc.replace(/'/g,"''");
-  const notesSQL = notes ? `'${notes.replace(/'/g,"''")}' ` : 'NULL';
+  const nameE    = name.replace(/'/g, "''");
+  const descE    = desc.replace(/'/g, "''");
+  const notesSQL = notes ? `'${notes.replace(/'/g, "''")}'` : 'NULL';
 
   try {
     if (id) {
       db.run(`UPDATE RepeatableTransaction SET
         name='${nameE}', description='${descE}', amount=${amt},
-        dayOfMonth=${domVal===null?'NULL':domVal},
+        dayOfMonth=${domVal === null ? 'NULL' : domVal},
         drAccountId='${drId}', crAccountId='${crId}',
-        notes=${notesSQL}, isAutoGenerate=${auto}, status='${active}',
+        notes=${notesSQL},
+        isAutoGenerate=0,
+        status='${active}',
         templateType='${tType}',
         updatedAt='${now}'
         WHERE id='${id}'`);
@@ -9171,16 +9352,20 @@ function repSave() {
         (id,name,description,amount,dayOfMonth,drAccountId,crAccountId,
          notes,isAutoGenerate,status,templateType,createdAt,updatedAt)
         VALUES ('${genId()}','${nameE}','${descE}',${amt},
-          ${domVal===null?'NULL':domVal},'${drId}','${crId}',
-          ${notesSQL},'${auto}','${active}','${tType}','${now}','${now}')`);
+          ${domVal === null ? 'NULL' : domVal},'${drId}','${crId}',
+          ${notesSQL},0,'${active}','${tType}','${now}','${now}')`);
     }
     syncAfterWrite();
     repHideModal();
-    settingsTab = 'repeatable';
-    _renderSettingsPage();
-  } catch(e) { showErr('Error: '+e.message); }
+    // Re-render whichever context is active
+    if (_txComboTab === 'repeatable') {
+      renderRepeatableInner(document.getElementById('txComboContent'));
+    } else {
+      settingsTab = 'repeatable';
+      _renderSettingsPage();
+    }
+  } catch(e) { showErr('Error: ' + e.message); }
 }
-
 function repToggleStatus(id, newStatus) {
   try {
     db.run(`UPDATE RepeatableTransaction SET status='${newStatus}', updatedAt='${new Date().toISOString()}' WHERE id='${id}'`);
