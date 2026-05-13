@@ -5820,11 +5820,13 @@ function _renderSettingsPage(container) {
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Type</label>
-            <select id="repType" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <select id="repType" class="${IC}">
               <option value="Undefined">Undefined</option>
               <option value="Income">Income</option>
               <option value="Expenses">Expenses</option>
               <option value="Loans">Loans</option>
+              <option value="Credit Card">Credit Card</option>
+              <option value="Transfer">Transfer</option>
             </select>
           </div>
           <div>
@@ -8988,14 +8990,16 @@ function renderRepeatableInner(container) {
     LEFT JOIN Account ca ON r.crAccountId=ca.id
     ORDER BY COALESCE(r.templateType,'Undefined'), r.name ASC`);
 
-  const TYPE_ORDER = ['Income','Expenses','Loans','Undefined'];
+  const TYPE_ORDER = ['Income','Expenses','Loans','Credit Card','Transfer','Undefined'];
   const TYPE_STYLE = {
-    Income:    'bg-green-50  text-green-800  border-green-200',
-    Expenses:  'bg-red-50    text-red-800    border-red-200',
-    Loans:     'bg-blue-50   text-blue-800   border-blue-200',
-    Undefined: 'bg-slate-50  text-slate-600  border-slate-200',
+    Income:        'bg-green-50  text-green-800  border-green-200',
+    Expenses:      'bg-red-50    text-red-800    border-red-200',
+    Loans:         'bg-blue-50   text-blue-800   border-blue-200',
+    'Credit Card': 'bg-purple-50 text-purple-800 border-purple-200',
+    Transfer:      'bg-amber-50  text-amber-800  border-amber-200',
+    Undefined:     'bg-slate-50  text-slate-600  border-slate-200',
   };
-
+  
   const grouped = {};
   TYPE_ORDER.forEach(t => { grouped[t] = []; });
   reps.forEach(r => { (grouped[r.templateType] = grouped[r.templateType] || []).push(r); });
