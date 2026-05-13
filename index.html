@@ -10072,12 +10072,18 @@ function _renderEquityPage(container) {
     ORDER BY el.ticker ASC, el.trxDate ASC`);
 
   const priceMap     = {};
-  const priceInfoMap = {};
-  query(`SELECT ticker, CAST(price AS REAL) AS price, COALESCE(isManual,0) AS isManual FROM MarketPrice`)
-    .forEach(r => {
-      priceMap[r.ticker]     = +r.price || 0;
-      priceInfoMap[r.ticker] = { isManual: !!r.isManual };
-    });
+const priceInfoMap = {};
+// Load prices first — simple query that always works
+query(`SELECT ticker, CAST(price AS REAL) AS price FROM MarketPrice`)
+  .forEach(r => {
+    priceMap[r.ticker]     = +r.price || 0;
+    priceInfoMap[r.ticker] = { isManual: false };
+  });
+// Load manual flag separately — fails silently if isManual column absent
+query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
+  .forEach(r => {
+    if (priceInfoMap[r.ticker]) priceInfoMap[r.ticker].isManual = true;
+  });
 
   // Open vs closed lots
   const openLots   = lotRows.filter(l => (l.qty - l.soldQty) > 0.00001);
