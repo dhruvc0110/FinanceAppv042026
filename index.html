@@ -10334,68 +10334,117 @@ function _renderEquityPage(container) {
   
   // ── Closed Lots tab ────────────────────────────────────────
   function closedLotsTab() {
-    if (!closedLots.length) return `<div class="px-4 py-8 text-center text-sm text-slate-400">No fully closed lots.</div>`;
+  if (!closedLots.length) return `<div class="px-4 py-8 text-center text-sm text-slate-400">No closed lots.</div>`;
 
-    const rows = closedLots.map(lot => {
-      const sales = query(`
-        SELECT id, CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS price,
-          CAST(proceeds AS REAL) AS proceeds, CAST(costBasis AS REAL) AS costBasis,
-          CAST(gainLoss AS REAL) AS gainLoss, trxDate
-        FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate ASC`);
-      const totalGL = sales.reduce((s,x)=>s+(+x.gainLoss||0), 0);
-      const glCls   = totalGL >= 0 ? 'text-green-700' : 'text-red-600';
+  const tickerGroups = {};
+  closedLots.forEach(lot => {
+    if (!tickerGroups[lot.ticker]) tickerGroups[lot.ticker] = [];
+    tickerGroups[lot.ticker].push(lot);
+  });
+  const sortedTickers = Object.keys(tickerGroups).sort();
 
-      const saleRows = sales.map(s => `
-        <tr class="border-t border-slate-50 bg-slate-25 hover:bg-slate-50">
-          <td class="px-3 py-1.5 pl-10 text-xs text-slate-400">&#8627; Sale</td>
-          <td class="px-3 py-1.5 text-xs text-slate-500 whitespace-nowrap">${fmtDate(s.trxDate)}</td>
-          <td class="px-3 py-1.5 text-xs text-right text-slate-500">${(+s.qty).toFixed(4)}</td>
-          <td class="px-3 py-1.5 text-xs text-right text-slate-500">${fmtCurrency(s.price,4)}</td>
-          <td class="px-3 py-1.5 text-xs text-right text-slate-600">${fmtCurrency(s.proceeds,2)}</td>
-          <td class="px-3 py-1.5 text-xs text-right text-slate-500">${fmtCurrency(s.costBasis,2)}</td>
-          <td class="px-3 py-1.5 text-xs text-right font-medium ${s.gainLoss>=0?'text-green-600':'text-red-500'}">${s.gainLoss>=0?'+':''}${fmtCurrency(s.gainLoss,2)}</td>
-          <td class="px-3 py-1.5 text-right">
-            <button onclick="eqUnwindSale('${s.id}','${escHtml(lot.ticker)}')"
-              title="Unwind this sale — restores lot to Open"
-              class="text-xs text-red-400 hover:text-red-600 border border-red-200 rounded px-1.5 py-0.5 hover:border-red-400">
-              Unwind
-            </button>
+  const rowToggle = `(function(h){
+    var n=h.nextElementSibling,exp=false;
+    while(n&&!n.hasAttribute('data-hdr')){if(n.style.display!=='none')exp=true;n=n.nextElementSibling;}
+    n=h.nextElementSibling;
+    while(n&&!n.hasAttribute('data-hdr')){n.style.display=exp?'none':'';n=n.nextElementSibling;}
+    var a=h.querySelector('[data-arr]');if(a)a.textContent=exp?'\u25B8':'\u25BE';
+  })(this)`.replace(/\n\s*/g,' ');
+
+  const expandAll = `(function(btn){
+    var tbl=btn.parentElement.nextElementSibling;
+    var hdrs=Array.from(tbl.querySelectorAll('[data-hdr]'));
+    var anyExp=hdrs.some(function(h){var n=h.nextElementSibling;while(n&&!n.hasAttribute('data-hdr')){if(n.style.display!=='none')return true;n=n.nextElementSibling;}return false;});
+    hdrs.forEach(function(h){
+      var n=h.nextElementSibling;
+      while(n&&!n.hasAttribute('data-hdr')){n.style.display=anyExp?'none':'';n=n.nextElementSibling;}
+      var a=h.querySelector('[data-arr]');if(a)a.textContent=anyExp?'\u25B8':'\u25BE';
+    });
+    btn.textContent=anyExp?'\u25B8 Expand All':'\u25BE Collapse All';
+  })(this)`.replace(/\n\s*/g,' ');
+
+  let allRows = '';
+
+  for (const ticker of sortedTickers) {
+    const lots = tickerGroups[ticker];
+
+    const totalQty       = lots.reduce((s,l) => s + (+l.qty||0), 0);
+    const totalCostBasis = lots.reduce((s,l) => s + (+l.salesCostBasis||0), 0);
+    const totalRealGL    = lots.reduce((s,l) => s + ((+l.saleAmount||0) - (+l.salesCostBasis||0)), 0);
+    const wAvgCost       = totalQty > 0 ? totalCostBasis / totalQty : 0;
+    const glCls          = totalRealGL >= 0 ? 'text-green-700' : 'text-red-600';
+
+    // Collapsed header row
+    allRows += `
+      <tr data-hdr="1" class="border-t border-slate-200 hover:bg-blue-50 cursor-pointer select-none"
+          onclick="${rowToggle}">
+        <td class="px-3 py-2.5 text-sm font-bold text-slate-800">
+          <span data-arr class="text-slate-400 mr-1">&#9658;</span>${escHtml(ticker)}
+          <span class="ml-1.5 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">${lots.length}</span>
+        </td>
+        <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
+        ${sTr(totalQty%1===0?totalQty.toLocaleString():totalQty.toFixed(4),'font-semibold text-slate-800')}
+        ${sTr(fmtCurrency(wAvgCost,4),'text-slate-600')}
+        ${sTr(fmtCurrency(totalCostBasis,2),'font-medium text-slate-700')}
+        <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
+        <td class="px-3 py-2.5 text-xs text-slate-300">&mdash;</td>
+        <td class="px-3 py-2.5 text-sm text-right font-semibold">
+          <span class="${glCls}">${totalRealGL>=0?'+':''}${fmtCurrency(totalRealGL,2)}</span>
+        </td>
+        <td class="px-3 py-2.5"></td>
+      </tr>`;
+
+    // Individual lot rows — hidden by default
+    for (const lot of lots) {
+      const costBasis = +lot.salesCostBasis || 0;
+      const proceeds  = +lot.saleAmount    || 0;
+      const realGL    = proceeds - costBasis;
+      const lotGlCls  = realGL >= 0 ? 'text-green-700' : 'text-red-600';
+      const saleId    = lot.saleId || lot.id;
+
+      allRows += `
+        <tr class="border-t border-slate-100 hover:bg-slate-50" style="display:none">
+          <td class="px-3 py-2 text-sm text-slate-400 pl-7">&#8627; ${escHtml(ticker)}</td>
+          ${sTr(fmtDate(lot.trxDate),'text-slate-600 whitespace-nowrap','left')}
+          ${sTr((+lot.qty)%1===0?(+lot.qty).toLocaleString():(+lot.qty).toFixed(4),'text-slate-600')}
+          ${sTr(fmtCurrency(+lot.price,4),'text-slate-600')}
+          ${sTr(fmtCurrency(costBasis,2),'text-slate-700')}
+          ${sTr(fmtCurrency(proceeds,2),'text-slate-700')}
+          ${sTr(fmtCurrency(costBasis,2),'text-slate-500')}
+          ${sTr(`<span class="${lotGlCls}">${realGL>=0?'+':''}${fmtCurrency(realGL,2)}</span>`,'')}
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            <button onclick="event.stopPropagation();eqUnwindSale('${escHtml(saleId)}')"
+              class="text-xs border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-400 hover:text-red-600">Unwind</button>
           </td>
-        </tr>`).join('');
+        </tr>`;
+    }
+  }
 
-      return `
-        <tr class="border-t border-slate-200 hover:bg-slate-50 font-medium">
-          <td class="px-3 py-2 text-sm font-semibold text-slate-800">${escHtml(lot.ticker)}</td>
-          <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(lot.trxDate)}</td>
-          <td class="px-3 py-2 text-sm text-right text-slate-600">${lot.qty%1===0?(+lot.qty).toLocaleString():(+lot.qty).toFixed(4)}</td>
-          <td class="px-3 py-2 text-sm text-right text-slate-600">${fmtCurrency(lot.price,4)}</td>
-          <td class="px-3 py-2 text-sm text-right text-slate-700">${fmtCurrency(lot.qty*lot.price,2)}</td>
-          <td class="px-3 py-2 text-sm text-right"></td>
-          <td class="px-3 py-2 text-sm text-right"></td>
-          <td class="px-3 py-2 text-sm text-right font-bold ${glCls}">${totalGL>=0?'+':''}${fmtCurrency(totalGL,2)}</td>
-          <td></td>
-        </tr>
-        ${saleRows}`;
-    }).join('');
-
-    return `<table class="w-full min-w-[780px]">
+  return `
+    <div class="px-3 pt-2.5 pb-1 flex items-center gap-2">
+      <button onclick="${expandAll}"
+        class="text-xs border border-slate-300 rounded px-2.5 py-1 text-slate-500 hover:text-slate-800 hover:border-slate-400 transition-colors">
+        &#9658; Expand All
+      </button>
+      <span class="text-xs text-slate-400">Click a ticker row to expand or collapse it</span>
+    </div>
+    <table class="w-full min-w-[780px]">
       <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
         <tr>
-          <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Ticker</th>
+          ${sTh('ticker','Ticker','left')}
           <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Buy Date</th>
-          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Qty</th>
-          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Cost/Share</th>
+          ${sTh('qty','Qty Sold')}
+          ${sTh('price','Cost/Share')}
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Total Cost</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Proceeds</th>
-          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Sale Cost Basis</th>
+          <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Sales Cost Basis</th>
           <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Realized G/L</th>
           <th class="px-3 py-2.5 w-20"></th>
         </tr>
       </thead>
-      <tbody>${rows}</tbody>
+      <tbody>${allRows}</tbody>
     </table>`;
-  }
-
+}
   // ── Sales tab ──────────────────────────────────────────────
   function salesTab() {
     const sales = query(`
