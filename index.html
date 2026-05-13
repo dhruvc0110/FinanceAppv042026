@@ -10329,13 +10329,13 @@ function _renderEquityPage(container) {
   function eqToggleLotsTicker(ticker) {
   if (_eqLotsExpanded.has(ticker)) _eqLotsExpanded.delete(ticker);
   else _eqLotsExpanded.add(ticker);
-  _renderEquityPage();
+  document.getElementById('teContent') ? _renderTEContent() : _renderEquityPage();
 }
 
 function eqToggleAllLots() {
   _eqLotsAllExpanded = !_eqLotsAllExpanded;
   if (!_eqLotsAllExpanded) _eqLotsExpanded.clear();
-  _renderEquityPage();
+  document.getElementById('teContent') ? _renderTEContent() : _renderEquityPage();
 }
   // ── Closed Lots tab ────────────────────────────────────────
   function closedLotsTab() {
