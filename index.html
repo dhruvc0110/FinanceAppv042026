@@ -10310,6 +10310,26 @@ function _renderEquityPage(container) {
       <tbody>${allRows}</tbody>
     </table>`;
 }
+  function eqToggleTicker(tKey) {
+  const rows  = document.querySelectorAll('.eqDetail_' + tKey);
+  const arrow = document.getElementById('eqArrow_' + tKey);
+  const isExpanded = rows.length > 0 && rows[0].style.display !== 'none';
+  rows.forEach(r => r.style.display = isExpanded ? 'none' : '');
+  if (arrow) arrow.textContent = isExpanded ? '▸' : '▾';
+}
+
+function eqToggleAllLots() {
+  const allArrows  = [...document.querySelectorAll('[id^="eqArrow_"]')];
+  const anyExpanded = allArrows.some(a => a.textContent === '▾');
+  allArrows.forEach(arrow => {
+    const tKey = arrow.id.replace('eqArrow_', '');
+    document.querySelectorAll('.eqDetail_' + tKey)
+      .forEach(r => r.style.display = anyExpanded ? 'none' : '');
+    arrow.textContent = anyExpanded ? '▸' : '▾';
+  });
+  const btn = document.getElementById('eqExpandAllBtn');
+  if (btn) btn.textContent = anyExpanded ? '▸ Expand All' : '▾ Collapse All';
+}
   // ── Closed Lots tab ────────────────────────────────────────
   function closedLotsTab() {
     if (!closedLots.length) return `<div class="px-4 py-8 text-center text-sm text-slate-400">No fully closed lots.</div>`;
