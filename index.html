@@ -81,9 +81,36 @@
     body.dark-mode .range-btn.active { background: #475569; color: #f1f5f9; }
     .price-manual { background: #fffbeb !important; }
     body.dark-mode .price-manual { background: #422006 !important; }
+   .bn-dot { position:absolute;top:3px;right:3px;width:7px;height:7px;background:#3b82f6;border-radius:50%;pointer-events:none; }
+body.dark-mode .bn-dot { background:#60a5fa; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
+  <!-- Budget note connector line -->
+<svg id="bnSvg" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9997;display:none">
+  <line id="bnLine" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 3"/>
+</svg>
+
+<!-- Budget note modal -->
+<div id="bnModal" style="display:none;position:fixed;z-index:9999;width:270px;
+  background:white;border:1px solid #e2e8f0;border-radius:10px;
+  box-shadow:0 8px 30px rgba(0,0,0,0.18);">
+  <div id="bnHeader" style="cursor:move;padding:8px 10px;background:#f8fafc;
+    border-bottom:1px solid #e2e8f0;border-radius:10px 10px 0 0;
+    display:flex;align-items:center;justify-content:space-between;user-select:none;">
+    <span id="bnTitle" style="font-size:11px;font-weight:600;color:#475569;"></span>
+    <button onclick="budgetNoteSave()"
+      style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:18px;line-height:1;padding:0 2px;"
+      title="Save &amp; close">&times;</button>
+  </div>
+  <div style="padding:10px;">
+    <textarea id="bnText" placeholder="Type a note…"
+      style="width:100%;height:80px;border:1px solid #e2e8f0;border-radius:6px;
+        padding:6px 8px;font-size:12px;color:#334155;resize:none;outline:none;
+        font-family:inherit;box-sizing:border-box;line-height:1.5;"></textarea>
+    <div style="font-size:10px;color:#94a3b8;margin-top:4px;">× to save and close · leave blank to delete</div>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- LOAD SCREEN                                                  -->
@@ -1847,6 +1874,7 @@ function startApp() {
 
   _updateSidebarTxCount();
   _startInactivityTimer();
+  _initBudgetNoteDrag();
   navigate('dashboard');
 }
 // ════════════════════════════════════════════════════════════
@@ -4268,6 +4296,8 @@ function _renderBudgetPage(container) {
   }
 
   // Build rows for one section; returns {html, totals}
+  ensureBudgetNoteTable();
+const _bnSet = new Set(query(`SELECT accountId||'_'||period AS k FROM BudgetNote`).map(r => r.k));
   function buildRows(accts, label, labelCls) {
     const totals = {};
     periods.forEach(p => { totals[p] = 0; });
@@ -4283,12 +4313,17 @@ function _renderBudgetPage(container) {
           ${_cs(acct.code, 'text-xs text-slate-400 font-mono mr-1.5')}${escHtml(acct.name)}
         </td>`;
       periods.forEach(period => {
-        const amt = getAmt(acct.id, period);
+        const amt     = getAmt(acct.id, period);
         totals[period] += amt;
+        const hasNote = _bnSet.has(`${acct.id}_${period}`);
         html += `<td id="bgt-${acct.id}-${period}"
+          data-bn="${acct.id}_${period}"
           class="px-2 py-1.5 text-sm text-right w-28 cursor-pointer hover:bg-blue-50 select-none whitespace-nowrap border-l border-slate-100"
-          onclick="budgetEdit('${acct.id}','${period}',${amt})">
+          style="position:relative;"
+          onclick="budgetEdit('${acct.id}','${period}',${amt})"
+          oncontextmenu="budgetNoteOpen(event,'${acct.id}','${period}');return false;">
           ${amt ? fmtCurrency(amt, 0) : '<span class="text-slate-300">&mdash;</span>'}
+          ${hasNote ? '<span class="bn-dot" title="Has note \u2014 right-click to edit"></span>' : ''}
         </td>`;
       });
       html += '</tr>';
@@ -4449,7 +4484,147 @@ function budgetCopy() {
     _renderBudgetPage();
   } catch(e) { alert('Copy failed: ' + e.message); }
 }
+// ── Budget cell notes ─────────────────────────────────────────
+let _bnAcctId = null, _bnPeriod = null, _bnCellRect = null;
 
+function ensureBudgetNoteTable() {
+  db.run(`CREATE TABLE IF NOT EXISTS BudgetNote (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    period TEXT NOT NULL,
+    note TEXT NOT NULL,
+    createdAt TEXT,
+    updatedAt TEXT,
+    UNIQUE(accountId, period)
+  )`);
+}
+
+function budgetNoteOpen(event, accountId, period) {
+  event.preventDefault();
+  _bnAcctId = accountId;
+  _bnPeriod = period;
+
+  ensureBudgetNoteTable();
+  const existing = query(`SELECT note FROM BudgetNote WHERE accountId='${accountId}' AND period='${period}'`)[0];
+
+  // Position modal near click, keep inside viewport
+  const modal = document.getElementById('bnModal');
+  const mx = Math.min(event.clientX + 16, window.innerWidth  - 286);
+  const my = Math.min(event.clientY + 10, window.innerHeight - 160);
+  modal.style.left = mx + 'px';
+  modal.style.top  = my + 'px';
+  modal.style.display = 'block';
+
+  // Look up account name for title
+  const acct = query(`SELECT code, name FROM Account WHERE id='${accountId}'`)[0];
+  const label = acct ? `${acct.code} · ${period}` : period;
+  document.getElementById('bnTitle').textContent = label;
+  document.getElementById('bnText').value = existing ? existing.note : '';
+  document.getElementById('bnText').focus();
+
+  // Anchor connector to the right-clicked cell
+  const td = event.target.closest('td');
+  _bnCellRect = td ? td.getBoundingClientRect() : null;
+  _bnUpdateConnector();
+}
+
+function _bnUpdateConnector() {
+  const modal  = document.getElementById('bnModal');
+  const svg    = document.getElementById('bnSvg');
+  const line   = document.getElementById('bnLine');
+  if (!modal || !svg || !line || !_bnCellRect) return;
+
+  const mr = modal.getBoundingClientRect();
+  svg.style.display = 'block';
+
+  // Cell anchor point — centre of the cell
+  const x1 = _bnCellRect.left + _bnCellRect.width  / 2;
+  const y1 = _bnCellRect.top  + _bnCellRect.height / 2;
+
+  // Modal anchor — nearest horizontal edge midpoint
+  const x2 = mr.left < x1 ? mr.right  : mr.left;
+  const y2 = mr.top  + mr.height / 2;
+
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+}
+
+function budgetNoteSave() {
+  const note     = (document.getElementById('bnText')?.value || '').trim();
+  const acctId   = _bnAcctId;
+  const period   = _bnPeriod;
+  if (!acctId || !period) { budgetNoteClose(); return; }
+
+  ensureBudgetNoteTable();
+  const eA = acctId.replace(/'/g,"''");
+  const eN = note.replace(/'/g,"''");
+  const now = new Date().toISOString();
+
+  if (note) {
+    const existing = query(`SELECT id FROM BudgetNote WHERE accountId='${eA}' AND period='${period}'`)[0];
+    if (existing) {
+      db.run(`UPDATE BudgetNote SET note='${eN}',updatedAt='${now}' WHERE accountId='${eA}' AND period='${period}'`);
+    } else {
+      db.run(`INSERT INTO BudgetNote (id,accountId,period,note,createdAt,updatedAt) VALUES ('${genId()}','${eA}','${period}','${eN}','${now}','${now}')`);
+    }
+  } else {
+    db.run(`DELETE FROM BudgetNote WHERE accountId='${eA}' AND period='${period}'`);
+  }
+
+  syncAfterWrite();
+  budgetNoteClose();
+
+  // Update the cell indicator without re-rendering
+  const cell = document.querySelector(`[data-bn="${CSS.escape(acctId)}_${period}"]`);
+  if (cell) {
+    const existing = cell.querySelector('.bn-dot');
+    if (note && !existing) {
+      const dot = document.createElement('span');
+      dot.className = 'bn-dot';
+      dot.title = 'Has note — right-click to edit';
+      cell.style.position = 'relative';
+      cell.appendChild(dot);
+    } else if (!note && existing) {
+      existing.remove();
+    }
+  }
+}
+
+function budgetNoteClose() {
+  const modal = document.getElementById('bnModal');
+  const svg   = document.getElementById('bnSvg');
+  if (modal) modal.style.display = 'none';
+  if (svg)   svg.style.display   = 'none';
+  _bnAcctId = null; _bnPeriod = null; _bnCellRect = null;
+}
+
+// Initialise drag — call once from startApp
+function _initBudgetNoteDrag() {
+  const modal  = document.getElementById('bnModal');
+  const header = document.getElementById('bnHeader');
+  if (!modal || !header) return;
+  let dragging = false, ox = 0, oy = 0;
+  header.addEventListener('mousedown', e => {
+    dragging = true;
+    const r = modal.getBoundingClientRect();
+    ox = e.clientX - r.left;
+    oy = e.clientY - r.top;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    modal.style.left = (e.clientX - ox) + 'px';
+    modal.style.top  = (e.clientY - oy) + 'px';
+    _bnUpdateConnector();
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+  // Close on Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('bnModal')?.style.display !== 'none') {
+      budgetNoteSave();
+    }
+  });
+}
 // ════════════════════════════════════════════════════════════
 // ACCOUNT INQUIRY PAGE
 // ════════════════════════════════════════════════════════════
