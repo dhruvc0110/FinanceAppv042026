@@ -355,15 +355,6 @@ function repPlaySave() {
       </div>
     </div>
 
-    <!-- Settings row — below avatar -->
-    <div class="flex-shrink-0 border-b border-slate-700 px-2 py-1">
-      <button onclick="navigate('settings')" data-page="settings"
-        class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="nav-label">Settings</span>
-      </button>
-    </div>
-
     <nav class="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
 
       <!-- ── REVIEW ── -->
@@ -406,6 +397,15 @@ function repPlaySave() {
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
         <span class="nav-label">Buy-Vest-Sell</span>
       </button>
+
+      <!-- Settings — thin lines above and below provided by border-t here and border-t on clock section -->
+      <div class="mt-2 border-t border-slate-700 border-b border-slate-700 py-1">
+        <button onclick="navigate('settings')" data-page="settings"
+          class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+          <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="nav-label">Settings</span>
+        </button>
+      </div>
 
     </nav>
 
@@ -10336,7 +10336,7 @@ function _renderEquityPage(container) {
       </tr>`;
     }).join('');
 
-    return tilesHtml + `<div class="overflow-x-auto"><table class="w-full min-w-[640px]">
+    return tilesHtml + `<table class="w-full min-w-[640px]">
       <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
         <tr>
           ${sTh('ticker','Ticker','left')}
@@ -10353,7 +10353,7 @@ function _renderEquityPage(container) {
         <td class="px-4 py-2.5 text-sm font-bold text-right text-slate-800">${totalValue?fmtCurrency(totalValue,2):'&mdash;'}</td>
         <td class="px-4 py-2.5 text-sm font-bold text-right ${totalUnreal>=0?'text-green-700':'text-red-600'}">${totalValue?(totalUnreal>=0?'+':'')+fmtCurrency(totalUnreal,2):'&mdash;'}</td>
       </tr></tfoot>
-    </table></div>`;
+    </table>`;
   }
 
   // ── Lots with On Hand tab ──────────────────────────────────
@@ -10401,7 +10401,7 @@ function _renderEquityPage(container) {
       ${salesDetail?`<tr><td colspan="9" class="px-3 pb-1.5 pt-0 text-xs text-slate-400 italic">${salesDetail}</td></tr>`:''}`;
     }).join('');
 
-    return `<div class="overflow-x-auto"><table class="w-full min-w-[840px]">
+    return `<table class="w-full min-w-[840px]">
       <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
         <tr>
           ${sTh('ticker','Ticker','left')}
@@ -10416,7 +10416,7 @@ function _renderEquityPage(container) {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table>`;
   }
 
   // ── Closed Lots tab ────────────────────────────────────────
@@ -10465,7 +10465,7 @@ function _renderEquityPage(container) {
         ${saleRows}`;
     }).join('');
 
-    return `<div class="overflow-x-auto"><table class="w-full min-w-[780px]">
+    return `<table class="w-full min-w-[780px]">
       <thead class="bg-slate-50 border-b border-slate-200" style="${stickyHead}">
         <tr>
           <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Ticker</th>
@@ -10480,7 +10480,7 @@ function _renderEquityPage(container) {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table>`;
   }
 
   // ── Sales tab ──────────────────────────────────────────────
