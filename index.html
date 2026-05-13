@@ -312,14 +312,27 @@ function repPlaySave() {
   <!-- SIDEBAR -->
   <div id="sidebar" class="bg-slate-900 text-white flex flex-col h-screen sticky top-0 flex-shrink-0 w-56">
 
-    <!-- Top: App title + hamburger + avatar/settings -->
+<!-- Top: Sync Now button + hamburger -->
     <div class="flex items-center justify-between px-3 py-3 border-b border-slate-700 flex-shrink-0">
-      <span class="nav-label font-bold text-slate-100 text-base">Finance</span>
+      <button onclick="syncNow()" id="sidebarSyncBtn"
+        class="flex items-center gap-1.5 text-slate-300 hover:text-white transition-colors"
+        title="Sync to Google Drive">
+        <svg id="sidebarSyncIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/>
+          <polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span class="nav-label text-xs font-semibold tracking-wide">Sync Now</span>
+      </button>
       <button onclick="toggleSidebar()" class="text-slate-400 hover:text-white p-1 rounded flex-shrink-0">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
       </button>
+    </div>
+    <!-- Transaction count -->
+    <div class="flex-shrink-0 px-3 py-1.5 border-b border-slate-700">
+      <div id="sidebarTxCount" class="nav-label text-xs text-slate-500 font-mono"></div>
     </div>
 
     <!-- Sign Out row — above avatar, below title bar -->
@@ -767,11 +780,13 @@ const _QUOTES = [
   if (aEl) aEl.textContent = '\u2014 ' + quote.a;
 })();
 
-function signOut() {
+async function signOut() {
+  const btn = document.querySelector('[onclick="signOut()"]');
+  if (btn) { btn.textContent = 'Syncing…'; btn.disabled = true; }
+  try { await syncToDrive(); } catch(e) { console.warn('Sign-out sync:', e.message); }
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
   window.location.reload();
 }
-
 // ════════════════════════════════════════════════════════════
 // DRIVE API HELPERS
 // ════════════════════════════════════════════════════════════
@@ -1166,6 +1181,8 @@ async function syncToDrive() {
   if (isSyncing || !db || !driveFileId) return;
   isSyncing = true;
   setSyncBar('syncing');
+  const _si = document.getElementById('sidebarSyncIcon');
+  if (_si) _si.classList.add('spin-anim');
 
   try {
     const uint8    = db.export();
@@ -1194,6 +1211,8 @@ async function syncToDrive() {
     }
   } finally {
     isSyncing = false;
+    const _si2 = document.getElementById('sidebarSyncIcon');
+    if (_si2) _si2.classList.remove('spin-anim');
   }
 }
 
@@ -1224,10 +1243,32 @@ function _refreshTokenSilent() {
 
 // Call this from any future write operation to trigger a background sync
 function syncAfterWrite() {
-  // Small delay so the write completes before export
+  _updateSidebarTxCount();
   setTimeout(syncToDrive, 500);
 }
+function _updateSidebarTxCount() {
+  const el = document.getElementById('sidebarTxCount');
+  if (!el || !db) return;
+  try {
+    const n = queryVal('SELECT COUNT(*) FROM "Transaction"') || 0;
+    el.textContent = n.toLocaleString() + ' transactions';
+  } catch(e) {}
+}
 
+function _startInactivityTimer() {
+  let _lastActivity = Date.now();
+  ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(ev => {
+    document.addEventListener(ev, () => { _lastActivity = Date.now(); }, { passive: true });
+  });
+  setInterval(async () => {
+    if (!db || !driveFileId) return;
+    if (Date.now() - _lastActivity > 30 * 60 * 1000) {
+      try { await syncToDrive(); } catch(e) {}
+      if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+      window.location.reload();
+    }
+  }, 60000); // checks every 60 seconds
+}
 function syncNow() {
   syncToDrive();
 }
@@ -1967,6 +2008,8 @@ function startApp() {
     }
   } catch(e) { console.warn('EquityLotSale migration (non-fatal):', e.message); }
 
+  _updateSidebarTxCount();
+  _startInactivityTimer();
   navigate('dashboard');
 }
 // ════════════════════════════════════════════════════════════
