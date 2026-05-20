@@ -748,10 +748,10 @@ async function driveDownloadFile(fileId) {
 }
 
 // Upload (create new or update existing). Returns the file metadata object.
-async function driveUploadFile(uint8data, existingFileId, folderId) {
+async function driveUploadFile(uint8data, existingFileId, folderId, filename = DRIVE_FILE_NAME) {
   const metadata = existingFileId
-    ? { name: DRIVE_FILE_NAME }
-    : { name: DRIVE_FILE_NAME, parents: [folderId] };
+    ? { name: filename }
+    : { name: filename, parents: [folderId] };
 
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -11528,7 +11528,7 @@ async function writeNotificationsJson() {
     };
 
     const bytes    = new TextEncoder().encode(JSON.stringify(payload, null, 2));
-    const uploaded = await driveUploadFile(bytes, notifFileId || null, driveFolderId);
+    const uploaded = await driveUploadFile(bytes, notifFileId || null, driveFolderId, NOTIF_FILE_NAME);
     notifFileId    = uploaded.id;
   } catch(e) {
     console.warn('writeNotificationsJson (non-fatal):', e.message);
