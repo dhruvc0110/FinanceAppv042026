@@ -11483,13 +11483,16 @@ function notifToggle(id, active) {
 // Called after any change to NotificationConfig or CreditCard.
 // Fire-and-forget: errors are non-fatal.
 async function writeNotificationsJson() {
-  if (!db || !driveFolderId || !accessToken) return;
+  if (!db || !accessToken) { console.warn('writeNotificationsJson: no db or token'); return; }
+  if (!driveFolderId)      { console.warn('writeNotificationsJson: driveFolderId not set'); return; }
   try {
     const configs = query(`
       SELECT nc.creditCardId, nc.daysInAdvance, nc.recipientEmail, nc.isActive,
              cc.name AS cardName, cc.paymentDueDay
       FROM NotificationConfig nc
       JOIN CreditCard cc ON nc.creditCardId = cc.id`);
+
+    console.log('writeNotificationsJson: configs found:', configs.length, '| notifFileId:', notifFileId, '| folderId:', driveFolderId);
 
     // Preserve existing sentLog from Drive if the file already exists
     let sentLog = [];
@@ -11498,40 +11501,43 @@ async function writeNotificationsJson() {
         const buf  = await driveDownloadFile(notifFileId);
         const text = new TextDecoder().decode(new Uint8Array(buf));
         sentLog = JSON.parse(text).sentLog || [];
-      } catch(_) { /* file may not exist yet — start with empty log */ }
+      } catch(e) { console.warn('writeNotificationsJson: could not read existing sentLog:', e.message); }
     } else {
       // Try to find the file on Drive (first run after cold start)
       try {
         const q   = encodeURIComponent(`name='${NOTIF_FILE_NAME}' and '${driveFolderId}' in parents and trashed=false`);
         const res = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`);
+        console.log('writeNotificationsJson: Drive search result:', JSON.stringify(res));
         if (res.files && res.files.length > 0) {
           notifFileId = res.files[0].id;
           const buf  = await driveDownloadFile(notifFileId);
           const text = new TextDecoder().decode(new Uint8Array(buf));
           sentLog = JSON.parse(text).sentLog || [];
         }
-      } catch(_) { /* not found — will create */ }
+      } catch(e) { console.warn('writeNotificationsJson: Drive search failed:', e.message); }
     }
 
     const payload = {
       version: 1,
       lastUpdated: new Date().toISOString(),
       notifications: configs.map(c => ({
-        creditCardId:  c.creditCardId,
-        cardName:      c.cardName,
-        paymentDueDay: +c.paymentDueDay || 1,
-        daysInAdvance: (() => { try { return JSON.parse(c.daysInAdvance); } catch(_) { return []; } })(),
+        creditCardId:   c.creditCardId,
+        cardName:       c.cardName,
+        paymentDueDay:  +c.paymentDueDay || 1,
+        daysInAdvance:  (() => { try { return JSON.parse(c.daysInAdvance); } catch(_) { return []; } })(),
         recipientEmail: c.recipientEmail,
-        isActive:      !!c.isActive,
+        isActive:       !!c.isActive,
       })),
       sentLog,
     };
 
+    console.log('writeNotificationsJson: uploading to folderId:', driveFolderId, 'existingFileId:', notifFileId);
     const bytes    = new TextEncoder().encode(JSON.stringify(payload, null, 2));
     const uploaded = await driveUploadFile(bytes, notifFileId || null, driveFolderId, NOTIF_FILE_NAME);
     notifFileId    = uploaded.id;
+    console.log('writeNotificationsJson: success, fileId:', notifFileId);
   } catch(e) {
-    console.warn('writeNotificationsJson (non-fatal):', e.message);
+    console.error('writeNotificationsJson FAILED:', e.message);
   }
 }
 
