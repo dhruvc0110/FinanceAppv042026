@@ -309,6 +309,8 @@ const OAUTH_CLIENT_ID  = '847723444460-qpp08glqba87uokt56msa84neu4oej50.apps.goo
 const OAUTH_SCOPES     = 'openid email profile https://www.googleapis.com/auth/drive.file';
 const DRIVE_FOLDER_NAME = 'FinanceApp';
 const DRIVE_FILE_NAME   = 'finance.sqlite';
+const NOTIF_FILE_NAME   = 'finance-notifications.json';
+let notifFileId = null; // cached Drive file ID for notifications JSON
 const FIREBASE_DB_URL   = 'https://financeapp-494818-default-rtdb.firebaseio.com';
 const LOCK_STALE_MS     = 5 * 60 * 1000; // 5 minutes
 const ANTHROPIC_API_KEY = ''; // Optional: paste your Anthropic API key here to enable ticker name lookup via Claude
@@ -1874,6 +1876,19 @@ function startApp() {
       console.log('EquityLotSale: removed UNIQUE constraint on linkedTxId');
     }
   } catch(e) { console.warn('EquityLotSale migration (non-fatal):', e.message); }
+
+  // Ensure NotificationConfig table exists
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS NotificationConfig (
+      id TEXT PRIMARY KEY,
+      creditCardId TEXT NOT NULL,
+      daysInAdvance TEXT NOT NULL DEFAULT '[]',
+      recipientEmail TEXT NOT NULL,
+      isActive INTEGER NOT NULL DEFAULT 1,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('NotificationConfig init:', e.message); }
 
   // Backfill createdAt from trxDate for records missing a creation date
   try {
@@ -4984,12 +4999,13 @@ function _renderSettingsPage(container) {
       { id:'notes',      label:'Notes' },
     ]},
     { id:'configuration',   label:'Configuration',   tabs:[
-      { id:'coa',          label:'Chart of Accounts' },
-      { id:'creditcards',  label:'Credit Cards' },
-      { id:'bankaccounts', label:'Bank Accounts' },
-      { id:'repeatable',   label:'Repeatable' },
-      { id:'periods',      label:'Periods' },
-      { id:'cctemplates',  label:'Credit Card Templates' },
+      { id:'coa',           label:'Chart of Accounts' },
+      { id:'creditcards',   label:'Credit Cards' },
+      { id:'bankaccounts',  label:'Bank Accounts' },
+      { id:'repeatable',    label:'Repeatable' },
+      { id:'periods',       label:'Periods' },
+      { id:'cctemplates',   label:'Credit Card Templates' },
+      { id:'notifications', label:'Notifications' },
     ]},
     { id:'viewsettings',    label:'View Settings',   tabs:[
       { id:'display',    label:'Display' },
@@ -5718,22 +5734,117 @@ function _renderSettingsPage(container) {
     </div>`;
   }
 
+  // ── NOTIFICATIONS TAB ────────────────────────────────────────
+  function notificationsTab() {
+    const configs = query(`
+      SELECT nc.id, nc.creditCardId, nc.daysInAdvance, nc.recipientEmail, nc.isActive,
+             cc.name AS cardName, cc.paymentDueDay
+      FROM NotificationConfig nc
+      JOIN CreditCard cc ON nc.creditCardId = cc.id
+      ORDER BY cc.name ASC`);
+
+    const rows = configs.map(c => {
+      const days = (() => { try { return JSON.parse(c.daysInAdvance).join(', '); } catch(_) { return c.daysInAdvance; } })();
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(c.cardName)}</td>
+        <td class="px-3 py-2 text-sm text-slate-500 text-center">${c.paymentDueDay || '—'}</td>
+        <td class="px-3 py-2 text-sm text-slate-500">${escHtml(days)}</td>
+        <td class="px-3 py-2 text-sm text-slate-500 truncate max-w-[180px]">${escHtml(c.recipientEmail)}</td>
+        <td class="px-3 py-2 text-center">
+          <input type="checkbox" ${c.isActive?'checked':''} onchange="notifToggle('${c.id}',this.checked)" class="w-4 h-4 accent-slate-700 cursor-pointer">
+        </td>
+        <td class="px-3 py-2 text-right whitespace-nowrap">
+          <button onclick="notifShowEdit('${c.id}')" class="text-xs text-blue-500 hover:text-blue-700 mr-2">Edit</button>
+          <button onclick="notifDelete('${c.id}')" class="text-xs text-red-400 hover:text-red-600">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    const cards = query(`SELECT id, name FROM CreditCard WHERE status='ACTIVE' ORDER BY name`);
+    const cardOpts = cards.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+
+    return `<div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-700">Payment Notifications</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Email reminders sent via Google Apps Script on a daily schedule — no app required.</p>
+        </div>
+        <button onclick="notifShowAdd()" class="gc-btn text-xs">+ New Notification</button>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <table class="w-full">
+          <thead class="bg-slate-50 border-b border-slate-200"><tr>
+            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Card</th>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Due Day</th>
+            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Days in Advance</th>
+            <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Recipient Email</th>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Active</th>
+            <th class="px-3 py-2.5"></th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="px-3 py-8 text-sm text-slate-400 text-center">No notifications configured. Click &ldquo;+ New Notification&rdquo; to get started.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-xs text-blue-800 space-y-1">
+        <p class="font-semibold">&#128276; Setup required: Google Apps Script</p>
+        <p>Notifications are delivered by a Google Apps Script running on a daily schedule, completely independent of whether this app is open. See <code class="bg-blue-100 px-1 rounded">notifications-setup.md</code> for one-time setup instructions (takes about 5 minutes).</p>
+      </div>
+
+      <!-- Notification add/edit modal (inline within tab content) -->
+      <div id="notifModal" style="display:none"
+        onclick="if(event.target===this)notifHideModal()"
+        class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 id="notifModalTitle" class="text-base font-semibold text-slate-900">New Notification</h2>
+            <button onclick="notifHideModal()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+          </div>
+          <input type="hidden" id="notifModalId">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Credit Card</label>
+            <select id="notifCard" class="${IC}">
+              <option value="">— select card —</option>
+              ${cardOpts}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Days in Advance <span class="text-slate-400">(comma-separated, e.g. 2, 5, 7)</span></label>
+            <input id="notifDays" type="text" placeholder="2, 5, 7" class="${IC}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Recipient Email</label>
+            <input id="notifEmail" type="email" placeholder="you@gmail.com" class="${IC}">
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <input id="notifActive" type="checkbox" checked class="w-4 h-4 accent-slate-700 cursor-pointer">
+            <label for="notifActive" class="text-sm text-slate-600">Active</label>
+          </div>
+          <p id="notifErr" style="display:none" class="text-xs text-red-500 mt-1"></p>
+          <div class="flex gap-3 pt-1">
+            <button onclick="notifSave()" class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700">Save</button>
+            <button onclick="notifHideModal()" class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
   let tabContent = '';
-  if      (settingsTab==='coa')          tabContent = coaTab();
-  else if (settingsTab==='repeatable')   tabContent = repeatableTab();
-  else if (settingsTab==='creditcards')  tabContent = creditCardsTab();
-  else if (settingsTab==='backup')       tabContent = backupTab();
-  else if (settingsTab==='periods')      tabContent = periodsTab();
-  else if (settingsTab==='notes')        tabContent = notesTab();
-  else if (settingsTab==='dashboard')    tabContent = dashboardTilesTab();
-  else if (settingsTab==='display')      tabContent = displayTab();
-  else if (settingsTab==='stats')        tabContent = statsTab();
-  else if (settingsTab==='scratchpad')   tabContent = scratchPadTab();
-  else if (settingsTab==='bankaccounts') tabContent = bankAccountsTab();
-  else if (settingsTab==='exportdata')   tabContent = exportDataTab();
-  else if (settingsTab==='importdata')   tabContent = importDataTab();
-  else if (settingsTab==='cctemplates')  tabContent = ccTemplatesTab();
-  else if (settingsTab==='about')        tabContent = aboutTab();
+  if      (settingsTab==='coa')           tabContent = coaTab();
+  else if (settingsTab==='repeatable')    tabContent = repeatableTab();
+  else if (settingsTab==='creditcards')   tabContent = creditCardsTab();
+  else if (settingsTab==='backup')        tabContent = backupTab();
+  else if (settingsTab==='periods')       tabContent = periodsTab();
+  else if (settingsTab==='notes')         tabContent = notesTab();
+  else if (settingsTab==='dashboard')     tabContent = dashboardTilesTab();
+  else if (settingsTab==='display')       tabContent = displayTab();
+  else if (settingsTab==='stats')         tabContent = statsTab();
+  else if (settingsTab==='scratchpad')    tabContent = scratchPadTab();
+  else if (settingsTab==='bankaccounts')  tabContent = bankAccountsTab();
+  else if (settingsTab==='exportdata')    tabContent = exportDataTab();
+  else if (settingsTab==='importdata')    tabContent = importDataTab();
+  else if (settingsTab==='cctemplates')   tabContent = ccTemplatesTab();
+  else if (settingsTab==='notifications') tabContent = notificationsTab();
+  else if (settingsTab==='about')         tabContent = aboutTab();
 
   container.innerHTML = `
     <div class="space-y-4">
@@ -7869,6 +7980,10 @@ function _renderCCPage(container) {
     return;
   }
 
+  const notifCardIds = new Set(
+    query('SELECT creditCardId FROM NotificationConfig WHERE isActive=1').map(r => r.creditCardId)
+  );
+
   const cardsHtml = cards.map(cc => {
     const cr  = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE crAccountId='${cc.liabilityAccountId}'`) || 0;
     const dr  = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE drAccountId='${cc.liabilityAccountId}'`) || 0;
@@ -7885,6 +8000,7 @@ function _renderCCPage(container) {
     const dueCls = daysUntil <= 5 ? 'text-red-600' : daysUntil <= 10 ? 'text-amber-600' : 'text-slate-700';
     const available = Math.max(0, lim - bal);
     const isOpen = ccOpenId === cc.id;
+    const hasBell = notifCardIds.has(cc.id);
 
     return `<div class="cc-tile bg-white border-2 ${isOpen?'border-blue-400':'border-slate-200'} rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
       data-ccid="${cc.id}" onclick="ccTileClick('${cc.id}')">
@@ -7894,7 +8010,10 @@ function _renderCCPage(container) {
             <div class="text-base font-semibold text-slate-900">${escHtml(cc.name)}</div>
             <div class="text-xs text-slate-400 mt-0.5">${escHtml(cc.liabilityName)}</div>
           </div>
-          <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
+          <div class="flex items-center gap-2">
+            ${hasBell ? '<span title="Payment notifications active" class="text-base leading-none">&#128276;</span>' : ''}
+            <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Active</span>
+          </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -11248,6 +11367,7 @@ function ccSave() {
       );
     }
     syncAfterWrite();
+    writeNotificationsJson();
     ccHideModal();
     settingsTab = 'creditcards';
     _renderSettingsPage();
@@ -11258,8 +11378,161 @@ function ccDelete(id) {
   if (!confirm('Delete this credit card? This will not affect any transactions.')) return;
   try {
     db.run('DELETE FROM CreditCard WHERE id=?', [id]);
-    syncAfterWrite(); _renderSettingsPage();
+    syncAfterWrite();
+    writeNotificationsJson();
+    _renderSettingsPage();
   } catch(e) { alert('Error: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════════
+// PAYMENT NOTIFICATIONS
+// ════════════════════════════════════════════════════════════
+
+function notifShowAdd() {
+  document.getElementById('notifModalTitle').textContent = 'New Notification';
+  document.getElementById('notifModalId').value  = '';
+  document.getElementById('notifCard').value     = '';
+  document.getElementById('notifDays').value     = '';
+  document.getElementById('notifEmail').value    = '';
+  document.getElementById('notifActive').checked = true;
+  const e = document.getElementById('notifErr');
+  if (e) { e.style.display='none'; e.textContent=''; }
+  document.getElementById('notifModal').style.display = 'flex';
+}
+
+function notifShowEdit(id) {
+  const c = query('SELECT * FROM NotificationConfig WHERE id=?', [id])[0];
+  if (!c) return;
+  document.getElementById('notifModalTitle').textContent = 'Edit Notification';
+  document.getElementById('notifModalId').value  = c.id;
+  document.getElementById('notifCard').value     = c.creditCardId;
+  document.getElementById('notifDays').value     = (() => { try { return JSON.parse(c.daysInAdvance).join(', '); } catch(_) { return c.daysInAdvance; } })();
+  document.getElementById('notifEmail').value    = c.recipientEmail;
+  document.getElementById('notifActive').checked = !!c.isActive;
+  const e = document.getElementById('notifErr');
+  if (e) { e.style.display='none'; e.textContent=''; }
+  document.getElementById('notifModal').style.display = 'flex';
+}
+
+function notifHideModal() {
+  document.getElementById('notifModal').style.display = 'none';
+}
+
+function notifSave() {
+  const id       = document.getElementById('notifModalId').value;
+  const cardId   = document.getElementById('notifCard').value;
+  const daysRaw  = document.getElementById('notifDays').value.trim();
+  const email    = document.getElementById('notifEmail').value.trim();
+  const isActive = document.getElementById('notifActive').checked ? 1 : 0;
+
+  const showErr = msg => {
+    const e = document.getElementById('notifErr');
+    if (e) { e.textContent = msg; e.style.display = 'block'; }
+  };
+
+  if (!cardId)  return showErr('Please select a credit card.');
+  if (!daysRaw) return showErr('Days in advance is required (e.g. 2, 5, 7).');
+  if (!email)   return showErr('Recipient email is required.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showErr('Please enter a valid email address.');
+
+  // Parse and validate days
+  const days = daysRaw.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d) && d > 0);
+  if (!days.length) return showErr('Enter at least one positive number of days (e.g. 2, 5, 7).');
+  const daysJson = JSON.stringify([...new Set(days)].sort((a,b) => a-b));
+
+  const now = new Date().toISOString();
+  try {
+    if (id) {
+      db.run(
+        'UPDATE NotificationConfig SET creditCardId=?, daysInAdvance=?, recipientEmail=?, isActive=?, updatedAt=? WHERE id=?',
+        [cardId, daysJson, email, isActive, now, id]
+      );
+    } else {
+      db.run(
+        'INSERT INTO NotificationConfig (id,creditCardId,daysInAdvance,recipientEmail,isActive,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?)',
+        [genId(), cardId, daysJson, email, isActive, now, now]
+      );
+    }
+    syncAfterWrite();
+    writeNotificationsJson();
+    notifHideModal();
+    settingsTab = 'notifications';
+    _renderSettingsPage();
+  } catch(e) { showErr('Error: ' + e.message); }
+}
+
+function notifDelete(id) {
+  if (!confirm('Delete this notification?')) return;
+  try {
+    db.run('DELETE FROM NotificationConfig WHERE id=?', [id]);
+    syncAfterWrite();
+    writeNotificationsJson();
+    _renderSettingsPage();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function notifToggle(id, active) {
+  try {
+    db.run('UPDATE NotificationConfig SET isActive=?, updatedAt=? WHERE id=?', [active?1:0, new Date().toISOString(), id]);
+    syncAfterWrite();
+    writeNotificationsJson();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Write finance-notifications.json to Drive ─────────────────
+// Called after any change to NotificationConfig or CreditCard.
+// Fire-and-forget: errors are non-fatal.
+async function writeNotificationsJson() {
+  if (!db || !driveFolderId || !accessToken) return;
+  try {
+    const configs = query(`
+      SELECT nc.creditCardId, nc.daysInAdvance, nc.recipientEmail, nc.isActive,
+             cc.name AS cardName, cc.paymentDueDay
+      FROM NotificationConfig nc
+      JOIN CreditCard cc ON nc.creditCardId = cc.id`);
+
+    // Preserve existing sentLog from Drive if the file already exists
+    let sentLog = [];
+    if (notifFileId) {
+      try {
+        const buf  = await driveDownloadFile(notifFileId);
+        const text = new TextDecoder().decode(new Uint8Array(buf));
+        sentLog = JSON.parse(text).sentLog || [];
+      } catch(_) { /* file may not exist yet — start with empty log */ }
+    } else {
+      // Try to find the file on Drive (first run after cold start)
+      try {
+        const q   = encodeURIComponent(`name='${NOTIF_FILE_NAME}' and '${driveFolderId}' in parents and trashed=false`);
+        const res = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`);
+        if (res.files && res.files.length > 0) {
+          notifFileId = res.files[0].id;
+          const buf  = await driveDownloadFile(notifFileId);
+          const text = new TextDecoder().decode(new Uint8Array(buf));
+          sentLog = JSON.parse(text).sentLog || [];
+        }
+      } catch(_) { /* not found — will create */ }
+    }
+
+    const payload = {
+      version: 1,
+      lastUpdated: new Date().toISOString(),
+      notifications: configs.map(c => ({
+        creditCardId:  c.creditCardId,
+        cardName:      c.cardName,
+        paymentDueDay: +c.paymentDueDay || 1,
+        daysInAdvance: (() => { try { return JSON.parse(c.daysInAdvance); } catch(_) { return []; } })(),
+        recipientEmail: c.recipientEmail,
+        isActive:      !!c.isActive,
+      })),
+      sentLog,
+    };
+
+    const bytes    = new TextEncoder().encode(JSON.stringify(payload, null, 2));
+    const uploaded = await driveUploadFile(bytes, notifFileId || null, driveFolderId);
+    notifFileId    = uploaded.id;
+  } catch(e) {
+    console.warn('writeNotificationsJson (non-fatal):', e.message);
+  }
 }
 
 // ════════════════════════════════════════════════════════════
