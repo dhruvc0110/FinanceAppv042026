@@ -2879,6 +2879,9 @@ function _dashInjectTileDetail(key, tiles) {
 let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', createdFrom:'', createdTo:'' };
 let txPage   = 0;
 let txEditId = null;
+let txFiltersOpen = false;
+let txSortCol     = 'trxDate';
+let txSortDir     = 'desc';
 const TX_PAGE_SIZE = 50;
 
 function genId() {
@@ -2919,6 +2922,41 @@ function buildTxWhere(f) {
   if (f.createdFrom) parts.push(`substr(t.createdAt,1,10) >= '${f.createdFrom}'`);
   if (f.createdTo)   parts.push(`substr(t.createdAt,1,10) <= '${f.createdTo}'`);
   return parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+}
+
+function _txActiveFilterCount() {
+  return [txF.dateFrom, txF.dateTo, txF.drId, txF.crId, txF.desc, txF.source, txF.createdFrom, txF.createdTo]
+    .filter(Boolean).length;
+}
+
+function _txOrderBy() {
+  const map = {
+    trxDate:     't.trxDate',
+    createdAt:   'substr(t.createdAt,1,10)',
+    description: 'LOWER(t.description)',
+    amount:      'CAST(t.amount AS REAL)',
+    drName:      'COALESCE(da.name,\'\')',
+    crName:      'COALESCE(ca.name,\'\')',
+  };
+  const col = map[txSortCol] || 't.trxDate';
+  const d   = txSortDir.toUpperCase();
+  return `${col} ${d}, t.id ${d}`;
+}
+
+function _txSortTh(col, label, align) {
+  const active = txSortCol === col;
+  const arrow  = active ? (txSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const cls    = `px-3 py-2.5 text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
+  return `<th class="${cls}" onclick="txSetSort('${col}')">${label}${arrow}</th>`;
+}
+
+function txToggleFilters() { txFiltersOpen = !txFiltersOpen; _renderTxPage(); }
+
+function txSetSort(col) {
+  if (txSortCol === col) txSortDir = txSortDir === 'asc' ? 'desc' : 'asc';
+  else { txSortCol = col; txSortDir = 'asc'; }
+  txPage = 0;
+  _renderTxPage();
 }
 
 function _renderTransactionsInner(container) {
@@ -2964,7 +3002,7 @@ function _renderTxPage(container) {
     LEFT JOIN SubAccount ds ON t.drSubId   = ds.id
     LEFT JOIN SubAccount cs ON t.crSubId   = cs.id
     ${where}
-    ORDER BY t.trxDate DESC, t.id DESC
+    ORDER BY ${_txOrderBy()}
     LIMIT ${TX_PAGE_SIZE} OFFSET ${txPage * TX_PAGE_SIZE}
   `);
 
@@ -3091,63 +3129,73 @@ function _renderTxPage(container) {
           <h1 class="text-xl font-bold text-slate-900">Transactions</h1>
           <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'}</p>
         </div>
-        <button onclick="txShowNewForm()"
-          class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
-          + New Transaction
-        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="txToggleFilters()"
+            class="px-3 py-2 border ${txFiltersOpen ? 'border-slate-400 bg-slate-50' : 'border-slate-300'} rounded-lg text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters
+            ${_txActiveFilterCount() > 0 ? `<span class="bg-blue-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">${_txActiveFilterCount()}</span>` : ''}
+          </button>
+          <button onclick="txShowNewForm()"
+            class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
+            + New Transaction
+          </button>
+        </div>
       </div>
 
-      <!-- Filter bar -->
-      <div class="bg-white border border-slate-200 rounded-lg p-4">
-        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">From date</label>
-            <input id="fDateFrom" type="date" value="${txF.dateFrom}" class="${ic}">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">To date</label>
-            <input id="fDateTo" type="date" value="${txF.dateTo}" class="${ic}">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Created from</label>
-            <input id="fCreatedFrom" type="date" value="${txF.createdFrom}" class="${ic}">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Created to</label>
-            <input id="fCreatedTo" type="date" value="${txF.createdTo}" class="${ic}">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">DR Account</label>
-            ${acctPickerHtml('fDrId', txF.drId, 'Search DR account\u2026', { isFilter: true })}
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">CR Account</label>
-            ${acctPickerHtml('fCrId', txF.crId, 'Search CR account\u2026', { isFilter: true })}
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Description</label>
-            <input id="fDesc" type="text" value="${escHtml(txF.desc)}" placeholder="Search&hellip;" class="${ic}">
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Source</label>
-            <select id="fSource" class="${ic}">
-              <option value="">All sources</option>
-              <option value="Manual" ${txF.source==='Manual'?'selected':''}>Manual</option>
-              <option value="Scheduled" ${txF.source==='Scheduled'?'selected':''}>Scheduled</option>
-              <option value="Recurring" ${txF.source==='Recurring'?'selected':''}>Recurring</option>
-              <option value="Imported" ${txF.source==='Imported'?'selected':''}>Imported</option>
-              <option value="Equity" ${txF.source==='Equity'?'selected':''}>Equity</option>
-            </select>
-          </div>
-          <div class="flex items-end gap-2">
-            <button onclick="txApplyFilters()"
-              class="flex-1 bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition">
-              Apply
-            </button>
-            <button onclick="txClearFilters()"
-              class="px-3 py-1.5 border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 transition">
-              Clear
-            </button>
+      <!-- Filter bar (collapsible) -->
+      <div style="display:${txFiltersOpen ? 'block' : 'none'}">
+        <div class="bg-white border border-slate-200 rounded-lg p-4">
+          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">From date</label>
+              <input id="fDateFrom" type="date" value="${txF.dateFrom}" class="${ic}">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">To date</label>
+              <input id="fDateTo" type="date" value="${txF.dateTo}" class="${ic}">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Created from</label>
+              <input id="fCreatedFrom" type="date" value="${txF.createdFrom}" class="${ic}">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Created to</label>
+              <input id="fCreatedTo" type="date" value="${txF.createdTo}" class="${ic}">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">DR Account</label>
+              ${acctPickerHtml('fDrId', txF.drId, 'Search DR account\u2026', { isFilter: true })}
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">CR Account</label>
+              ${acctPickerHtml('fCrId', txF.crId, 'Search CR account\u2026', { isFilter: true })}
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Description</label>
+              <input id="fDesc" type="text" value="${escHtml(txF.desc)}" placeholder="Search&hellip;" class="${ic}">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Source</label>
+              <select id="fSource" class="${ic}">
+                <option value="">All sources</option>
+                <option value="Manual" ${txF.source==='Manual'?'selected':''}>Manual</option>
+                <option value="Scheduled" ${txF.source==='Scheduled'?'selected':''}>Scheduled</option>
+                <option value="Recurring" ${txF.source==='Recurring'?'selected':''}>Recurring</option>
+                <option value="Imported" ${txF.source==='Imported'?'selected':''}>Imported</option>
+                <option value="Equity" ${txF.source==='Equity'?'selected':''}>Equity</option>
+              </select>
+            </div>
+            <div class="flex items-end gap-2">
+              <button onclick="txApplyFilters()"
+                class="flex-1 bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition">
+                Apply
+              </button>
+              <button onclick="txClearFilters()"
+                class="px-3 py-1.5 border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50 transition">
+                Clear
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -3158,12 +3206,12 @@ function _renderTxPage(container) {
           <table class="w-full min-w-[760px]">
             <thead class="bg-slate-50 border-b border-slate-200" style="position:sticky;top:0;z-index:10;">
               <tr>
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
-                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
+                ${_txSortTh('trxDate',     'Date')}
+                ${_txSortTh('createdAt',   'Created')}
+                ${_txSortTh('description', 'Description')}
+                ${_txSortTh('amount',      'Amount', 'right')}
+                ${_txSortTh('drName',      'DR Account')}
+                ${_txSortTh('crName',      'CR Account')}
                 <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
@@ -7721,6 +7769,44 @@ function backupDownload() {
 
 let ftF    = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', createdFrom:'', createdTo:'' };
 let ftPage = 0;
+let ftFiltersOpen = false;
+let ftSortCol     = 'trxDate';
+let ftSortDir     = 'asc';
+
+function _ftActiveFilterCount() {
+  return [ftF.dateFrom, ftF.dateTo, ftF.drId, ftF.crId, ftF.desc, ftF.createdFrom, ftF.createdTo]
+    .filter(Boolean).length;
+}
+
+function _ftOrderBy() {
+  const map = {
+    trxDate:     't.trxDate',
+    createdAt:   'substr(t.createdAt,1,10)',
+    description: 'LOWER(t.description)',
+    amount:      'CAST(t.amount AS REAL)',
+    drName:      'COALESCE(da.name,\'\')',
+    crName:      'COALESCE(ca.name,\'\')',
+  };
+  const col = map[ftSortCol] || 't.trxDate';
+  const d   = ftSortDir.toUpperCase();
+  return `${col} ${d}, t.id ${d}`;
+}
+
+function _ftSortTh(col, label, align) {
+  const active = ftSortCol === col;
+  const arrow  = active ? (ftSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const cls    = `px-3 py-2.5 text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
+  return `<th class="${cls}" onclick="ftSetSort('${col}')">${label}${arrow}</th>`;
+}
+
+function ftToggleFilters() { ftFiltersOpen = !ftFiltersOpen; _renderFTPage(); }
+
+function ftSetSort(col) {
+  if (ftSortCol === col) ftSortDir = ftSortDir === 'asc' ? 'desc' : 'asc';
+  else { ftSortCol = col; ftSortDir = 'asc'; }
+  ftPage = 0;
+  _renderFTPage();
+}
 let _txSaveToFuture = false;
 
 function renderFutureTransactions(container) {
@@ -7768,7 +7854,7 @@ function _renderFTPage(container) {
     LEFT JOIN Account ca ON t.crAccountId=ca.id
     LEFT JOIN SubAccount ds ON t.drSubId=ds.id
     LEFT JOIN SubAccount cs ON t.crSubId=cs.id
-    ${where} ORDER BY t.trxDate ASC, t.id ASC
+    ${where} ORDER BY ${_ftOrderBy()}
     LIMIT ${TX_PAGE_SIZE} OFFSET ${ftPage*TX_PAGE_SIZE}`);
 
   const grandTotal = queryVal(`SELECT SUM(CAST(t.amount AS REAL)) FROM FutureTransaction t ${where}`) || 0;
@@ -7804,27 +7890,39 @@ function _renderFTPage(container) {
           <h1 class="text-xl font-bold text-slate-900">Future Transactions</h1>
           <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'}</p>
         </div>
-        <button onclick="ftShowNewForm()" class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700">+ New</button>
+        <div class="flex items-center gap-2">
+          <button onclick="ftToggleFilters()"
+            class="px-3 py-2 border ${ftFiltersOpen ? 'border-slate-400 bg-slate-50' : 'border-slate-300'} rounded-lg text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Filters
+            ${_ftActiveFilterCount() > 0 ? `<span class="bg-blue-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 leading-none">${_ftActiveFilterCount()}</span>` : ''}
+          </button>
+          <button onclick="ftShowNewForm()" class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700">+ New</button>
+        </div>
       </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-4">
-        <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-8 gap-3">
-          <div><label class="block text-xs text-slate-500 mb-1">From date</label>
-            <input id="ftDateFrom" type="date" value="${ftF.dateFrom}" class="${ic}"></div>
-          <div><label class="block text-xs text-slate-500 mb-1">To date</label>
-            <input id="ftDateTo" type="date" value="${ftF.dateTo}" class="${ic}"></div>
-          <div><label class="block text-xs text-slate-500 mb-1">Created from</label>
-            <input id="ftCreatedFrom" type="date" value="${ftF.createdFrom}" class="${ic}"></div>
-          <div><label class="block text-xs text-slate-500 mb-1">Created to</label>
-            <input id="ftCreatedTo" type="date" value="${ftF.createdTo}" class="${ic}"></div>
-          <div><label class="block text-xs text-slate-500 mb-1">DR Account</label>
-            ${acctPickerHtml('ftDrId', ftF.drId, 'Search DR\u2026', {isFilter:true})}</div>
-          <div><label class="block text-xs text-slate-500 mb-1">CR Account</label>
-            ${acctPickerHtml('ftCrId', ftF.crId, 'Search CR\u2026', {isFilter:true})}</div>
-          <div><label class="block text-xs text-slate-500 mb-1">Description</label>
-            <input id="ftDesc" type="text" value="${escHtml(ftF.desc)}" placeholder="Search\u2026" class="${ic}"></div>
-          <div class="flex items-end gap-2">
-            <button onclick="ftApplyFilters()" class="flex-1 bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">Apply</button>
-            <button onclick="ftClearFilters()" class="px-3 py-1.5 border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50">Clear</button>
+
+      <!-- Filter bar (collapsible) -->
+      <div style="display:${ftFiltersOpen ? 'block' : 'none'}">
+        <div class="bg-white border border-slate-200 rounded-lg p-4">
+          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-8 gap-3">
+            <div><label class="block text-xs text-slate-500 mb-1">From date</label>
+              <input id="ftDateFrom" type="date" value="${ftF.dateFrom}" class="${ic}"></div>
+            <div><label class="block text-xs text-slate-500 mb-1">To date</label>
+              <input id="ftDateTo" type="date" value="${ftF.dateTo}" class="${ic}"></div>
+            <div><label class="block text-xs text-slate-500 mb-1">Created from</label>
+              <input id="ftCreatedFrom" type="date" value="${ftF.createdFrom}" class="${ic}"></div>
+            <div><label class="block text-xs text-slate-500 mb-1">Created to</label>
+              <input id="ftCreatedTo" type="date" value="${ftF.createdTo}" class="${ic}"></div>
+            <div><label class="block text-xs text-slate-500 mb-1">DR Account</label>
+              ${acctPickerHtml('ftDrId', ftF.drId, 'Search DR\u2026', {isFilter:true})}</div>
+            <div><label class="block text-xs text-slate-500 mb-1">CR Account</label>
+              ${acctPickerHtml('ftCrId', ftF.crId, 'Search CR\u2026', {isFilter:true})}</div>
+            <div><label class="block text-xs text-slate-500 mb-1">Description</label>
+              <input id="ftDesc" type="text" value="${escHtml(ftF.desc)}" placeholder="Search\u2026" class="${ic}"></div>
+            <div class="flex items-end gap-2">
+              <button onclick="ftApplyFilters()" class="flex-1 bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">Apply</button>
+              <button onclick="ftClearFilters()" class="px-3 py-1.5 border border-slate-300 rounded text-sm text-slate-600 hover:bg-slate-50">Clear</button>
+            </div>
           </div>
         </div>
       </div>
@@ -7832,12 +7930,12 @@ function _renderFTPage(container) {
         <div class="overflow-x-auto">
           <table class="w-full min-w-[700px]">
             <thead class="bg-slate-50 border-b border-slate-200"><tr>
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
-              <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR Account</th>
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR Account</th>
+              ${_ftSortTh('trxDate',     'Date')}
+              ${_ftSortTh('createdAt',   'Created')}
+              ${_ftSortTh('description', 'Description')}
+              ${_ftSortTh('amount',      'Amount', 'right')}
+              ${_ftSortTh('drName',      'DR Account')}
+              ${_ftSortTh('crName',      'CR Account')}
               <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
               <th class="px-3 py-2.5"></th>
             </tr></thead>
