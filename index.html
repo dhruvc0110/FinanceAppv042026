@@ -9340,16 +9340,16 @@ function dtStartRecording(event) {
   _dtRecognition.lang          = 'en-US';
 
   _dtRecognition.onresult = (e) => {
-    let final = '', interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
+    // Rebuild from ALL results on every event — avoids mobile duplicate
+    // accumulation when recognition auto-restarts and replays prior results.
+    let transcript = '';
+    for (let i = 0; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
     }
-    if (final) _dtFinalTranscript += final;
-    const display = (_dtFinalTranscript + interim).trim();
-    _dtTranscriptText = display;
+    _dtFinalTranscript = transcript;
+    _dtTranscriptText  = transcript;
     const el = document.getElementById('dtTranscriptEl');
-    if (el) el.textContent = display || 'Listening\u2026';
+    if (el) el.textContent = transcript || 'Listening\u2026';
   };
 
   _dtRecognition.onerror = (e) => {
