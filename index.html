@@ -3253,6 +3253,19 @@ function _renderTxPage(container) {
     <div id="txLinkModal" style="display:none"
       onclick="if(event.target===this)txHideLinkModal()"
       class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+
+    <!-- Floating dictate mic button -->
+    <button onclick="dtOpenFloatingModal()"
+      title="Dictate a transaction"
+      style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;"
+      class="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl flex items-center justify-center transition-all hover:scale-110 focus:outline-none border-2 border-red-800">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
       <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl flex flex-col" style="max-height:90vh;">
         <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
           <h2 class="text-base font-semibold text-slate-900">Transaction Links</h2>
@@ -9119,6 +9132,7 @@ let _dtRecognition     = null;  // Web Speech API instance
 let _dtFinalTranscript = '';    // accumulated final transcript
 let _dtStatus          = '';    // last status message (persists across re-renders)
 let _dtTranscriptText  = '';    // transcript display text
+let _dtContext         = 'tab'; // 'tab' or 'modal' — controls which UI updates after actions
 
 function renderDictateTransaction(container) {
   _renderDTPage(container);
@@ -9363,7 +9377,8 @@ function dtStopRecording() {
   if (text) {
     _dtTranscriptText = text;
     _dtStatus = '';
-    _renderDTPage(); // re-render to show Submit button
+    if (_dtContext === 'modal') _dtRenderModal();
+    else _renderDTPage(); // re-render to show Submit button
   }
 }
 
@@ -9380,7 +9395,7 @@ function dtSubmitText() {
 }
 
 // ── Anthropic API call ────────────────────────────────────────
-async function _dtProcessText(text) {
+async function _dtProcessText(text, onComplete) {
   const apiKey = _itGetApiKey();
   if (!apiKey) {
     _dtStatus = '<span class="text-amber-600">&#9888; Add your Anthropic API key in Settings first.</span>';
@@ -9426,7 +9441,8 @@ async function _dtProcessText(text) {
     _dtStatus = `<span class="text-red-500">Error: ${escHtml(e.message)}</span>`;
   }
 
-  _renderDTPage();
+  if (onComplete) onComplete();
+  else _renderDTPage();
 }
 
 function _dtBuildPrompt(text, accounts, today) {
@@ -9506,19 +9522,19 @@ function dtUpdateDraft(draftId, field, value) {
     db.run(`UPDATE DraftTransaction SET ${field}=? WHERE id=?`, [String(value), draftId]);
   }
   syncAfterWrite();
-  _renderDTPage();
+  if (_dtContext === 'modal') _dtRenderModal(); else _renderDTPage();
 }
 
 function dtSetDrAccount(draftId, acctId) {
   db.run('UPDATE DraftTransaction SET drAccountId=? WHERE id=?', [acctId||null, draftId]);
   syncAfterWrite();
-  _renderDTPage();
+  if (_dtContext === 'modal') _dtRenderModal(); else _renderDTPage();
 }
 
 function dtSetCrAccount(draftId, acctId) {
   db.run('UPDATE DraftTransaction SET crAccountId=? WHERE id=?', [acctId||null, draftId]);
   syncAfterWrite();
-  _renderDTPage();
+  if (_dtContext === 'modal') _dtRenderModal(); else _renderDTPage();
 }
 
 function dtApproveDraft(draftId) {
@@ -9566,6 +9582,237 @@ function _dtFinishBatch(batchId) {
   if (pending > 0) return;
   db.run('DELETE FROM DraftTransaction WHERE batchId=?', [batchId]);
   db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
+}
+
+// ── Floating modal (Transactions page) ───────────────────────
+
+function dtOpenFloatingModal() {
+  if (document.getElementById('dtFloatingModal')) return; // already open
+  _dtContext        = 'modal';
+  _dtTranscriptText = '';
+  _dtStatus         = '';
+
+  const el = document.createElement('div');
+  el.id = 'dtFloatingModal';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;display:flex;align-items:center;justify-content:center;padding:1rem';
+  el.onclick = (e) => { if (e.target === el) dtCloseFloatingModal(); };
+  document.body.appendChild(el);
+  _dtRenderModal();
+}
+
+function dtCloseFloatingModal() {
+  if (_dtRecognition) { try { _dtRecognition.stop(); } catch(_) {} _dtRecognition = null; }
+  _dtFinalTranscript = '';
+  _dtTranscriptText  = '';
+  _dtStatus          = '';
+  _dtContext         = 'tab';
+  const el = document.getElementById('dtFloatingModal');
+  if (el) el.remove();
+}
+
+function _dtRenderModal() {
+  const modal = document.getElementById('dtFloatingModal');
+  if (!modal) return;
+
+  const hasKey  = _itHasApiKey();
+  const allAccts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 ORDER BY type, code`);
+
+  // Pending dictate drafts
+  const pendingBatches = query(`
+    SELECT * FROM DraftBatch
+    WHERE status='pending' AND source='Dictate'
+    ORDER BY createdAt DESC`);
+
+  const reviewHtml = pendingBatches.map(batch => {
+    const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY createdAt ASC`);
+    const rows = drafts.map(d => {
+      const drAcct = d.drAccountId ? allAccts.find(a => a.id === d.drAccountId) : null;
+      const crAcct = d.crAccountId ? allAccts.find(a => a.id === d.crAccountId) : null;
+      const drOpts = allAccts.map(a => `<option value="${a.id}" ${d.drAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('');
+      const crOpts = allAccts.map(a => `<option value="${a.id}" ${d.crAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('');
+      return `<tr class="border-t border-slate-100">
+        <td class="px-3 py-2">
+          <input type="date" value="${d.date||''}" onchange="dtUpdateDraft('${d.id}','date',this.value);_dtRenderModal()"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-30">
+        </td>
+        <td class="px-3 py-2">
+          <input type="text" value="${escHtml(d.description||'')}" onchange="dtUpdateDraft('${d.id}','description',this.value);_dtRenderModal()"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-40">
+        </td>
+        <td class="px-3 py-2">
+          <input type="number" step="0.01" value="${d.amount||''}" onchange="dtUpdateDraft('${d.id}','amount',this.value);_dtRenderModal()"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-20 text-right">
+        </td>
+        <td class="px-3 py-2">
+          <select onchange="dtSetDrAccount('${d.id}',this.value);_dtRenderModal()"
+            class="text-sm border ${drAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-40">
+            <option value="">— DR —</option>${drOpts}
+          </select>
+        </td>
+        <td class="px-3 py-2">
+          <select onchange="dtSetCrAccount('${d.id}',this.value);_dtRenderModal()"
+            class="text-sm border ${crAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-40">
+            <option value="">— CR —</option>${crOpts}
+          </select>
+        </td>
+        <td class="px-3 py-2 whitespace-nowrap">
+          <button onclick="dtModalApproveDraft('${d.id}')" ${(d.drAccountId&&d.crAccountId)?'':'disabled'}
+            class="text-xs font-medium px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 mr-1 disabled:opacity-40 disabled:cursor-not-allowed">&#x2713; Post</button>
+          <button onclick="dtModalRejectDraft('${d.id}')"
+            class="text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">&#x2717;</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="border border-slate-200 rounded-lg overflow-hidden mt-4">
+      <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <p class="text-xs text-slate-500 italic truncate max-w-[300px]" title="${escHtml(batch.detectedCardName||'')}">${escHtml((batch.detectedCardName||'').slice(0,80))}</p>
+        <button onclick="dtModalDiscardBatch('${batch.id}')" class="text-xs text-red-400 hover:text-red-600 ml-2 flex-shrink-0">Discard</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[700px] text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200 text-xs text-slate-400 uppercase">
+            <tr>
+              <th class="px-3 py-2 text-left">Date</th>
+              <th class="px-3 py-2 text-left">Description</th>
+              <th class="px-3 py-2 text-right">Amount</th>
+              <th class="px-3 py-2 text-left">DR Account</th>
+              <th class="px-3 py-2 text-left">CR Account</th>
+              <th class="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:680px;max-height:85vh;overflow-y:auto;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #e2e8f0;">
+        <h2 style="font-size:0.9rem;font-weight:600;color:#1e293b;">&#127908; Dictate Transaction</h2>
+        <button onclick="dtCloseFloatingModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1.3rem;line-height:1;">&times;</button>
+      </div>
+
+      <!-- Body -->
+      <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem;">
+
+        ${!hasKey ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:0.5rem;padding:0.75rem;font-size:0.8rem;color:#92400e;">
+          &#9888; Add your Anthropic API key in Settings first to enable dictation.</div>` : ''}
+
+        <!-- Mic button -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;">
+          <button id="dtMicBtn"
+            onmousedown="dtStartRecording(event)"
+            onmouseup="dtStopRecording()"
+            onmouseleave="if(_dtRecognition)dtStopRecording()"
+            ontouchstart="dtStartRecording(event)"
+            ontouchend="dtStopRecording()"
+            style="width:6rem;height:6rem;border-radius:50%;background:#dc2626;border:3px solid #991b1b;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;cursor:pointer;box-shadow:0 4px 12px rgba(220,38,38,0.4);user-select:none;-webkit-user-select:none;touch-action:none;outline:none;"
+            ${hasKey ? '' : 'disabled style="width:6rem;height:6rem;border-radius:50%;background:#e2e8f0;border:3px solid #cbd5e1;color:#94a3b8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.25rem;cursor:not-allowed;opacity:0.5;"'}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <span class="dt-mic-label" style="font-size:0.65rem;font-weight:700;letter-spacing:0.05em;">Hold to Talk</span>
+          </button>
+          <p style="font-size:0.75rem;color:#94a3b8;">Press and hold while speaking, release when done</p>
+          <div id="dtTranscriptEl" style="width:100%;min-height:2.5rem;font-size:0.875rem;color:#475569;font-style:italic;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.5rem 0.75rem;text-align:center;">
+            ${_dtTranscriptText ? escHtml(_dtTranscriptText) : '<span style="color:#cbd5e1;">Your words will appear here\u2026</span>'}
+          </div>
+          ${_dtTranscriptText ? `
+          <div style="display:flex;gap:0.5rem;width:100%;">
+            <button onclick="_dtProcessText(_dtTranscriptText, _dtRenderModal)"
+              style="flex:1;background:#1e293b;color:white;border:none;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:500;cursor:pointer;">
+              &#x2713; Submit Dictation
+            </button>
+            <button onclick="_dtTranscriptText='';_dtStatus='';_dtRenderModal()"
+              style="padding:0.5rem 1rem;border:1px solid #e2e8f0;border-radius:0.5rem;font-size:0.875rem;color:#64748b;background:white;cursor:pointer;">
+              Clear
+            </button>
+          </div>` : ''}
+        </div>
+
+        <!-- Divider -->
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+          <span style="font-size:0.75rem;color:#94a3b8;font-weight:500;">or type it</span>
+          <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+        </div>
+
+        <!-- Text input -->
+        <div style="display:flex;gap:0.5rem;">
+          <input id="dtModalTextInput" type="text"
+            placeholder='e.g. "paid $85 electric bill from checking today"'
+            style="flex:1;border:1px solid #cbd5e1;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;outline:none;"
+            onkeydown="if(event.key==='Enter')dtModalSubmitText()"
+            ${hasKey ? '' : 'disabled'}>
+          <button onclick="dtModalSubmitText()"
+            style="background:#1e293b;color:white;border:none;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:500;cursor:pointer;flex-shrink:0;${hasKey?'':'opacity:0.4;cursor:not-allowed;'}"
+            ${hasKey ? '' : 'disabled'}>
+            Submit
+          </button>
+        </div>
+
+        <!-- Status -->
+        <div id="dtStatusEl" style="font-size:0.875rem;min-height:1.5rem;">${_dtStatus}</div>
+
+        <!-- Pending drafts -->
+        ${reviewHtml}
+
+      </div>
+    </div>`;
+}
+
+function dtModalSubmitText() {
+  const input = document.getElementById('dtModalTextInput');
+  const text  = (input?.value || '').trim();
+  if (!text) return;
+  _dtTranscriptText = text;
+  if (input) input.value = '';
+  _dtProcessText(text, _dtRenderModal);
+}
+
+function dtModalApproveDraft(draftId) {
+  const d = query(`SELECT * FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  if (!d || !d.drAccountId || !d.crAccountId) return;
+
+  const now    = new Date().toISOString();
+  const txId   = genId();
+  const date   = d.date ? d.date + 'T12:00:00.000Z' : now;
+  const period = (d.date||'').slice(0,7).replace('-','') || currentPeriod();
+
+  db.run(
+    `INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
+     VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,0,'Dictate',?,?)`,
+    [txId, date, period, d.description||'Dictated transaction',
+     parseFloat(d.amount)||0, d.drAccountId, d.crAccountId, now, now]
+  );
+  db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['approved', draftId]);
+  _dtFinishBatch(d.batchId);
+  syncAfterWrite();
+  dtCloseFloatingModal();
+  txPage = 0;
+  _renderTxPage();
+}
+
+function dtModalRejectDraft(draftId) {
+  const d = query(`SELECT batchId FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['rejected', draftId]);
+  if (d) _dtFinishBatch(d.batchId);
+  syncAfterWrite();
+  _dtRenderModal();
+}
+
+function dtModalDiscardBatch(batchId) {
+  if (!confirm('Discard this draft?')) return;
+  db.run('DELETE FROM DraftTransaction WHERE batchId=?', [batchId]);
+  db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
+  syncAfterWrite();
+  _dtRenderModal();
 }
 
 // ════════════════════════════════════════════════════════════
