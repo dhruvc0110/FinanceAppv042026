@@ -9244,7 +9244,17 @@ function _renderDTPage(container) {
         </button>
         <p class="text-xs text-slate-400">Press and hold while speaking, release when done</p>
         <div id="dtTranscriptEl" class="w-full min-h-[2.5rem] text-sm text-slate-600 italic bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-center">${escHtml(_dtTranscriptText)||'<span class="text-slate-300">Your words will appear here&hellip;</span>'}</div>
-      </div>
+        ${_dtTranscriptText ? `
+        <div class="flex gap-2 w-full">
+          <button onclick="_dtProcessText(_dtTranscriptText)"
+            class="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
+            &#x2713; Submit Dictation
+          </button>
+          <button onclick="_dtTranscriptText='';_dtStatus='';_renderDTPage()"
+            class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-500 hover:bg-slate-50 transition">
+            Clear
+          </button>
+        </div>` : ''}
 
       <!-- Divider -->
       <div class="flex items-center gap-3">
@@ -9350,7 +9360,11 @@ function dtStopRecording() {
 
   const text = _dtFinalTranscript.trim();
   _dtFinalTranscript = '';
-  if (text) _dtProcessText(text);
+  if (text) {
+    _dtTranscriptText = text;
+    _dtStatus = '';
+    _renderDTPage(); // re-render to show Submit button
+  }
 }
 
 // ── Text submit ───────────────────────────────────────────────
