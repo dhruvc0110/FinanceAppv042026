@@ -9147,6 +9147,8 @@ let _dtStatus          = '';    // last status message (persists across re-rende
 let _dtTranscriptText  = '';    // transcript display text
 let _dtContext         = 'tab'; // 'tab' or 'modal'
 let _dtTarget          = 'tx';  // 'tx' or 'ft' — controls which table approved drafts post to
+let _dtMicHeld         = false; // true while push-to-talk button is pressed
+let _dtSessionBase     = '';    // transcript saved from completed recognition segments
 
 function renderDictateTransaction(container) {
   _renderDTPage(container);
@@ -9271,10 +9273,13 @@ function _renderDTPage(container) {
           <span class="dt-mic-label text-xs font-bold tracking-wide">Hold to Talk</span>
         </button>
         <p class="text-xs text-slate-400">Press and hold while speaking, release when done</p>
-        <div id="dtTranscriptEl" class="w-full min-h-[2.5rem] text-sm text-slate-600 italic bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-center">${escHtml(_dtTranscriptText)||'<span class="text-slate-300">Your words will appear here&hellip;</span>'}</div>
+        <textarea id="dtTranscriptEl" rows="2"
+          placeholder="Your words will appear here — you can edit before submitting…"
+          oninput="_dtTranscriptText=this.value"
+          class="w-full text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-slate-400">${escHtml(_dtTranscriptText)}</textarea>
         ${_dtTranscriptText ? `
         <div class="flex gap-2 w-full">
-          <button onclick="_dtProcessText(_dtTranscriptText)"
+          <button onclick="_dtProcessText(document.getElementById('dtTranscriptEl')?.value||_dtTranscriptText)"
             class="flex-1 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
             &#x2713; Submit Dictation
           </button>
@@ -9325,76 +9330,101 @@ function _renderDTPage(container) {
 // ── Web Speech API ────────────────────────────────────────────
 function dtStartRecording(event) {
   if (event) event.preventDefault();
-  if (_dtRecognition) return; // already recording
+  if (_dtMicHeld) return; // already recording
 
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
     alert('Voice recognition requires Chrome. Please type your transaction instead.');
     return;
   }
 
+  _dtMicHeld         = true;
+  _dtSessionBase     = '';
   _dtFinalTranscript = '';
+  _dtLaunchRecognition();
+  _dtSetMicActive(true);
+}
+
+// Launches one non-continuous recognition session.
+function _dtLaunchRecognition() {
+  if (!_dtMicHeld) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   _dtRecognition = new SR();
-  _dtRecognition.continuous    = true;
+  _dtRecognition.continuous     = false;
   _dtRecognition.interimResults = true;
-  _dtRecognition.lang          = 'en-US';
+  _dtRecognition.lang           = 'en-US';
+
+  let sessionGotFinal = false;
 
   _dtRecognition.onresult = (e) => {
-    // Rebuild from ALL results on every event — avoids mobile duplicate
-    // accumulation when recognition auto-restarts and replays prior results.
-    let transcript = '';
+    let current = '';
     for (let i = 0; i < e.results.length; i++) {
-      transcript += e.results[i][0].transcript;
+      current += e.results[i][0].transcript;
+      if (e.results[i].isFinal) sessionGotFinal = true;
     }
-    _dtFinalTranscript = transcript;
-    _dtTranscriptText  = transcript;
+    const full = (_dtSessionBase && current ? _dtSessionBase + ' ' : _dtSessionBase || '') + current;
+    _dtFinalTranscript = full.trim();
+    _dtTranscriptText  = _dtFinalTranscript;
     const el = document.getElementById('dtTranscriptEl');
-    if (el) el.textContent = transcript || 'Listening\u2026';
+    if (el) el.value = _dtFinalTranscript; // textarea.value — editable
   };
 
   _dtRecognition.onerror = (e) => {
+    if (e.error === 'no-speech') return;
     _dtStatus = `<span class="text-red-500">Mic error: ${escHtml(e.error)}. Try typing instead.</span>`;
     const el = document.getElementById('dtStatusEl');
     if (el) el.innerHTML = _dtStatus;
-    dtStopRecording();
+    _dtMicHeld = false;
+    _dtRecognition = null;
+    _dtSetMicActive(false);
   };
 
-  _dtRecognition.start();
+  _dtRecognition.onend = () => {
+    _dtRecognition = null;
+    if (_dtMicHeld) {
+      // Only carry forward text that was actually finalized — never interim
+      if (sessionGotFinal) _dtSessionBase = _dtFinalTranscript;
+      _dtLaunchRecognition(); // restart for next phrase while button still held
+    }
+  };
 
-  // Visual: turn button darker + pulsing label
+  try { _dtRecognition.start(); } catch(e) { _dtRecognition = null; }
+}
+
+function _dtSetMicActive(active) {
   const btn = document.getElementById('dtMicBtn');
-  if (btn) {
+  if (!btn) return;
+  if (active) {
     btn.style.background = '#991b1b';
     btn.style.boxShadow  = '0 0 0 6px rgba(220,38,38,0.3)';
     const lbl = btn.querySelector('.dt-mic-label');
-    if (lbl) lbl.textContent = '● Recording\u2026';
-  }
-}
-
-function dtStopRecording() {
-  if (_dtRecognition) {
-    try { _dtRecognition.stop(); } catch(_) {}
-    _dtRecognition = null;
-  }
-
-  // Restore button
-  const btn = document.getElementById('dtMicBtn');
-  if (btn) {
+    if (lbl) lbl.textContent = '● Recording…';
+  } else {
     btn.style.background = '';
     btn.style.boxShadow  = '';
     const lbl = btn.querySelector('.dt-mic-label');
     if (lbl) lbl.textContent = 'Hold to Talk';
   }
+}
+
+function dtStopRecording() {
+  _dtMicHeld = false; // signals onend not to restart
+  if (_dtRecognition) {
+    try { _dtRecognition.stop(); } catch(_) {}
+    _dtRecognition = null;
+  }
+  _dtSetMicActive(false);
 
   const text = _dtFinalTranscript.trim();
   _dtFinalTranscript = '';
+  _dtSessionBase     = '';
   if (text) {
     _dtTranscriptText = text;
     _dtStatus = '';
     if (_dtContext === 'modal') _dtRenderModal();
-    else _renderDTPage(); // re-render to show Submit button
+    else _renderDTPage();
   }
 }
+
 
 // ── Text submit ───────────────────────────────────────────────
 function dtSubmitText() {
@@ -9733,12 +9763,13 @@ function _dtRenderModal() {
             <span class="dt-mic-label" style="font-size:0.65rem;font-weight:700;letter-spacing:0.05em;">Hold to Talk</span>
           </button>
           <p style="font-size:0.75rem;color:#94a3b8;">Press and hold while speaking, release when done</p>
-          <div id="dtTranscriptEl" style="width:100%;min-height:2.5rem;font-size:0.875rem;color:#475569;font-style:italic;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.5rem 0.75rem;text-align:center;">
-            ${_dtTranscriptText ? escHtml(_dtTranscriptText) : '<span style="color:#cbd5e1;">Your words will appear here\u2026</span>'}
-          </div>
+          <textarea id="dtTranscriptEl" rows="2"
+            placeholder="Your words will appear here — you can edit before submitting…"
+            oninput="_dtTranscriptText=this.value"
+            style="width:100%;font-size:0.875rem;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.5rem 0.75rem;resize:none;outline:none;box-sizing:border-box;">${_dtTranscriptText ? escHtml(_dtTranscriptText) : ''}</textarea>
           ${_dtTranscriptText ? `
           <div style="display:flex;gap:0.5rem;width:100%;">
-            <button onclick="_dtProcessText(_dtTranscriptText, _dtRenderModal)"
+            <button onclick="_dtProcessText(document.getElementById('dtTranscriptEl')?.value||_dtTranscriptText, _dtRenderModal)"
               style="flex:1;background:#1e293b;color:white;border:none;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:500;cursor:pointer;">
               &#x2713; Submit Dictation
             </button>
