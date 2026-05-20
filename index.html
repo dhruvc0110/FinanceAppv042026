@@ -1890,6 +1890,9 @@ function startApp() {
     )`);
   } catch(e) { console.warn('NotificationConfig init:', e.message); }
 
+  // Add source column to DraftBatch to separate Dictate drafts from Import drafts
+  try { db.run(`ALTER TABLE DraftBatch ADD COLUMN source TEXT NOT NULL DEFAULT 'Import'`); } catch(e) {}
+
   // Backfill createdAt from trxDate for records missing a creation date
   try {
     let needsSync = false;
@@ -2424,11 +2427,12 @@ function teSetTab(tab) {
 let _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
 
 const _TX_COMBO_TABS = [
-  { id: 'transactions',        label: 'Transactions' },
-  { id: 'future-transactions', label: 'Future Transactions' },
-  { id: 'repeatable',          label: 'Repeatable' },
-  { id: 'import-transactions', label: 'Import Transactions' },
-  { id: 'duplicates',          label: 'Duplicates' },
+  { id: 'transactions',         label: 'Transactions' },
+  { id: 'future-transactions',  label: 'Future Transactions' },
+  { id: 'repeatable',           label: 'Repeatable' },
+  { id: 'import-transactions',  label: 'Import Transactions' },
+  { id: 'dictate-transaction',  label: 'Dictate Transaction' },
+  { id: 'duplicates',           label: 'Duplicates' },
 ];
 
 function renderTransactions(container) {
@@ -2458,6 +2462,7 @@ function _renderTxComboContent() {
   else if (_txComboTab === 'future-transactions') renderFutureTransactions(c);
   else if (_txComboTab === 'repeatable')          renderRepeatableInner(c);
   else if (_txComboTab === 'import-transactions') renderImportTransactions(c);
+  else if (_txComboTab === 'dictate-transaction') renderDictateTransaction(c);
   else if (_txComboTab === 'duplicates')          renderDuplicates(c);
 }
 function txComboSetTab(tab) {
@@ -8297,7 +8302,8 @@ function _renderITPage(container) {
 
   const pendingBatches = query(`SELECT db.*, st.cardNickname AS tplName
     FROM DraftBatch db LEFT JOIN ScreenshotTemplate st ON db.templateId=st.id
-    WHERE db.status='pending' ORDER BY db.createdAt DESC`);
+    WHERE db.status='pending' AND (db.source IS NULL OR db.source='Import')
+    ORDER BY db.createdAt DESC`);
   const pendingCount = pendingBatches.reduce((s,b) => s + (b.rowCount - b.approvedCount - b.rejectedCount), 0);
   const templates    = query(`SELECT st.*, cc.name AS ccName FROM ScreenshotTemplate st
     LEFT JOIN CreditCard cc ON st.creditCardId=cc.id ORDER BY st.cardNickname`);
@@ -9105,9 +9111,454 @@ async function itTestTemplate(id) {
   };
   input.click();
 }
+    } catch(e) { alert('Test failed: ' + e.message); }
+  };
+  input.click();
+}
+// ════════════════════════════════════════════════════════════
+// DICTATE TRANSACTION
 // ════════════════════════════════════════════════════════════
 
-let dupTab       = 'pending';
+let _dtRecognition     = null;  // Web Speech API instance
+let _dtFinalTranscript = '';    // accumulated final transcript
+let _dtStatus          = '';    // last status message (persists across re-renders)
+let _dtTranscriptText  = '';    // transcript display text
+
+function renderDictateTransaction(container) {
+  _renderDTPage(container);
+}
+
+function _renderDTPage(container) {
+  if (!container) container = document.getElementById('txComboContent') || document.getElementById('pageContent');
+
+  const hasKey = _itHasApiKey();
+
+  // Pending dictate drafts
+  const pendingBatches = query(`
+    SELECT * FROM DraftBatch
+    WHERE status='pending' AND source='Dictate'
+    ORDER BY createdAt DESC`);
+  const pendingCount = pendingBatches.reduce((s,b) => s + (b.rowCount - b.approvedCount - b.rejectedCount), 0);
+
+  const allAccts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 ORDER BY type, code`);
+
+  // ── Pending review table ───────────────────────────────────
+  const reviewHtml = pendingBatches.length ? pendingBatches.map(batch => {
+    const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY createdAt ASC`);
+    const rows = drafts.map(d => {
+      const drAcct = d.drAccountId ? allAccts.find(a => a.id === d.drAccountId) : null;
+      const crAcct = d.crAccountId ? allAccts.find(a => a.id === d.crAccountId) : null;
+      const opts   = allAccts.map(a => `<option value="${a.id}" ${d.drAccountId===a.id||d.crAccountId===a.id?'':''} >${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('');
+      const drOpts = allAccts.map(a => `<option value="${a.id}" ${d.drAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('');
+      const crOpts = allAccts.map(a => `<option value="${a.id}" ${d.crAccountId===a.id?'selected':''}>${escHtml((a.code?a.code+' · ':'')+a.name)}</option>`).join('');
+      return `<tr class="border-t border-slate-100 hover:bg-slate-50" id="dtRow-${d.id}">
+        <td class="px-3 py-2">
+          <input type="date" value="${d.date||''}" onchange="dtUpdateDraft('${d.id}','date',this.value)"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-32 focus:outline-none focus:ring-1 focus:ring-slate-400">
+        </td>
+        <td class="px-3 py-2">
+          <input type="text" value="${escHtml(d.description||'')}" onchange="dtUpdateDraft('${d.id}','description',this.value)"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-48 focus:outline-none focus:ring-1 focus:ring-slate-400">
+        </td>
+        <td class="px-3 py-2">
+          <input type="number" step="0.01" value="${d.amount||''}" onchange="dtUpdateDraft('${d.id}','amount',this.value)"
+            class="text-sm border border-slate-200 rounded px-1.5 py-1 w-24 text-right focus:outline-none focus:ring-1 focus:ring-slate-400">
+        </td>
+        <td class="px-3 py-2">
+          <select onchange="dtSetDrAccount('${d.id}',this.value)"
+            class="text-sm border ${drAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-44 focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">— DR Account —</option>
+            ${drOpts}
+          </select>
+        </td>
+        <td class="px-3 py-2">
+          <select onchange="dtSetCrAccount('${d.id}',this.value)"
+            class="text-sm border ${crAcct?'border-slate-200':'border-red-300 bg-red-50'} rounded px-1.5 py-1 w-44 focus:outline-none focus:ring-1 focus:ring-slate-400">
+            <option value="">— CR Account —</option>
+            ${crOpts}
+          </select>
+        </td>
+        <td class="px-3 py-2 whitespace-nowrap">
+          <button onclick="dtApproveDraft('${d.id}')" ${(d.drAccountId&&d.crAccountId)?'':'disabled'}
+            class="text-xs font-medium px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 mr-1 disabled:opacity-40 disabled:cursor-not-allowed">&#x2713; Post</button>
+          <button onclick="dtRejectDraft('${d.id}')"
+            class="text-xs font-medium px-2 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100">&#x2717;</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
+        <div class="min-w-0 flex-1 mr-4">
+          <span class="text-xs text-slate-400 font-medium uppercase tracking-wide">You said</span>
+          <p class="text-sm text-slate-700 mt-0.5 truncate" title="${escHtml(batch.detectedCardName||'')}">${escHtml((batch.detectedCardName||'').slice(0,120))}</p>
+        </div>
+        <button onclick="dtDiscardBatch('${batch.id}')"
+          class="text-xs text-red-400 hover:text-red-600 flex-shrink-0">Discard</button>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[860px]">
+          <thead class="bg-slate-50 border-b border-slate-200"><tr>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
+            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">DR Account <span class="text-red-400">*</span></th>
+            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">CR Account <span class="text-red-400">*</span></th>
+            <th class="px-3 py-2"></th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="px-3 py-4 text-sm text-slate-400 text-center">No pending items</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('') : '';
+
+  container.innerHTML = `<div class="p-6 space-y-6 max-w-3xl">
+
+    ${!hasKey ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+      <span class="text-amber-500 text-xl flex-shrink-0">&#128273;</span>
+      <div>
+        <p class="text-sm font-semibold text-amber-900 mb-1">API Key Required</p>
+        <p class="text-sm text-amber-800 mb-2">Add your Anthropic API key in <strong>Settings &rarr; Backup &amp; Sync</strong> to enable dictation.</p>
+        <button onclick="navigate('settings')" class="text-xs bg-amber-600 text-white px-3 py-1.5 rounded hover:bg-amber-700">Go to Settings &rarr;</button>
+      </div>
+    </div>` : ''}
+
+    <!-- Input section -->
+    <div class="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+      <h2 class="text-sm font-semibold text-slate-700">Describe a transaction</h2>
+
+      <!-- Push-to-talk mic -->
+      <div class="flex flex-col items-center gap-3">
+        <button id="dtMicBtn"
+          onmousedown="dtStartRecording(event)"
+          onmouseup="dtStopRecording()"
+          onmouseleave="if(_dtRecognition)dtStopRecording()"
+          ontouchstart="dtStartRecording(event)"
+          ontouchend="dtStopRecording()"
+          class="w-28 h-28 rounded-full bg-red-600 hover:bg-red-700 active:bg-red-800 active:scale-95 text-white flex flex-col items-center justify-center gap-1.5 shadow-lg transition-all select-none cursor-pointer border-4 border-red-800 focus:outline-none"
+          style="user-select:none;-webkit-user-select:none;touch-action:none"
+          ${hasKey ? '' : 'disabled style="user-select:none;-webkit-user-select:none;touch-action:none;opacity:0.4;cursor:not-allowed"'}>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          <span class="dt-mic-label text-xs font-bold tracking-wide">Hold to Talk</span>
+        </button>
+        <p class="text-xs text-slate-400">Press and hold while speaking, release when done</p>
+        <div id="dtTranscriptEl" class="w-full min-h-[2.5rem] text-sm text-slate-600 italic bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-center">${escHtml(_dtTranscriptText)||'<span class="text-slate-300">Your words will appear here&hellip;</span>'}</div>
+      </div>
+
+      <!-- Divider -->
+      <div class="flex items-center gap-3">
+        <div class="flex-1 h-px bg-slate-200"></div>
+        <span class="text-xs text-slate-400 font-medium">or type it</span>
+        <div class="flex-1 h-px bg-slate-200"></div>
+      </div>
+
+      <!-- Text input -->
+      <div class="flex gap-2">
+        <input id="dtTextInput" type="text"
+          placeholder='e.g. "paid $85 electric bill from checking today"'
+          class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400"
+          onkeydown="if(event.key==='Enter')dtSubmitText()"
+          ${hasKey ? '' : 'disabled'}>
+        <button onclick="dtSubmitText()"
+          class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition flex-shrink-0 ${hasKey ? '' : 'opacity-40 cursor-not-allowed'}"
+          ${hasKey ? '' : 'disabled'}>
+          Submit
+        </button>
+      </div>
+
+      <!-- Status -->
+      <div id="dtStatusEl" class="text-sm min-h-[1.5rem]">${_dtStatus}</div>
+    </div>
+
+    <!-- Pending drafts -->
+    ${pendingCount > 0 ? `
+    <div class="space-y-3">
+      <h2 class="text-sm font-semibold text-slate-700">
+        Pending Review
+        <span class="ml-1 text-xs bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-semibold">${pendingCount}</span>
+      </h2>
+      ${reviewHtml}
+    </div>` : reviewHtml ? `<div class="space-y-3"><h2 class="text-sm font-semibold text-slate-700">Pending Review</h2>${reviewHtml}</div>` : ''}
+
+  </div>`;
+}
+
+// ── Web Speech API ────────────────────────────────────────────
+function dtStartRecording(event) {
+  if (event) event.preventDefault();
+  if (_dtRecognition) return; // already recording
+
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Voice recognition requires Chrome. Please type your transaction instead.');
+    return;
+  }
+
+  _dtFinalTranscript = '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  _dtRecognition = new SR();
+  _dtRecognition.continuous    = true;
+  _dtRecognition.interimResults = true;
+  _dtRecognition.lang          = 'en-US';
+
+  _dtRecognition.onresult = (e) => {
+    let final = '', interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if (final) _dtFinalTranscript += final;
+    const display = (_dtFinalTranscript + interim).trim();
+    _dtTranscriptText = display;
+    const el = document.getElementById('dtTranscriptEl');
+    if (el) el.textContent = display || 'Listening\u2026';
+  };
+
+  _dtRecognition.onerror = (e) => {
+    _dtStatus = `<span class="text-red-500">Mic error: ${escHtml(e.error)}. Try typing instead.</span>`;
+    const el = document.getElementById('dtStatusEl');
+    if (el) el.innerHTML = _dtStatus;
+    dtStopRecording();
+  };
+
+  _dtRecognition.start();
+
+  // Visual: turn button darker + pulsing label
+  const btn = document.getElementById('dtMicBtn');
+  if (btn) {
+    btn.style.background = '#991b1b';
+    btn.style.boxShadow  = '0 0 0 6px rgba(220,38,38,0.3)';
+    const lbl = btn.querySelector('.dt-mic-label');
+    if (lbl) lbl.textContent = '● Recording\u2026';
+  }
+}
+
+function dtStopRecording() {
+  if (_dtRecognition) {
+    try { _dtRecognition.stop(); } catch(_) {}
+    _dtRecognition = null;
+  }
+
+  // Restore button
+  const btn = document.getElementById('dtMicBtn');
+  if (btn) {
+    btn.style.background = '';
+    btn.style.boxShadow  = '';
+    const lbl = btn.querySelector('.dt-mic-label');
+    if (lbl) lbl.textContent = 'Hold to Talk';
+  }
+
+  const text = _dtFinalTranscript.trim();
+  _dtFinalTranscript = '';
+  if (text) _dtProcessText(text);
+}
+
+// ── Text submit ───────────────────────────────────────────────
+function dtSubmitText() {
+  const input = document.getElementById('dtTextInput');
+  const text  = (input?.value || '').trim();
+  if (!text) return;
+  _dtTranscriptText = text;
+  const el = document.getElementById('dtTranscriptEl');
+  if (el) el.textContent = text;
+  if (input) input.value = '';
+  _dtProcessText(text);
+}
+
+// ── Anthropic API call ────────────────────────────────────────
+async function _dtProcessText(text) {
+  const apiKey = _itGetApiKey();
+  if (!apiKey) {
+    _dtStatus = '<span class="text-amber-600">&#9888; Add your Anthropic API key in Settings first.</span>';
+    const el = document.getElementById('dtStatusEl');
+    if (el) el.innerHTML = _dtStatus;
+    return;
+  }
+
+  _dtStatus = '<span class="text-slate-400">&#x23F3; Interpreting\u2026</span>';
+  const statusEl = document.getElementById('dtStatusEl');
+  if (statusEl) statusEl.innerHTML = _dtStatus;
+
+  const accounts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 ORDER BY type, code`);
+  const today    = new Date().toISOString().slice(0, 10);
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: _dtBuildPrompt(text, accounts, today) }],
+      }),
+    });
+
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const data = await res.json();
+    const raw  = data.content?.[0]?.text || '';
+    const parsed = _dtParseResponse(raw);
+    if (!parsed) throw new Error('Could not parse AI response. Try rephrasing.');
+
+    _dtCreateDraft(text, parsed);
+    _dtStatus          = '<span class="text-green-600">&#x2713; Draft created &mdash; review below.</span>';
+    _dtTranscriptText  = '';
+
+  } catch(e) {
+    _dtStatus = `<span class="text-red-500">Error: ${escHtml(e.message)}</span>`;
+  }
+
+  _renderDTPage();
+}
+
+function _dtBuildPrompt(text, accounts, today) {
+  const acctList = accounts.map(a =>
+    `${a.id} | ${a.code||'—'} | ${escHtml(a.name)} | ${a.type}`
+  ).join('\n');
+
+  return `You are a bookkeeping assistant for a personal finance app using double-entry accounting.
+
+The user described this transaction:
+"${text}"
+
+Today's date is ${today}.
+
+Available accounts (id | code | name | type):
+${acctList}
+
+Respond ONLY with a valid JSON object — no markdown, no code fences, no explanation:
+{
+  "date": "YYYY-MM-DD",
+  "description": "concise description max 60 characters",
+  "amount": 0.00,
+  "drAccountId": "exact-id-from-the-list-above-or-null",
+  "crAccountId": "exact-id-from-the-list-above-or-null",
+  "notes": null
+}
+
+Accounting rules:
+- Expenses (buying something, paying a bill): DR = expense account, CR = cash/bank/credit card used to pay
+- Income received: DR = cash/bank account, CR = income account
+- Transfers between accounts: DR = destination, CR = source
+- Credit card payment: DR = credit card liability account, CR = bank/checking account
+- amount: always a positive number
+- date: use today if not mentioned
+- drAccountId / crAccountId: use exact IDs from the list; use null if not confident`;
+}
+
+function _dtParseResponse(raw) {
+  try {
+    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const start   = cleaned.indexOf('{');
+    const end     = cleaned.lastIndexOf('}');
+    if (start === -1 || end === -1) return null;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch(_) { return null; }
+}
+
+function _dtCreateDraft(originalText, parsed) {
+  const now     = new Date().toISOString();
+  const batchId = genId();
+  const draftId = genId();
+
+  db.run(
+    `INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,source,createdAt,updatedAt)
+     VALUES (?,NULL,?,?,1,0,0,'Dictate',?,?)`,
+    [batchId, originalText.slice(0, 500), 'pending', now, now]
+  );
+  db.run(
+    `INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
+     VALUES (?,?,?,?,?,'charge',?,?,?,?,?,?,?)`,
+    [draftId, batchId,
+     parsed.date || '',
+     parsed.description || '',
+     Math.abs(parseFloat(parsed.amount) || 0),
+     parsed.drAccountId || null, parsed.crAccountId || null,
+     parsed.drAccountId || null, parsed.crAccountId || null,
+     'pending', JSON.stringify(parsed), now]
+  );
+  syncAfterWrite();
+}
+
+// ── Draft review actions (DT-scoped) ─────────────────────────
+function dtUpdateDraft(draftId, field, value) {
+  if (field === 'amount') {
+    db.run('UPDATE DraftTransaction SET amount=? WHERE id=?', [parseFloat(value)||0, draftId]);
+  } else {
+    db.run(`UPDATE DraftTransaction SET ${field}=? WHERE id=?`, [String(value), draftId]);
+  }
+  syncAfterWrite();
+  _renderDTPage();
+}
+
+function dtSetDrAccount(draftId, acctId) {
+  db.run('UPDATE DraftTransaction SET drAccountId=? WHERE id=?', [acctId||null, draftId]);
+  syncAfterWrite();
+  _renderDTPage();
+}
+
+function dtSetCrAccount(draftId, acctId) {
+  db.run('UPDATE DraftTransaction SET crAccountId=? WHERE id=?', [acctId||null, draftId]);
+  syncAfterWrite();
+  _renderDTPage();
+}
+
+function dtApproveDraft(draftId) {
+  const d = query(`SELECT * FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  if (!d || !d.drAccountId || !d.crAccountId) return;
+
+  const now    = new Date().toISOString();
+  const txId   = genId();
+  const date   = d.date ? d.date + 'T12:00:00.000Z' : now;
+  const period = (d.date||'').slice(0,7).replace('-','') || currentPeriod();
+
+  db.run(
+    `INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
+     VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,0,'Dictate',?,?)`,
+    [txId, date, period, d.description||'Dictated transaction',
+     parseFloat(d.amount)||0, d.drAccountId, d.crAccountId, now, now]
+  );
+  db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['approved', draftId]);
+  _dtFinishBatch(d.batchId);
+  syncAfterWrite();
+  _dtStatus = '<span class="text-green-600">&#x2713; Transaction posted successfully.</span>';
+  _renderDTPage();
+}
+
+function dtRejectDraft(draftId) {
+  const d = query(`SELECT batchId FROM DraftTransaction WHERE id='${draftId}'`)[0];
+  db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['rejected', draftId]);
+  if (d) _dtFinishBatch(d.batchId);
+  syncAfterWrite();
+  _dtStatus = '';
+  _renderDTPage();
+}
+
+function dtDiscardBatch(batchId) {
+  if (!confirm('Discard this draft?')) return;
+  db.run('DELETE FROM DraftTransaction WHERE batchId=?', [batchId]);
+  db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
+  syncAfterWrite();
+  _dtStatus = '';
+  _renderDTPage();
+}
+
+function _dtFinishBatch(batchId) {
+  const pending = queryVal(`SELECT COUNT(*) FROM DraftTransaction WHERE batchId='${batchId}' AND status='pending'`) || 0;
+  if (pending > 0) return;
+  db.run('DELETE FROM DraftTransaction WHERE batchId=?', [batchId]);
+  db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
+}
+
+// ════════════════════════════════════════════════════════════
 let dupDayRange  = 3;
 let dupDollarTol = 0;
 let dupFromDate  = '';  // YYYY-MM-DD — empty = no lower bound
