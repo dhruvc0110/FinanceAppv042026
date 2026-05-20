@@ -7855,6 +7855,19 @@ function _renderFTPage(container) {
       </div>
     </div>
 
+    <!-- Floating dictate mic button -->
+    <button onclick="dtOpenFloatingModal('ft')"
+      title="Dictate a future transaction"
+      style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;"
+      class="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl flex items-center justify-center transition-all hover:scale-110 focus:outline-none border-2 border-red-800">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+
     <!-- Transaction Form Modal (shared with Transactions page) -->
     <div id="txFormModal" style="display:none"
       onclick="if(event.target===this)txHideForm()"
@@ -9132,7 +9145,13 @@ let _dtRecognition     = null;  // Web Speech API instance
 let _dtFinalTranscript = '';    // accumulated final transcript
 let _dtStatus          = '';    // last status message (persists across re-renders)
 let _dtTranscriptText  = '';    // transcript display text
-let _dtContext         = 'tab'; // 'tab' or 'modal' — controls which UI updates after actions
+let _dtContext         = 'tab'; // 'tab' or 'modal' or 'repeatable'
+let _dtTarget          = 'tx';  // 'tx' or 'ft' — controls which table approved drafts post to
+
+// Repeatable quick-pick modal state
+let _dtRepSearch       = '';    // current search/transcript text
+let _dtRepSelectedId   = null;  // selected repeatable ID
+let _dtRepDate         = '';    // chosen date for posting
 
 function renderDictateTransaction(container) {
   _renderDTPage(container);
@@ -9377,7 +9396,8 @@ function dtStopRecording() {
   if (text) {
     _dtTranscriptText = text;
     _dtStatus = '';
-    if (_dtContext === 'modal') _dtRenderModal();
+    if (_dtContext === 'modal')      _dtRenderModal();
+    else if (_dtContext === 'repeatable') { _dtRepSearch = text; _dtRenderRepeatableModal(); }
     else _renderDTPage(); // re-render to show Submit button
   }
 }
@@ -9584,11 +9604,264 @@ function _dtFinishBatch(batchId) {
   db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
 }
 
-// ── Floating modal (Transactions page) ───────────────────────
+// ── Repeatable quick-pick modal ───────────────────────────────
 
-function dtOpenFloatingModal() {
+function dtOpenRepeatableModal() {
+  if (document.getElementById('dtRepModal')) return;
+  _dtContext       = 'repeatable';
+  _dtRepSearch     = '';
+  _dtRepSelectedId = null;
+  _dtRepDate       = new Date().toLocaleDateString('en-CA');
+
+  const el = document.createElement('div');
+  el.id = 'dtRepModal';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9990;display:flex;align-items:center;justify-content:center;padding:1rem';
+  el.onclick = (e) => { if (e.target === el) dtCloseRepeatableModal(); };
+  document.body.appendChild(el);
+  _dtRenderRepeatableModal();
+}
+
+function dtCloseRepeatableModal() {
+  if (_dtRecognition) { try { _dtRecognition.stop(); } catch(_) {} _dtRecognition = null; }
+  _dtFinalTranscript = '';
+  _dtContext         = 'tab';
+  _dtRepSearch       = '';
+  _dtRepSelectedId   = null;
+  const el = document.getElementById('dtRepModal');
+  if (el) el.remove();
+}
+
+function _dtRepMatchSearch(text, repeatables) {
+  if (!text.trim()) return repeatables;
+  const terms = text.toLowerCase().split(/\s+/).filter(Boolean);
+  return repeatables.filter(r => {
+    const hay = ((r.name||'') + ' ' + (r.description||'')).toLowerCase();
+    return terms.every(t => hay.includes(t));
+  });
+}
+
+function dtRepSelectResult(id) {
+  _dtRepSelectedId = id;
+  const r = query(`SELECT * FROM RepeatableTransaction WHERE id='${id}'`)[0];
+  if (!r) return;
+  // Default date: today, or day-of-month if set
+  const now = new Date();
+  if (r.dayOfMonth) {
+    const d = new Date(now.getFullYear(), now.getMonth(), +r.dayOfMonth);
+    _dtRepDate = d.toLocaleDateString('en-CA');
+  } else {
+    _dtRepDate = now.toLocaleDateString('en-CA');
+  }
+  _dtRenderRepeatableModal();
+}
+
+function dtRepClearSelection() {
+  _dtRepSelectedId = null;
+  _dtRenderRepeatableModal();
+}
+
+function dtRepPost() {
+  const r = query(`SELECT * FROM RepeatableTransaction WHERE id='${_dtRepSelectedId}'`)[0];
+  if (!r) return;
+
+  const date  = document.getElementById('dtRepDateInput')?.value || _dtRepDate;
+  const amt   = parseFloat(document.getElementById('dtRepAmtInput')?.value) || r.amount || 0;
+  const desc  = (document.getElementById('dtRepDescInput')?.value || '').trim() || r.description;
+
+  if (!date) { alert('Please select a date.'); return; }
+  if (!r.drAccountId || !r.crAccountId) { alert('This repeatable has no DR/CR accounts configured. Edit it first.'); return; }
+
+  const today    = new Date().toLocaleDateString('en-CA');
+  const isFuture = date > today;
+  const period   = date.slice(0,4) + date.slice(5,7);
+  const trxDate  = date + 'T12:00:00.000Z';
+  const now      = new Date().toISOString();
+  const txId     = genId();
+
+  try {
+    if (isFuture) {
+      db.run(
+        `INSERT INTO FutureTransaction
+         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [txId, trxDate, period, desc, amt, r.drAccountId, r.crAccountId, r.notes||null, now, now]
+      );
+    } else {
+      db.run(
+        `INSERT INTO "Transaction"
+         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,isReconciled,importSource,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,0,'Repeatable',?,?)`,
+        [txId, trxDate, period, desc, amt, r.drAccountId, r.crAccountId, r.notes||null, now, now]
+      );
+    }
+    syncAfterWrite();
+    dtCloseRepeatableModal();
+
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;color:white;padding:0.75rem 1.25rem;border-radius:0.5rem;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.2)';
+    toast.textContent = isFuture ? '\u2713 Saved to Future Transactions' : '\u2713 Transaction saved';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+
+    renderRepeatableInner(document.getElementById('txComboContent'));
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function _dtRenderRepeatableModal() {
+  const modal = document.getElementById('dtRepModal');
+  if (!modal) return;
+
+  const allReps = query(`SELECT * FROM RepeatableTransaction WHERE status='ACTIVE' ORDER BY name ASC`);
+  const accts   = query(`SELECT id, code, name FROM Account WHERE isActive=1`);
+  const acctMap = {};
+  accts.forEach(a => acctMap[a.id] = (a.code ? a.code + ' · ' : '') + a.name);
+
+  if (_dtRepSelectedId) {
+    // ── Phase 2: Confirm ───────────────────────────────────────
+    const r = allReps.find(x => x.id === _dtRepSelectedId);
+    if (!r) { _dtRepSelectedId = null; _dtRenderRepeatableModal(); return; }
+
+    modal.innerHTML = `
+      <div style="background:white;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:460px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #e2e8f0;">
+          <h2 style="font-size:0.9rem;font-weight:600;color:#1e293b;">&#9654; Confirm Transaction</h2>
+          <button onclick="dtCloseRepeatableModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1.3rem;line-height:1;">&times;</button>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem;">
+
+          <!-- Selected repeatable summary -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem 1rem;">
+            <div style="font-size:0.8rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.4rem;">Selected Template</div>
+            <div style="font-size:0.95rem;font-weight:600;color:#1e293b;">${escHtml(r.name)}</div>
+            <div style="font-size:0.8rem;color:#64748b;margin-top:0.1rem;">${escHtml(r.description||'')}</div>
+            <div style="display:flex;gap:1.5rem;margin-top:0.5rem;font-size:0.8rem;">
+              <span style="color:#1e293b;font-weight:600;">${fmtCurrency(r.amount,2)}</span>
+              <span style="color:#3b82f6;">DR: ${escHtml(acctMap[r.drAccountId]||'—')}</span>
+              <span style="color:#f97316;">CR: ${escHtml(acctMap[r.crAccountId]||'—')}</span>
+            </div>
+          </div>
+
+          <!-- Date -->
+          <div>
+            <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem;">Date <span style="color:#94a3b8;">(future date → Future Transactions)</span></label>
+            <input id="dtRepDateInput" type="date" value="${_dtRepDate}"
+              style="width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.4rem 0.6rem;font-size:0.875rem;outline:none;">
+          </div>
+
+          <!-- Amount (editable) -->
+          <div>
+            <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem;">Amount</label>
+            <input id="dtRepAmtInput" type="number" step="0.01" value="${r.amount||0}"
+              style="width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.4rem 0.6rem;font-size:0.875rem;outline:none;">
+          </div>
+
+          <!-- Description (editable) -->
+          <div>
+            <label style="display:block;font-size:0.75rem;color:#64748b;margin-bottom:0.25rem;">Description</label>
+            <input id="dtRepDescInput" type="text" value="${escHtml(r.description||'')}"
+              style="width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.4rem 0.6rem;font-size:0.875rem;outline:none;">
+          </div>
+
+          <!-- Actions -->
+          <div style="display:flex;gap:0.5rem;padding-top:0.25rem;">
+            <button onclick="dtRepPost()"
+              style="flex:1;background:#1e293b;color:white;border:none;padding:0.6rem 1rem;border-radius:0.5rem;font-size:0.875rem;font-weight:600;cursor:pointer;">
+              &#x2713; Post Transaction
+            </button>
+            <button onclick="dtRepClearSelection()"
+              style="padding:0.6rem 1rem;border:1px solid #e2e8f0;border-radius:0.5rem;font-size:0.875rem;color:#64748b;background:white;cursor:pointer;">
+              &#8592; Back
+            </button>
+          </div>
+        </div>
+      </div>`;
+
+  } else {
+    // ── Phase 1: Search ────────────────────────────────────────
+    const matched = _dtRepMatchSearch(_dtRepSearch, allReps);
+
+    const resultCards = matched.length
+      ? matched.map(r => `
+        <div onclick="dtRepSelectResult('${r.id}')"
+          style="border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem 1rem;cursor:pointer;transition:background 0.1s;"
+          onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;">
+            <span style="font-size:0.9rem;font-weight:600;color:#1e293b;">${escHtml(r.name)}</span>
+            <span style="font-size:0.875rem;font-weight:600;color:#1e293b;">${fmtCurrency(r.amount,2)}</span>
+          </div>
+          <div style="font-size:0.78rem;color:#64748b;margin-top:0.15rem;">${escHtml(r.description||'')}</div>
+          <div style="font-size:0.75rem;margin-top:0.35rem;display:flex;gap:0.75rem;">
+            <span style="color:#3b82f6;">DR: ${escHtml(acctMap[r.drAccountId]||'—')}</span>
+            <span style="color:#f97316;">CR: ${escHtml(acctMap[r.crAccountId]||'—')}</span>
+          </div>
+        </div>`).join('')
+      : `<p style="text-align:center;color:#94a3b8;font-size:0.875rem;padding:1rem 0;">${_dtRepSearch ? 'No matches for &ldquo;' + escHtml(_dtRepSearch) + '&rdquo;' : 'No active repeatable transactions found.'}</p>`;
+
+    modal.innerHTML = `
+      <div style="background:white;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #e2e8f0;flex-shrink:0;">
+          <h2 style="font-size:0.9rem;font-weight:600;color:#1e293b;">&#127908; Quick-Pick Repeatable</h2>
+          <button onclick="dtCloseRepeatableModal()" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1.3rem;line-height:1;">&times;</button>
+        </div>
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:0.875rem;overflow-y:auto;">
+
+          <!-- Mic button -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;">
+            <button id="dtMicBtn"
+              onmousedown="dtStartRecording(event)"
+              onmouseup="dtStopRecording()"
+              onmouseleave="if(_dtRecognition)dtStopRecording()"
+              ontouchstart="dtStartRecording(event)"
+              ontouchend="dtStopRecording()"
+              style="width:5rem;height:5rem;border-radius:50%;background:#dc2626;border:3px solid #991b1b;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.2rem;cursor:pointer;box-shadow:0 4px 12px rgba(220,38,38,0.4);user-select:none;-webkit-user-select:none;touch-action:none;outline:none;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              <span class="dt-mic-label" style="font-size:0.6rem;font-weight:700;letter-spacing:0.05em;">Hold to Talk</span>
+            </button>
+            <p style="font-size:0.7rem;color:#94a3b8;">Say the template name, e.g. &ldquo;Chase credit card&rdquo;</p>
+          </div>
+
+          <!-- Divider -->
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+            <span style="font-size:0.75rem;color:#94a3b8;">or search</span>
+            <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+          </div>
+
+          <!-- Text search -->
+          <div style="display:flex;gap:0.5rem;">
+            <input id="dtRepSearchInput" type="text" value="${escHtml(_dtRepSearch)}"
+              placeholder="Search by name or description&hellip;"
+              style="flex:1;border:1px solid #cbd5e1;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;outline:none;"
+              oninput="_dtRepSearch=this.value;_dtRenderRepeatableModal()"
+              onkeydown="if(event.key==='Escape')dtCloseRepeatableModal()">
+            ${_dtRepSearch ? `<button onclick="_dtRepSearch='';_dtRenderRepeatableModal()"
+              style="padding:0.5rem 0.75rem;border:1px solid #e2e8f0;border-radius:0.5rem;font-size:0.875rem;color:#64748b;background:white;cursor:pointer;">
+              Clear
+            </button>` : ''}
+          </div>
+
+          <!-- Results -->
+          <div style="display:flex;flex-direction:column;gap:0.5rem;">
+            ${resultCards}
+          </div>
+
+        </div>
+      </div>`;
+
+    // Focus search input
+    setTimeout(() => document.getElementById('dtRepSearchInput')?.focus(), 60);
+  }
+}
+
+function dtOpenFloatingModal(target) {
   if (document.getElementById('dtFloatingModal')) return; // already open
   _dtContext        = 'modal';
+  _dtTarget         = target || 'tx';
   _dtTranscriptText = '';
   _dtStatus         = '';
 
@@ -9784,19 +10057,29 @@ function dtModalApproveDraft(draftId) {
   const txId   = genId();
   const date   = d.date ? d.date + 'T12:00:00.000Z' : now;
   const period = (d.date||'').slice(0,7).replace('-','') || currentPeriod();
+  const desc   = d.description || 'Dictated transaction';
+  const amt    = parseFloat(d.amount) || 0;
 
-  db.run(
-    `INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
-     VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,0,'Dictate',?,?)`,
-    [txId, date, period, d.description||'Dictated transaction',
-     parseFloat(d.amount)||0, d.drAccountId, d.crAccountId, now, now]
-  );
+  if (_dtTarget === 'ft') {
+    db.run(
+      `INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
+       VALUES (?,?,?,?,?,?,?,NULL,?,?)`,
+      [txId, date, period, desc, amt, d.drAccountId, d.crAccountId, now, now]
+    );
+  } else {
+    db.run(
+      `INSERT INTO "Transaction" (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
+       VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,0,'Dictate',?,?)`,
+      [txId, date, period, desc, amt, d.drAccountId, d.crAccountId, now, now]
+    );
+  }
+
   db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['approved', draftId]);
   _dtFinishBatch(d.batchId);
   syncAfterWrite();
   dtCloseFloatingModal();
-  txPage = 0;
-  _renderTxPage();
+  if (_dtTarget === 'ft') { ftPage = 0; _renderFTPage(); }
+  else                    { txPage = 0; _renderTxPage(); }
 }
 
 function dtModalRejectDraft(draftId) {
@@ -9932,6 +10215,20 @@ function renderRepeatableInner(container) {
     </div>
 
     <!-- Repeatable create/edit modal — rendered here so it works from the Transactions page -->
+
+    <!-- Floating quick-pick mic button -->
+    <button onclick="dtOpenRepeatableModal()"
+      title="Quick-pick a repeatable transaction"
+      style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;"
+      class="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl flex items-center justify-center transition-all hover:scale-110 focus:outline-none border-2 border-red-800">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+
     <div id="repModal" style="display:none"
       onclick="if(event.target===this)repHideModal()"
       class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
