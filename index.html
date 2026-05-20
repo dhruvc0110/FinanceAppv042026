@@ -9111,10 +9111,6 @@ async function itTestTemplate(id) {
   };
   input.click();
 }
-    } catch(e) { alert('Test failed: ' + e.message); }
-  };
-  input.click();
-}
 // ════════════════════════════════════════════════════════════
 // DICTATE TRANSACTION
 // ════════════════════════════════════════════════════════════
@@ -9141,7 +9137,7 @@ function _renderDTPage(container) {
   const pendingCount = pendingBatches.reduce((s,b) => s + (b.rowCount - b.approvedCount - b.rejectedCount), 0);
 
   const allAccts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 ORDER BY type, code`);
-}
+
   // ── Pending review table ───────────────────────────────────
   const reviewHtml = pendingBatches.length ? pendingBatches.map(batch => {
     const drafts = query(`SELECT * FROM DraftTransaction WHERE batchId='${batch.id}' AND status='pending' ORDER BY createdAt ASC`);
