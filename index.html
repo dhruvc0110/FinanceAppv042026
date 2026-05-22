@@ -2250,16 +2250,7 @@ function _renderDividendsTab(container) {
     ? tickers.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('')
     : '<option value="">No tickers available</option>';
 
-  // Load recent dividends
-  const recentDivs = query(`
-    SELECT t.id, t.trxDate, t.description, t.amount,
-      da.name AS drName, ca.name AS crName
-    FROM "Transaction" t
-    LEFT JOIN Account da ON t.drAccountId=da.id
-    LEFT JOIN Account ca ON t.crAccountId=ca.id
-    WHERE t.importSource='Equity' AND t.description LIKE 'Dividend%'
-    ORDER BY t.trxDate DESC LIMIT 20
-  `);
+  // Load scheduled (future) dividends only — posted dividends are visible in Transactions
   const ftDivs = query(`
     SELECT ft.id, ft.trxDate, ft.description, ft.amount,
       da.name AS drName, ca.name AS crName
@@ -2267,18 +2258,8 @@ function _renderDividendsTab(container) {
     LEFT JOIN Account da ON ft.drAccountId=da.id
     LEFT JOIN Account ca ON ft.crAccountId=ca.id
     WHERE ft.description LIKE 'Dividend%'
-    ORDER BY ft.trxDate DESC LIMIT 10
+    ORDER BY ft.trxDate ASC LIMIT 20
   `);
-
-  const recentRows = recentDivs.map(r => `
-    <tr class="border-t border-slate-100 hover:bg-slate-50">
-      <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-      <td class="px-3 py-2 text-sm text-slate-800">${escHtml(r.description)}</td>
-      <td class="px-3 py-2 text-sm font-medium text-slate-800 text-right">${fmtCurrency(r.amount,2)}</td>
-      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
-      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
-      <td class="px-3 py-2 text-xs text-green-600 font-medium">Posted</td>
-    </tr>`).join('');
 
   const ftRows = ftDivs.map(r => `
     <tr class="border-t border-slate-100 hover:bg-slate-50">
@@ -2289,8 +2270,6 @@ function _renderDividendsTab(container) {
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
       <td class="px-3 py-2 text-xs text-amber-600 font-medium">Scheduled</td>
     </tr>`).join('');
-
-  const allRows = recentRows + ftRows;
 
   container.innerHTML = `
     <div class="p-5 space-y-6 max-w-2xl">
@@ -2338,9 +2317,9 @@ function _renderDividendsTab(container) {
         </div>
       </div>
 
-      ${(recentDivs.length || ftDivs.length) ? `
+      ${ftDivs.length ? `
       <div>
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Recent Dividends</h3>
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Scheduled Dividends</h3>
         <div class="rounded-lg border border-slate-200 overflow-x-auto">
           <table class="w-full min-w-[600px]">
             <thead class="bg-slate-50 border-b border-slate-200"><tr>
@@ -2351,7 +2330,7 @@ function _renderDividendsTab(container) {
               <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR</th>
               <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
             </tr></thead>
-            <tbody>${allRows}</tbody>
+            <tbody>${ftRows}</tbody>
           </table>
         </div>
       </div>` : ''}
