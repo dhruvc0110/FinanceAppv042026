@@ -2261,6 +2261,17 @@ function _renderDividendsTab(container) {
     ORDER BY ft.trxDate ASC LIMIT 20
   `);
 
+  // Last 20 posted dividends, newest first
+  const postedDivs = query(`
+    SELECT t.id, t.trxDate, t.description, t.amount,
+      da.name AS drName, ca.name AS crName
+    FROM "Transaction" t
+    LEFT JOIN Account da ON t.drAccountId=da.id
+    LEFT JOIN Account ca ON t.crAccountId=ca.id
+    WHERE t.importSource='Equity' AND t.description LIKE 'Dividend%'
+    ORDER BY t.trxDate DESC LIMIT 20
+  `);
+
   const ftRows = ftDivs.map(r => `
     <tr class="border-t border-slate-100 hover:bg-slate-50">
       <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
@@ -2269,6 +2280,16 @@ function _renderDividendsTab(container) {
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
       <td class="px-3 py-2 text-xs text-amber-600 font-medium">Scheduled</td>
+    </tr>`).join('');
+
+  const postedRows = postedDivs.map(r => `
+    <tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
+      <td class="px-3 py-2 text-sm text-slate-800">${escHtml(r.description)}</td>
+      <td class="px-3 py-2 text-sm font-medium text-slate-800 text-right">${fmtCurrency(r.amount,2)}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
+      <td class="px-3 py-2 text-xs text-green-600 font-medium">Posted</td>
     </tr>`).join('');
 
   container.innerHTML = `
@@ -2331,6 +2352,38 @@ function _renderDividendsTab(container) {
               <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
             </tr></thead>
             <tbody>${ftRows}</tbody>
+            <tfoot class="border-t-2 border-slate-200 bg-slate-50">
+              <tr>
+                <td colspan="2" class="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total</td>
+                <td class="px-3 py-2 text-sm font-bold text-slate-800 text-right">${fmtCurrency(ftDivs.reduce((s,r)=>s+(+r.amount||0),0),2)}</td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>` : ''}
+
+      ${postedDivs.length ? `
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Recent Dividends <span class="text-xs font-normal text-slate-400">(last 20 paid)</span></h3>
+        <div class="rounded-lg border border-slate-200 overflow-x-auto">
+          <table class="w-full min-w-[600px]">
+            <thead class="bg-slate-50 border-b border-slate-200"><tr>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Date</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Description</th>
+              <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">DR</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">CR</th>
+              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+            </tr></thead>
+            <tbody>${postedRows}</tbody>
+            <tfoot class="border-t-2 border-slate-200 bg-slate-50">
+              <tr>
+                <td colspan="2" class="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total</td>
+                <td class="px-3 py-2 text-sm font-bold text-slate-800 text-right">${fmtCurrency(postedDivs.reduce((s,r)=>s+(+r.amount||0),0),2)}</td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>` : ''}
