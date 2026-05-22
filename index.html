@@ -2137,6 +2137,22 @@ function _renderATPage(container) {
   content.className = 'flex-1 overflow-auto';
   wrap.appendChild(tabBar);
   wrap.appendChild(content);
+
+  // Floating dictate button
+  const micBtn = document.createElement('button');
+  micBtn.title = 'Dictate a transaction';
+  micBtn.style.cssText = 'position:fixed;bottom:1.5rem;left:15rem;z-index:200;width:3rem;height:3rem;border-radius:50%;background:#dc2626;border:2px solid #991b1b;color:white;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(220,38,38,0.4);cursor:pointer;transition:transform 0.1s,background 0.1s;';
+  micBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+    <line x1="12" y1="19" x2="12" y2="23"/>
+    <line x1="8" y1="23" x2="16" y2="23"/>
+  </svg>`;
+  micBtn.onmouseover = () => { micBtn.style.background = '#b91c1c'; micBtn.style.transform = 'scale(1.1)'; };
+  micBtn.onmouseout  = () => { micBtn.style.background = '#dc2626'; micBtn.style.transform = ''; };
+  micBtn.onclick     = () => dtOpenFloatingModal('tx');
+  wrap.appendChild(micBtn);
+
   container.innerHTML = '';
   container.appendChild(wrap);
   _renderATContent();
