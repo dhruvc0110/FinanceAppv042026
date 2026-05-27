@@ -1931,6 +1931,22 @@ function queryVal(sql, params) {
   } catch (e) { return null; }
 }
 
+// Find the current "leaf" content container for in-page re-renders.
+//
+// Inside a composite page (Account Tracker, Financial Statements,
+// Transactions, Transact Equity) this returns the inner sub-tab content div
+// so a click handler that calls e.g. `_renderCCPage()` with no argument
+// won't wipe out the outer tab bar. On standalone pages (Dashboard, Budget,
+// Settings) all the composite IDs are absent and this falls through to
+// `pageContent`, which is the original behavior.
+function _getActiveContent() {
+  return document.getElementById('atContent')
+      || document.getElementById('fsContent')
+      || document.getElementById('txComboContent')
+      || document.getElementById('teContent')
+      || document.getElementById('pageContent');
+}
+
 // ════════════════════════════════════════════════════════════
 // FORMAT HELPERS
 // ════════════════════════════════════════════════════════════
@@ -2071,7 +2087,7 @@ function renderFinancialStatements(container) {
   _renderFSPage(container);
 }
 function _renderFSPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
   const wrap = document.createElement('div');
   wrap.className = 'flex flex-col h-full';
   const tabs = [
@@ -2120,7 +2136,7 @@ function renderAccountTracker(container) {
   _renderATPage(container);
 }
 function _renderATPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
   const wrap = document.createElement('div');
   wrap.className = 'flex flex-col h-full';
   const tabs = [
@@ -2181,7 +2197,7 @@ function atSetTab(tab) {
 
 // ── Review Equity (Summary only) ─────────────────────────────
 function renderReviewEquity(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
   // Force summary-only mode: no Buy/Vest button, no tab bar
   equityTab        = 'summary';
   equitySortCol    = 'ticker';
@@ -2201,7 +2217,7 @@ function renderTransactEquity(container) {
   _renderTEPage(container);
 }
 function _renderTEPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
   const wrap = document.createElement('div');
   wrap.className = 'flex flex-col h-full';
   const tabs = [
@@ -2487,7 +2503,7 @@ function renderTransactions(container) {
   _renderTxComboPage(container);
 }
 function _renderTxComboPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
   const wrap = document.createElement('div');
   wrap.className = 'flex flex-col h-full';
   const tabBar = document.createElement('div');
@@ -2567,7 +2583,7 @@ function renderDashboard(container) {
 }
 
 function _renderDashboard(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const cp  = currentPeriod();
   const ytd = ytdPeriods();
@@ -3015,7 +3031,7 @@ function _renderTransactionsInner(container) {
 }
 
 function _renderTxPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // ── Data load ──────────────────────────────────────────────
   const accounts = query("SELECT id, code, name, hasSubAccounts FROM Account WHERE isActive = 1 ORDER BY code ASC");
@@ -3821,7 +3837,7 @@ function renderPL(container) {
 }
 
 function _renderPLPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const cp       = currentPeriod();
   // Lock/proj only meaningful for single-period view
@@ -4158,7 +4174,7 @@ function renderBS(container) {
 }
 
 function _renderBSPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // Cumulative balances — all transactions up to and including bsPeriod
   const drMap={}, crMap={};
@@ -4410,7 +4426,7 @@ function renderBudget(container) {
 }
 
 function _renderBudgetPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // Build the 6-period window
   const now = new Date();
@@ -4795,7 +4811,7 @@ function renderAI(container) {
 }
 
 function _renderAIPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // Accounts flagged for inquiry, with type info
   const accounts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 AND showOnInquiry=1 ORDER BY type, code`);
@@ -5103,7 +5119,7 @@ function renderSettings(container) {
 }
 
 function _renderSettingsPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const IC = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white';
 
@@ -7959,7 +7975,7 @@ function renderFutureTransactions(container) {
 }
 
 function _renderFTPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
   const subRows = query("SELECT id,accountId,code,name FROM SubAccount WHERE isActive=1 ORDER BY name ASC");
@@ -8234,7 +8250,7 @@ function renderCreditCards(container) {
 }
 
 function _renderCCPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const cards = query(`
     SELECT cc.id, cc.name, cc.creditLimit, cc.paymentDueDay, cc.status,
@@ -8404,7 +8420,7 @@ function renderBankAccounts(container) {
 }
 
 function _renderBAPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const accounts = query(`
     SELECT ba.id, ba.name, ba.type, ba.assetAccountId, a.name AS assetName, a.code AS assetCode
@@ -8567,7 +8583,7 @@ function renderImportTransactions(container) {
 }
 
 function _renderITPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const pendingBatches = query(`SELECT db.*, st.cardNickname AS tplName
     FROM DraftBatch db LEFT JOIN ScreenshotTemplate st ON db.templateId=st.id
@@ -10173,7 +10189,7 @@ let dupTab       = 'pending';  // 'pending' | 'flagged' | 'dismissed' — preser
 // REPEATABLE — standalone tab inside Transactions
 // ════════════════════════════════════════════════════════════
 function renderRepeatableInner(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // Load account pickers for the modal
   window._acctPickerAccounts = query(
@@ -10366,7 +10382,7 @@ function renderDuplicates(container) {
 }
 
 function _renderDupPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const ic = 'border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400 bg-white';
 
@@ -10964,7 +10980,7 @@ function renderAccruals(container) {
 }
 
 function _renderAccrualsPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   // Parent accrual accounts — LIABILITY role only
   const parents = query(`
@@ -11294,7 +11310,7 @@ let pbsProjectOption = '3M';
 function renderProjectedBS(container) { _renderPBSPage(container); }
 
 function _renderPBSPage(container) {
-  if (!container) container = document.getElementById('pageContent');
+  if (!container) container = _getActiveContent();
 
   const cp  = currentPeriod();
   const now = new Date();
