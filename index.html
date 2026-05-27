@@ -83,6 +83,36 @@
     body.dark-mode .price-manual { background: #422006 !important; }
    .bn-dot { position:absolute;top:3px;right:3px;width:7px;height:7px;background:#3b82f6;border-radius:50%;pointer-events:none; }
 body.dark-mode .bn-dot { background:#60a5fa; }
+
+  /* ───── Responsive table → card layout (POC: applied to .table-mobile-cards) ─────
+     Below the `md` breakpoint (<768px), tables marked with `.table-mobile-cards`
+     turn into a vertical stack of cards: each row becomes a card; each cell
+     becomes a labelled key:value line using its `data-label` attribute.
+     Above that breakpoint, the table renders normally. */
+  @media (max-width: 767px) {
+    table.table-mobile-cards { min-width: 0 !important; }
+    table.table-mobile-cards thead { display: none; }
+    table.table-mobile-cards, table.table-mobile-cards tbody,
+    table.table-mobile-cards tr, table.table-mobile-cards td { display: block; width: 100%; }
+    table.table-mobile-cards tr {
+      border: 1px solid #e2e8f0; border-radius: 0.5rem;
+      margin-bottom: 0.625rem; padding: 0.5rem 0.75rem; background: #fff;
+    }
+    body.dark-mode table.table-mobile-cards tr { background: #1e293b; border-color: #334155; }
+    table.table-mobile-cards td {
+      padding: 0.25rem 0 !important; text-align: left !important;
+      max-width: none !important; white-space: normal !important; border-top: 0 !important;
+      display: flex; align-items: baseline; gap: 0.5rem;
+    }
+    table.table-mobile-cards td::before {
+      content: attr(data-label);
+      font-weight: 600; color: #64748b; font-size: 0.6875rem;
+      text-transform: uppercase; letter-spacing: 0.03em;
+      flex: 0 0 7rem; min-width: 7rem;
+    }
+    table.table-mobile-cards td[data-label=""]::before,
+    table.table-mobile-cards td:not([data-label])::before { content: none; }
+  }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -296,7 +326,7 @@ body.dark-mode .bn-dot { background:#60a5fa; }
     <!-- Lock warning banner (hidden until another device holds the lock) -->
     <div id="lockBanner" style="display:none" class="border-b px-6 py-2 flex items-center justify-between gap-4 flex-shrink-0"></div>
 
-    <div id="pageContent" class="p-6 max-w-7xl mx-auto w-full flex-1"></div>
+    <div id="pageContent" class="p-6 w-full flex-1"></div>
   </main>
 
 </div><!-- /mainApp -->
@@ -3006,10 +3036,10 @@ function _txOrderBy() {
   return `${col} ${d}, t.id ${d}`;
 }
 
-function _txSortTh(col, label, align) {
+function _txSortTh(col, label, align, extraCls) {
   const active = txSortCol === col;
   const arrow  = active ? (txSortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  const cls    = `px-3 py-2.5 text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
+  const cls    = `px-3 py-2.5 ${extraCls||''} text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
   return `<th class="${cls}" onclick="txSetSort('${col}')">${label}${arrow}</th>`;
 }
 
@@ -3103,7 +3133,7 @@ function _renderTxPage(container) {
     return `
       <tr class="border-t border-slate-100 hover:bg-slate-50 group">
         <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-        <td class="px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
+        <td class="hidden md:table-cell px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
         <td class="px-3 py-2 text-sm text-slate-800 max-w-xs">
           <div class="flex items-center gap-1">
             ${isDup ? `<span onclick="navigate('duplicates')" title="Possible duplicate" class="text-orange-400 cursor-pointer flex-shrink-0">&#9873;</span>` : ''}
@@ -3113,9 +3143,9 @@ function _renderTxPage(container) {
         <td class="px-3 py-2 text-sm font-medium text-slate-800 text-right whitespace-nowrap">${fmtCurrency(r.amount, 2)}</td>
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
         <td class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
-        <td class="px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
-        <td class="px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
-        <td class="px-3 py-2 text-center">
+        <td class="hidden lg:table-cell px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
+        <td class="hidden md:table-cell px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
+        <td class="hidden md:table-cell px-3 py-2 text-center">
           <input type="checkbox" ${r.isReconciled ? 'checked' : ''}
             onchange="txToggleReconcile('${r.id}', this.checked)"
             class="w-4 h-4 cursor-pointer accent-slate-700">
@@ -3266,18 +3296,18 @@ function _renderTxPage(container) {
       <!-- Table -->
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div class="overflow-x-auto" style="max-height:60vh;overflow-y:auto;">
-          <table class="w-full min-w-[760px]">
+          <table class="w-full md:min-w-[760px]">
             <thead class="bg-slate-50 border-b border-slate-200" style="position:sticky;top:0;z-index:10;">
               <tr>
                 ${_txSortTh('trxDate',     'Date')}
-                ${_txSortTh('createdAt',   'Created')}
+                ${_txSortTh('createdAt',   'Created', 'left', 'hidden md:table-cell')}
                 ${_txSortTh('description', 'Description')}
                 ${_txSortTh('amount',      'Amount', 'right')}
                 ${_txSortTh('drName',      'DR Account')}
                 ${_txSortTh('crName',      'CR Account')}
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
-                <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
-                <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
+                <th class="hidden lg:table-cell px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
+                <th class="hidden md:table-cell px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
+                <th class="hidden md:table-cell px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Manage Transaction</th>
               </tr>
             </thead>
@@ -10240,16 +10270,16 @@ function renderRepeatableInner(container) {
     const rows = grouped[type].map(r => {
       const isActive = r.status === 'ACTIVE';
       return `<tr class="border-t border-slate-100 hover:bg-slate-50 ${isActive ? '' : 'opacity-50'}">
-        <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(r.name)}</td>
-        <td class="px-3 py-2 text-sm text-slate-600">${escHtml(r.description || '')}</td>
-        <td class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount, 2)}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode || '')} ${escHtml(r.drName || '')}</td>
-        <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode || '')} ${escHtml(r.crName || '')}</td>
-        <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth || '&mdash;'}</td>
-        <td class="px-3 py-2 text-center">
+        <td data-label="Name" class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(r.name)}</td>
+        <td data-label="Description" class="px-3 py-2 text-sm text-slate-600">${escHtml(r.description || '')}</td>
+        <td data-label="Amount" class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount, 2)}</td>
+        <td data-label="DR Account" class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode || '')} ${escHtml(r.drName || '')}</td>
+        <td data-label="CR Account" class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode || '')} ${escHtml(r.crName || '')}</td>
+        <td data-label="Day" class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth || '&mdash;'}</td>
+        <td data-label="Status" class="px-3 py-2 text-center">
           <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}">${r.status}</span>
         </td>
-        <td class="px-3 py-2 text-right whitespace-nowrap">
+        <td data-label="Actions" class="px-3 py-2 text-right whitespace-nowrap">
           <button onclick="repPlay('${r.id}')"
             class="text-xs bg-blue-600 text-white rounded px-2 py-0.5 hover:bg-blue-700 mr-1 font-medium"
             title="Create a transaction from this template now">&#9654; Play</button>
@@ -10266,7 +10296,7 @@ function renderRepeatableInner(container) {
         <span class="text-xs text-slate-400">${grouped[type].length} template${grouped[type].length !== 1 ? 's' : ''}</span>
       </div>
       <div class="rounded-lg border border-slate-200 overflow-x-auto mt-1">
-        <table class="w-full min-w-[760px]">${thead}<tbody>${rows}</tbody></table>
+        <table class="w-full md:min-w-[760px] table-mobile-cards">${thead}<tbody>${rows}</tbody></table>
       </div>
     </div>`;
   }).join('');
