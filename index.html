@@ -1967,7 +1967,17 @@ function startApp() {
   _startInactivityTimer();
   _initBudgetNoteDrag();
   _historyReady = true;
-  navigate('dashboard');
+  // PWA shortcut deep-link: ?startPage=...&sub=... lets long-press
+  // shortcuts (declared in manifest.webmanifest) jump straight to a page.
+  const _qp        = new URLSearchParams(location.search);
+  const _startPage = _qp.get('startPage') || 'dashboard';
+  const _startSub  = _qp.get('sub');
+  navigate(_startPage);
+  if (_startSub) _switchSub(_startPage, _startSub);
+  // Strip launch params so a manual reload doesn't keep re-firing the shortcut.
+  if (_qp.has('startPage') || _qp.has('sub')) {
+    history.replaceState(history.state, '', location.pathname);
+  }
 }
 // ════════════════════════════════════════════════════════════
 // SQL HELPERS

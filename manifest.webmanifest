@@ -9,7 +9,39 @@
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "icon.svg",          "sizes": "any",     "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-maskable.svg", "sizes": "any",     "type": "image/svg+xml", "purpose": "maskable" },
+    { "src": "icon.svg",          "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg",          "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dictate Transaction",
+      "short_name": "Dictate",
+      "description": "Capture a transaction by voice or text",
+      "url": "./?startPage=transactions&sub=dictate-transaction",
+      "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Transactions",
+      "short_name": "Trxns",
+      "description": "View recent transactions",
+      "url": "./?startPage=transactions",
+      "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Future Transactions",
+      "short_name": "Future",
+      "description": "Planned transactions",
+      "url": "./?startPage=transactions&sub=future-transactions",
+      "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "Dashboard overview",
+      "url": "./?startPage=dashboard",
+      "icons": [{ "src": "icon.svg", "sizes": "192x192", "type": "image/svg+xml" }]
+    }
   ]
 }

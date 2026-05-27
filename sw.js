@@ -15,12 +15,13 @@
 //
 // To force a refresh, bump the CACHE name.
 
-const CACHE = 'finapp-shell-v1';
+const CACHE = 'finapp-shell-v2';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-maskable.svg',
 ];
 
 self.addEventListener('install', e => {
