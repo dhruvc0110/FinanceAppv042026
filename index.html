@@ -1966,6 +1966,7 @@ function startApp() {
   _updateSidebarTxCount();
   _startInactivityTimer();
   _initBudgetNoteDrag();
+  _historyReady = true;
   navigate('dashboard');
 }
 // ════════════════════════════════════════════════════════════
@@ -2115,7 +2116,67 @@ function navigate(page) {
   else if (page === 'accruals')             renderAccruals(container);
   else if (page === 'equity')               renderTransactEquity(container); // old key → new page
   else renderPlaceholder(container, page);
+  _pushNavState(page, _currentSub(page));
 }
+
+// ════════════════════════════════════════════════════════════
+// BROWSER BACK GESTURE — synthetic history for in-app navigation
+// ════════════════════════════════════════════════════════════
+// Every navigate() and composite sub-tab change pushes a state entry
+// tagged { __finapp, page, sub }. popstate restores the previous entry.
+// The URL is never changed (pushState with no URL arg), so reloads on
+// GitHub Pages stay safe and tabs are not deep-linkable (by design).
+// _historyReady gates pushes until post-login, suppressing the orphan
+// navigate('transactions') at line ~11119 that runs at script load.
+let _historyReady = false;
+let _navFromPop   = false;
+
+function _currentSub(page) {
+  if (page === 'transactions')         return _txComboTab;
+  if (page === 'account-tracker')      return _atTab;
+  if (page === 'review-equity')        return _teTab;
+  if (page === 'financial-statements') return _fsTab;
+  if (page === 'settings')             return settingsTab;
+  return null;
+}
+
+function _switchSub(page, sub) {
+  if (!sub) return;
+  if      (page === 'transactions')         txComboSetTab(sub);
+  else if (page === 'account-tracker')      atSetTab(sub);
+  else if (page === 'review-equity')        teSetTab(sub);
+  else if (page === 'financial-statements') fsSetTab(sub);
+  else if (page === 'settings')             settingsGoTab(sub);
+}
+
+function _pushNavState(page, sub) {
+  if (!_historyReady || _navFromPop) return;
+  const cur  = history.state;
+  const next = { __finapp: true, page, sub: sub || null };
+  if (!cur || !cur.__finapp) {
+    history.replaceState(next, '');     // first entry — anchor instead of push
+  } else if (cur.page === next.page && cur.sub === next.sub) {
+    return;                              // dedupe identical entries
+  } else {
+    history.pushState(next, '');
+  }
+}
+
+window.addEventListener('popstate', (e) => {
+  const s = e.state;
+  if (!s || !s.__finapp) return;        // not ours — let browser handle
+  _navFromPop = true;
+  try {
+    if (s.page !== currentPage) {
+      navigate(s.page);
+    }
+    if (s.sub && s.sub !== _currentSub(s.page)) {
+      _switchSub(s.page, s.sub);
+    }
+  } finally {
+    _navFromPop = false;
+  }
+});
 
 function toggleSidebar() {
   sidebarCollapsed = !sidebarCollapsed;
@@ -2186,6 +2247,7 @@ function fsSetTab(tab) {
   const barEl = document.querySelector('#fsContent')?.previousElementSibling;
   if (barEl) barEl.innerHTML = _pageTabBar(tabs, _fsTab, 'fsSetTab');
   _renderFSContent();
+  _pushNavState('financial-statements', tab);
 }
 
 // ── Account Tracker ──────────────────────────────────────────
@@ -2253,6 +2315,7 @@ function atSetTab(tab) {
   const barEl = document.querySelector('#atContent')?.previousElementSibling;
   if (barEl) barEl.innerHTML = _pageTabBar(tabs, _atTab, 'atSetTab');
   _renderATContent();
+  _pushNavState('account-tracker', tab);
 }
 
 // ── Review Equity (Summary only) ─────────────────────────────
@@ -2543,6 +2606,7 @@ function teSetTab(tab) {
   const barEl = document.querySelector('#teContent')?.previousElementSibling;
   if (barEl) barEl.innerHTML = _pageTabBar(tabs, _teTab, 'teSetTab');
   _renderTEContent();
+  _pushNavState('review-equity', tab);
 }
 
 // ── Transactions composite page ──────────────────────────────
@@ -2607,6 +2671,7 @@ function txComboSetTab(tab) {
   const barEl = document.querySelector('#txComboContent')?.previousElementSibling;
   if (barEl) barEl.innerHTML = _pageTabBar(_visibleTxComboTabs(), _txComboTab, 'txComboSetTab');
   _renderTxComboContent();
+  _pushNavState('transactions', tab);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -6353,7 +6418,11 @@ function _renderSettingsPage(container) {
     </div>`;
 }
 
-function settingsGoTab(tab) { settingsTab=tab; _renderSettingsPage(); }
+function settingsGoTab(tab) {
+  settingsTab = tab;
+  _renderSettingsPage();
+  _pushNavState('settings', tab);
+}
 
 function settingsGoArea(areaId) {
   // When an area is selected, switch to its first tab
@@ -6364,8 +6433,7 @@ function settingsGoArea(areaId) {
     datamanagement: 'exportdata',
     about:          'stats',
   };
-  settingsTab = AREA_DEFAULTS[areaId] || 'coa';
-  _renderSettingsPage();
+  settingsGoTab(AREA_DEFAULTS[areaId] || 'coa');
 }
 
 // ── Credit Card Templates tab (moved from Import Transactions) ──
