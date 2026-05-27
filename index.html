@@ -4845,6 +4845,14 @@ let aiPeriod = '';
 let aiOpenId = null;
 let aiPeriodFrom = '';
 let aiPeriodTo   = '';
+// Sort state for the expanded per-account transaction list. Default: newest first.
+let _aiTxSortCol = 'trxDate';
+let _aiTxSortDir = 'desc';
+function aiTxSetSort(col, accountId) {
+  if (_aiTxSortCol === col) _aiTxSortDir = _aiTxSortDir === 'asc' ? 'desc' : 'asc';
+  else { _aiTxSortCol = col; _aiTxSortDir = 'desc'; }
+  aiInjectPanel(accountId);
+}
 
 function renderAI(container) {
   const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
@@ -5047,6 +5055,23 @@ function aiInjectPanel(accountId) {
   const pList = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period ASC`)
     .map(r=>r.period).filter(p=>p>=pFrom&&p<=pTo).map(p=>`'${p}'`).join(',');
 
+  const _orderBy = () => {
+    const map = {
+      trxDate:     't.trxDate',
+      description: 'LOWER(t.description)',
+      amount:      'CAST(t.amount AS REAL)',
+    };
+    const col = map[_aiTxSortCol] || 't.trxDate';
+    const d   = _aiTxSortDir.toUpperCase();
+    return `${col} ${d}, t.id ${d}`;
+  };
+  const sortTh = (col, label, align) => {
+    const active = _aiTxSortCol === col;
+    const arrow  = active ? (_aiTxSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const cls    = `px-3 py-2 text-${align||'left'} text-xs font-semibold uppercase cursor-pointer select-none transition-colors ${active ? 'text-slate-800' : 'text-slate-400 hover:text-slate-700'}`;
+    return `<th class="${cls}" onclick="aiTxSetSort('${col}', '${accountId}')">${label}${arrow}</th>`;
+  };
+
   const txs = pList ? query(`
     SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled,
       t.drAccountId, t.crAccountId,
@@ -5059,7 +5084,7 @@ function aiInjectPanel(accountId) {
     LEFT JOIN SubAccount cs ON t.crSubId   = cs.id
     WHERE (t.drAccountId='${accountId}' OR t.crAccountId='${accountId}')
       AND t.period IN (${pList})
-    ORDER BY t.trxDate ASC
+    ORDER BY ${_orderBy()}
   `) : [];
 
   const isNatDR = acct.type==='ASSET' || acct.type==='EXPENSE';
@@ -5129,9 +5154,9 @@ function aiInjectPanel(accountId) {
        <table class="w-full md:min-w-[640px] table-mobile-cards">
          <thead class="border-b border-slate-100 bg-slate-50">
            <tr>
-             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
-             <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Effect</th>
+             ${sortTh('trxDate',     'Date')}
+             ${sortTh('description', 'Description')}
+             ${sortTh('amount',      'Effect', 'right')}
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Sub-Account</th>
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
@@ -8313,6 +8338,14 @@ function ftDeleteRow(id) {
 // ════════════════════════════════════════════════════════════
 
 let ccOpenId = null;
+// Sort state for the expanded per-card transaction list. Default: newest first.
+let _ccTxSortCol = 'trxDate';
+let _ccTxSortDir = 'desc';
+function ccTxSetSort(col, ccId) {
+  if (_ccTxSortCol === col) _ccTxSortDir = _ccTxSortDir === 'asc' ? 'desc' : 'asc';
+  else { _ccTxSortCol = col; _ccTxSortDir = 'desc'; }
+  ccInjectPanel(ccId);
+}
 
 function renderCreditCards(container) {
   // ccOpenId intentionally preserved across navigation so sub-tab switches
@@ -8431,6 +8464,23 @@ function ccInjectPanel(ccId) {
     FROM CreditCard cc JOIN Account la ON cc.liabilityAccountId = la.id WHERE cc.id='${ccId}'`)[0];
   if (!card) return;
 
+  const _orderBy = () => {
+    const map = {
+      trxDate:     't.trxDate',
+      description: 'LOWER(t.description)',
+      amount:      'CAST(t.amount AS REAL)',
+    };
+    const col = map[_ccTxSortCol] || 't.trxDate';
+    const d   = _ccTxSortDir.toUpperCase();
+    return `${col} ${d}`;
+  };
+  const sortTh = (col, label, align) => {
+    const active = _ccTxSortCol === col;
+    const arrow  = active ? (_ccTxSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const cls    = `px-3 py-2 text-${align||'left'} text-xs font-semibold uppercase cursor-pointer select-none transition-colors ${active ? 'text-slate-800' : 'text-slate-400 hover:text-slate-700'}`;
+    return `<th class="${cls}" onclick="ccTxSetSort('${col}', '${ccId}')">${label}${arrow}</th>`;
+  };
+
   const txs = query(`
     SELECT t.trxDate, t.description, t.amount,
       da.name AS drName, ca.name AS crName, t.isReconciled
@@ -8438,7 +8488,7 @@ function ccInjectPanel(ccId) {
     LEFT JOIN Account da ON t.drAccountId = da.id
     LEFT JOIN Account ca ON t.crAccountId = ca.id
     WHERE t.drAccountId='${card.liabilityAccountId}' OR t.crAccountId='${card.liabilityAccountId}'
-    ORDER BY t.trxDate DESC
+    ORDER BY ${_orderBy()}
     LIMIT 50`);
 
   const rowsHtml = txs.length ? txs.map(tx => {
@@ -8467,9 +8517,9 @@ function ccInjectPanel(ccId) {
       <table class="w-full md:min-w-[480px] table-mobile-cards">
         <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
           <tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
-            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+            ${sortTh('trxDate',     'Date')}
+            ${sortTh('description', 'Description')}
+            ${sortTh('amount',      'Amount', 'right')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Type</th>
           </tr>
         </thead>
@@ -8485,6 +8535,14 @@ function ccInjectPanel(ccId) {
 // BANK ACCOUNT TRACKER PAGE
 // ════════════════════════════════════════════════════════════
 let baOpenId = null;
+// Sort state for the expanded per-bank-account transaction list. Default: newest first.
+let _baTxSortCol = 'trxDate';
+let _baTxSortDir = 'desc';
+function baTxSetSort(col, baId) {
+  if (_baTxSortCol === col) _baTxSortDir = _baTxSortDir === 'asc' ? 'desc' : 'asc';
+  else { _baTxSortCol = col; _baTxSortDir = 'desc'; }
+  baInjectPanel(baId);
+}
 
 function renderBankAccounts(container) {
   // baOpenId intentionally preserved across navigation. See renderCreditCards.
@@ -8566,6 +8624,23 @@ function baInjectPanel(baId) {
     WHERE ba.id='${baId}'`)[0];
   if (!ba || !ba.assetAccountId) return;
 
+  const _orderBy = () => {
+    const map = {
+      trxDate:     't.trxDate',
+      description: 'LOWER(t.description)',
+      amount:      'CAST(t.amount AS REAL)',
+    };
+    const col = map[_baTxSortCol] || 't.trxDate';
+    const d   = _baTxSortDir.toUpperCase();
+    return `${col} ${d}`;
+  };
+  const sortTh = (col, label, align) => {
+    const active = _baTxSortCol === col;
+    const arrow  = active ? (_baTxSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const cls    = `px-3 py-2 text-${align||'left'} text-xs font-semibold uppercase cursor-pointer select-none transition-colors ${active ? 'text-slate-800' : 'text-slate-400 hover:text-slate-700'}`;
+    return `<th class="${cls}" onclick="baTxSetSort('${col}', '${baId}')">${label}${arrow}</th>`;
+  };
+
   const txs = query(`
     SELECT t.trxDate, t.description, t.amount,
       da.name AS drName, ca.name AS crName, t.isReconciled,
@@ -8574,7 +8649,7 @@ function baInjectPanel(baId) {
     LEFT JOIN Account da ON t.drAccountId = da.id
     LEFT JOIN Account ca ON t.crAccountId = ca.id
     WHERE t.drAccountId='${ba.assetAccountId}' OR t.crAccountId='${ba.assetAccountId}'
-    ORDER BY t.trxDate DESC
+    ORDER BY ${_orderBy()}
     LIMIT 50`);
 
   const rowsHtml = txs.length ? txs.map(tx => {
@@ -8604,9 +8679,9 @@ function baInjectPanel(baId) {
       <table class="w-full min-w-[480px]">
         <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
           <tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
-            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Amount</th>
+            ${sortTh('trxDate',     'Date')}
+            ${sortTh('description', 'Description')}
+            ${sortTh('amount',      'Amount', 'right')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
           </tr>
         </thead>
@@ -11039,6 +11114,45 @@ let accrualPeriod     = '';
 let accrualPeriodFrom = '';
 let accrualPeriodTo   = '';
 let accrualOpenSubId  = null; // currently open tile sub-account id
+// Sort state for the expanded per-sub-account transaction list. Default: newest first.
+let _acTxSortCol = 'trxDate';
+let _acTxSortDir = 'desc';
+function accrualTxSetSort(col, subId) {
+  if (_acTxSortCol === col) _acTxSortDir = _acTxSortDir === 'asc' ? 'desc' : 'asc';
+  else { _acTxSortCol = col; _acTxSortDir = 'desc'; }
+  _accrualReinject(subId);
+}
+// Rebuild + inject the accruals detail panel for the given subId WITHOUT
+// going through accrualTileClick's toggle-off branch. Used by the sort
+// handler so clicking a column header doesn't close the panel.
+function _accrualReinject(subId) {
+  const pFrom = accrualPeriodFrom <= accrualPeriodTo ? accrualPeriodFrom : accrualPeriodTo;
+  const pTo   = accrualPeriodFrom <= accrualPeriodTo ? accrualPeriodTo   : accrualPeriodFrom;
+  const actPList  = query(`SELECT DISTINCT period FROM "Transaction" WHERE period>='${pFrom}' AND period<='${pTo}'`)
+    .map(r => `'${r.period}'`).join(',');
+  const prevPList = query(`SELECT DISTINCT period FROM "Transaction" WHERE period<'${pFrom}'`)
+    .map(r => `'${r.period}'`).join(',');
+  const subRow = query(`SELECT s.id, s.code, s.name, a.type, a.role, a.name AS parentName
+    FROM SubAccount s JOIN Account a ON s.accountId=a.id WHERE s.id='${subId}'`)[0];
+  if (!subRow) return;
+  function subBal(id, type, pList) {
+    if (!pList) return 0;
+    const dr = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE drSubId='${id}' AND period IN (${pList})`) || 0;
+    const cr = queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE crSubId='${id}' AND period IN (${pList})`) || 0;
+    return (type==='ASSET'||type==='EXPENSE') ? dr-cr : cr-dr;
+  }
+  const tile = {
+    subId, code: subRow.code, name: subRow.name, type: subRow.type, role: subRow.role,
+    parentName: subRow.parentName,
+    opening:  subBal(subId, subRow.type, prevPList),
+    activity: subBal(subId, subRow.type, actPList),
+    closing:  0,
+  };
+  tile.closing = tile.opening + tile.activity;
+  const old = document.getElementById('accrualDetailPanel');
+  if (old) old.remove();
+  _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList);
+}
 
 function renderAccruals(container) {
   const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
@@ -11269,6 +11383,23 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
   const anchor  = allTiles[lastIdx];
 
   // Fetch transactions for this sub-account in the period range
+  const _orderBy = () => {
+    const map = {
+      trxDate:     't.trxDate',
+      description: 'LOWER(t.description)',
+      amount:      'CAST(t.amount AS REAL)',
+    };
+    const col = map[_acTxSortCol] || 't.trxDate';
+    const d   = _acTxSortDir.toUpperCase();
+    return `${col} ${d}`;
+  };
+  const sortTh = (col, label, align) => {
+    const active = _acTxSortCol === col;
+    const arrow  = active ? (_acTxSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const cls    = `px-3 py-2 text-${align||'left'} text-xs font-semibold uppercase cursor-pointer select-none transition-colors ${active ? 'text-slate-800' : 'text-slate-400 hover:text-slate-700'}`;
+    return `<th class="${cls}" onclick="accrualTxSetSort('${col}', '${tile.subId}')">${label}${arrow}</th>`;
+  };
+
   const txs = actPList ? query(`
     SELECT t.trxDate, t.description, t.amount, t.isReconciled,
       t.drAccountId, t.crAccountId, t.drSubId, t.crSubId,
@@ -11278,7 +11409,7 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
     LEFT JOIN Account ca ON t.crAccountId = ca.id
     WHERE (t.drSubId='${tile.subId}' OR t.crSubId='${tile.subId}')
       AND t.period IN (${actPList})
-    ORDER BY t.trxDate ASC
+    ORDER BY ${_orderBy()}
   `) : [];
 
   const isNatDR = tile.type === 'ASSET' || tile.type === 'EXPENSE';
@@ -11349,9 +11480,9 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
       <table class="w-full min-w-[500px]">
         <thead class="border-b border-slate-100 bg-slate-50">
           <tr>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Date</th>
-            <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Description</th>
-            <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Effect</th>
+            ${sortTh('trxDate',     'Date')}
+            ${sortTh('description', 'Description')}
+            ${sortTh('amount',      'Effect', 'right')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
             <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Rec</th>
