@@ -2540,6 +2540,13 @@ function teSetTab(tab) {
 // ── Transactions composite page ──────────────────────────────
 // Tabs: Transactions | Future Transactions | Import Transactions | Duplicates
 let _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
+// Visibility of the Dictate sub-tab inside the Transactions composite page,
+// driven by the Display tab toggle (gcToggleDictateTab). Floating mic button
+// is unaffected. Declared here so it's initialised BEFORE any top-level code
+// that might call `_visibleTxComboTabs()` during script load — including the
+// pre-existing dead-tail at the end of repPlaySave that calls
+// navigate('transactions') at module init time.
+let _showDictateTab = localStorage.getItem('show-dictate-tab') !== 'false'; // default: show
 
 const _TX_COMBO_TABS = [
   { id: 'transactions',         label: 'Transactions' },
@@ -2549,6 +2556,12 @@ const _TX_COMBO_TABS = [
   { id: 'dictate-transaction',  label: 'Dictate Transaction' },
   { id: 'duplicates',           label: 'Duplicates' },
 ];
+
+// Returns the user-visible subset of _TX_COMBO_TABS, applying the
+// Show/Hide Dictate Sub-tab preference from the Display settings.
+function _visibleTxComboTabs() {
+  return _TX_COMBO_TABS.filter(t => !(t.id === 'dictate-transaction' && !_showDictateTab));
+}
 
 function renderTransactions(container) {
   _txComboTab = localStorage.getItem('_txComboTab') || 'transactions';
@@ -2560,7 +2573,7 @@ function _renderTxComboPage(container) {
   wrap.className = 'flex flex-col h-full';
   const tabBar = document.createElement('div');
   tabBar.className = 'flex-shrink-0';
-  tabBar.innerHTML = _pageTabBar(_TX_COMBO_TABS, _txComboTab, 'txComboSetTab');
+  tabBar.innerHTML = _pageTabBar(_visibleTxComboTabs(), _txComboTab, 'txComboSetTab');
   const content = document.createElement('div');
   content.id = 'txComboContent';
   content.className = 'flex-1 overflow-auto';
@@ -2584,7 +2597,7 @@ function txComboSetTab(tab) {
   _txComboTab = tab;
   localStorage.setItem('_txComboTab', tab);
   const barEl = document.querySelector('#txComboContent')?.previousElementSibling;
-  if (barEl) barEl.innerHTML = _pageTabBar(_TX_COMBO_TABS, _txComboTab, 'txComboSetTab');
+  if (barEl) barEl.innerHTML = _pageTabBar(_visibleTxComboTabs(), _txComboTab, 'txComboSetTab');
   _renderTxComboContent();
 }
 
@@ -5802,6 +5815,25 @@ function _renderSettingsPage(container) {
         <p class="text-xs text-slate-400 mt-2">
           ${_showAcctCode?'Account codes are visible on all pages.':'Account codes are hidden on all pages.'}&ensp;
           Chart of Accounts is always unaffected.
+        </p>
+      </div>
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Dictate Sub-tab</h3>
+        <div class="flex gap-2">
+          <button onclick="gcToggleDictateTab(true)"
+            class="gc-btn ${_showDictateTab?'bg-slate-900 border-slate-900':'border-slate-300 !text-slate-500'}">
+            Show Dictate Tab
+          </button>
+          <button onclick="gcToggleDictateTab(false)"
+            class="gc-btn ${!_showDictateTab?'bg-slate-900 border-slate-900':'border-slate-300 !text-slate-500'}">
+            Hide Dictate Tab
+          </button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">
+          ${_showDictateTab
+            ? 'The Dictate Transaction sub-tab appears under Transactions.'
+            : 'The Dictate Transaction sub-tab is hidden from under Transactions.'}&ensp;
+          The floating mic button is always available.
         </p>
       </div>
     </div>`;
@@ -13443,6 +13475,8 @@ let _showAcctCode = localStorage.getItem('show-acct-code') !== 'false'; // defau
 // View mode: 'auto' | 'phone' | 'tablet' | 'desktop'. Resolves into the
 // html.use-cards / html.use-tablet-hide classes that drive the responsive CSS.
 let _viewMode    = localStorage.getItem('view-mode')      || 'auto';
+// _showDictateTab is declared earlier in the file (near _TX_COMBO_TABS) so
+// it's initialised before any top-level code can call _visibleTxComboTabs().
 
 // ── Account-code render helpers ───────────────────────────
 // When _showAcctCode is false these return '' so no layout change needed.
@@ -13469,6 +13503,19 @@ function gcToggleAcctCode(show) {
   _showAcctCode = show;
   localStorage.setItem('show-acct-code', show ? 'true' : 'false');
   navigate(currentPage); // re-render current page
+}
+
+function gcToggleDictateTab(show) {
+  _showDictateTab = show;
+  localStorage.setItem('show-dictate-tab', show ? 'true' : 'false');
+  // If we just hid the Dictate sub-tab while sitting on it, fall back to Transactions.
+  if (!show && _txComboTab === 'dictate-transaction') {
+    _txComboTab = 'transactions';
+    localStorage.setItem('_txComboTab', 'transactions');
+  }
+  // Re-render the Transactions composite page so the tab bar updates.
+  if (currentPage === 'transactions') navigate('transactions');
+  if (settingsTab === 'display') _renderSettingsPage();
 }
 
 function _applyTheme() {
