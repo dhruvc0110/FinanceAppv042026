@@ -2335,7 +2335,7 @@ function _renderDividendsTab(container) {
     FROM "Transaction" t
     LEFT JOIN Account da ON t.drAccountId=da.id
     LEFT JOIN Account ca ON t.crAccountId=ca.id
-    WHERE t.importSource='Equity' AND t.description LIKE 'Dividend%'
+    WHERE t.description LIKE 'Dividend%'
     ORDER BY t.trxDate DESC LIMIT 20
   `);
 
