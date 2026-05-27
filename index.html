@@ -947,7 +947,7 @@ function _initCoreSchema() {
       description TEXT, amount REAL NOT NULL,
       drAccountId TEXT, crAccountId TEXT, drSubId TEXT, crSubId TEXT,
       notes TEXT, recurrence TEXT, endDate TEXT,
-      isActive INTEGER NOT NULL DEFAULT 1,
+      isActive INTEGER NOT NULL DEFAULT 1, importSource TEXT,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS RepeatableTransaction (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
@@ -1816,6 +1816,14 @@ function startApp() {
     db.run(`ALTER TABLE "Transaction" ADD COLUMN importSource TEXT`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
+  // Ensure importSource column exists on FutureTransaction so origin is
+  // preserved through the FT → T migration (otherwise migrateFutureTransactions
+  // hardcoded 'Scheduled' and the original source — Equity, Recurring, Dictate,
+  // etc. — was lost when the future-dated row materialised).
+  try {
+    db.run(`ALTER TABLE FutureTransaction ADD COLUMN importSource TEXT`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
   // Add templateType to RepeatableTransaction (migration for existing DBs)
   try {
     db.run(`ALTER TABLE RepeatableTransaction ADD COLUMN templateType TEXT DEFAULT 'Undefined'`);
@@ -2501,8 +2509,8 @@ function divSave() {
     if (isFuture) {
       db.run(
         `INSERT INTO FutureTransaction
-         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
-         VALUES (?,?,?,?,?,?,?,NULL,?,?)`,
+         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,importSource,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,NULL,'Equity',?,?)`,
         [id, trxDate, period, desc, amount, drId, crId, now, now]
       );
     } else {
@@ -3781,8 +3789,8 @@ function txSaveForm() {
       if (isFuture) {
         db.run(
           `INSERT INTO FutureTransaction
-           (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,createdAt,updatedAt)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,importSource,createdAt,updatedAt)
+           VALUES (?,?,?,?,?,?,?,?,?,?,'Scheduled',?,?)`,
           [id, trxDate, period, desc, amt, drId, crId, drSub||null, crSub||null, notes||null, now, now]
         );
       } else {
@@ -3809,14 +3817,19 @@ function migrateFutureTransactions() {
   if (!futures.length) return;
   const now = new Date().toISOString();
   for (const ft of futures) {
+    // Preserve the FT row's importSource so the badge on the Transaction
+    // reflects the original origin (Equity / Recurring / Dictate / ...).
+    // Legacy FT rows from before the FT.importSource column existed have
+    // null importSource — fall back to 'Scheduled', matching prior behavior.
+    const src = ft.importSource || 'Scheduled';
     db.run(
       `INSERT OR IGNORE INTO "Transaction"
        (id,trxDate,period,description,amount,
         drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,createdAt,updatedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,0,'Scheduled',?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?)`,
       [ft.id, ft.trxDate, ft.period, String(ft.description), ft.amount,
        ft.drAccountId, ft.crAccountId, ft.drSubId||null, ft.crSubId||null,
-       ft.notes||null, ft.createdAt||now, now]
+       ft.notes||null, src, ft.createdAt||now, now]
     );
     db.run('DELETE FROM FutureTransaction WHERE id=?', [ft.id]);
   }
@@ -3847,8 +3860,8 @@ function generateRepeatables() {
       db.run(
         `INSERT OR IGNORE INTO FutureTransaction
          (id,trxDate,period,description,amount,
-          drAccountId,crAccountId,drSubId,crSubId,notes,createdAt,updatedAt)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          drAccountId,crAccountId,drSubId,crSubId,notes,importSource,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?,'Recurring',?,?)`,
         [txId, dateStr+'T12:00:00.000Z', cp, String(r.description), r.amount,
          r.drAccountId, r.crAccountId, r.drSubId||null, r.crSubId||null, r.notes||null, now, now]
       );
@@ -7647,8 +7660,8 @@ function xlCommit(id, rows) {
     } else if (id === 'future') {
       const period = r.date.slice(0,7).replace('-','');
       db.run(
-        `INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,recurrence,endDate,isActive,createdAt,updatedAt)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
+        `INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,recurrence,endDate,isActive,importSource,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,'excel',?,?)`,
         [gid, r.date+'T12:00:00.000Z', period, r.desc, r.amt, r.drId, r.crId,
          r.drSub||null, r.crSub||null, r.notes||null, r.recurrence||'Once', r.endDate||null, now, now]
       );
@@ -10331,8 +10344,8 @@ function dtModalApproveDraft(draftId) {
 
   if (_dtTarget === 'ft') {
     db.run(
-      `INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
-       VALUES (?,?,?,?,?,?,?,NULL,?,?)`,
+      `INSERT INTO FutureTransaction (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,importSource,createdAt,updatedAt)
+       VALUES (?,?,?,?,?,?,?,NULL,'Dictate',?,?)`,
       [txId, date, period, desc, amt, d.drAccountId, d.crAccountId, now, now]
     );
   } else {
@@ -11081,8 +11094,8 @@ function repPlaySave() {
     if (isFuture) {
       db.run(
         `INSERT INTO FutureTransaction
-         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,createdAt,updatedAt)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+         (id,trxDate,period,description,amount,drAccountId,crAccountId,notes,importSource,createdAt,updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,'Repeatable',?,?)`,
         [txId, trxDate, period, desc, amt, drId, crId, notes||null, now, now]
       );
     } else {
