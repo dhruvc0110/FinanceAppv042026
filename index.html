@@ -2197,8 +2197,7 @@ function renderTransactEquity(container) {
   window._eqReviewMode = false;  // full transact mode: all tabs + Buy/Vest visible
   _teTab = localStorage.getItem('_teTab') || 'lots';
   equityTab     = _teTab === 'lots' ? 'lots' : _teTab === 'closedlots' ? 'closedlots' : 'lots';
-  equitySortCol = 'ticker';
-  equitySortDir = 1;
+  // equitySortCol / equitySortDir intentionally preserved across navigation.
   _renderTEPage(container);
 }
 function _renderTEPage(container) {
@@ -3008,8 +3007,8 @@ function txSetSort(col) {
 }
 
 function _renderTransactionsInner(container) {
-  txPage   = 0;
-  txEditId = null;
+  // txPage / txEditId intentionally preserved across navigation so sub-tab
+  // switches don't bounce the user back to page 1.
   try { migrateFutureTransactions(); } catch(e) { console.warn('migrate:', e.message); }
   // generateRepeatables() removed — user must hit ▶ Play manually
   _renderTxPage(container);
@@ -3803,7 +3802,8 @@ let plEditMode = false;
 let plLayouts  = { income: [], expense: [] };
 
 function renderPL(container) {
-  plEditMode = false;
+  // plEditMode intentionally preserved across navigation so sub-tab switches
+  // don't drop the user out of layout-edit mode.
   const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
@@ -4144,7 +4144,7 @@ let bsEditMode = false;
 let bsLayouts  = { asset:[], liability:[], belowLine:[] };
 
 function renderBS(container) {
-  bsEditMode = false;
+  // bsEditMode intentionally preserved across navigation.
   const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r=>r.period);
   if (!periods.length) {
     container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh">
@@ -4790,7 +4790,7 @@ function renderAI(container) {
     aiPeriod = periods.includes(cp) ? cp : periods[0];
   if (!aiPeriodFrom) aiPeriodFrom = aiPeriod;
   if (!aiPeriodTo)   aiPeriodTo   = aiPeriod;
-  aiOpenId = null;
+  // aiOpenId intentionally preserved across navigation.
   _renderAIPage(container);
 }
 
@@ -7859,7 +7859,7 @@ function ftSetSort(col) {
 let _txSaveToFuture = false;
 
 function renderFutureTransactions(container) {
-  ftPage = 0;
+  // ftPage intentionally preserved across navigation.
   _txSaveToFuture = false;
   _renderFTPage(container);
 }
@@ -8133,7 +8133,9 @@ function ftDeleteRow(id) {
 let ccOpenId = null;
 
 function renderCreditCards(container) {
-  ccOpenId = null;
+  // ccOpenId intentionally preserved across navigation so sub-tab switches
+  // don't collapse a previously expanded card. Cleared only by the user clicking
+  // the tile's close (×) button.
   _renderCCPage(container);
 }
 
@@ -8303,7 +8305,7 @@ function ccInjectPanel(ccId) {
 let baOpenId = null;
 
 function renderBankAccounts(container) {
-  baOpenId = null;
+  // baOpenId intentionally preserved across navigation. See renderCreditCards.
   _renderBAPage(container);
 }
 
@@ -10071,6 +10073,7 @@ let dupDayRange  = 3;
 let dupDollarTol = 0;
 let dupFromDate  = '';  // YYYY-MM-DD — empty = no lower bound
 let dupToDate    = '';  // YYYY-MM-DD — empty = no upper bound
+let dupTab       = 'pending';  // 'pending' | 'flagged' | 'dismissed' — preserved across navigation
 
 // ════════════════════════════════════════════════════════════
 // REPEATABLE — standalone tab inside Transactions
@@ -10264,7 +10267,7 @@ function renderRepeatableInner(container) {
 }
   
 function renderDuplicates(container) {
-  dupTab = 'pending';
+  // dupTab intentionally preserved across navigation.
   _renderDupPage(container);
 }
 
@@ -10862,7 +10865,7 @@ function renderAccruals(container) {
     accrualPeriod = periods.includes(cp) ? cp : (periods[0]||cp);
   if (!accrualPeriodFrom) accrualPeriodFrom = accrualPeriod;
   if (!accrualPeriodTo)   accrualPeriodTo   = accrualPeriod;
-  accrualOpenSubId = null;
+  // accrualOpenSubId intentionally preserved across navigation.
   _renderAccrualsPage(container);
 }
 
