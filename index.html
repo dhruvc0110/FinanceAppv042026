@@ -8460,6 +8460,10 @@ function ccTileClick(ccId) {
 }
 
 function ccInjectPanel(ccId) {
+  // Remove any existing panel so callers (tile click OR sort header) can call
+  // this directly without stacking duplicate panels.
+  document.getElementById('ccDetailPanel')?.remove();
+
   const card = query(`SELECT cc.id, cc.name, cc.liabilityAccountId, la.name AS liabilityName
     FROM CreditCard cc JOIN Account la ON cc.liabilityAccountId = la.id WHERE cc.id='${ccId}'`)[0];
   if (!card) return;
@@ -8618,6 +8622,10 @@ function baTileClick(baId) {
 }
 
 function baInjectPanel(baId) {
+  // Remove any existing panel so callers (tile click OR sort header) can call
+  // this directly without stacking duplicate panels.
+  document.getElementById('baDetailPanel')?.remove();
+
   const ba = query(`
     SELECT ba.id, ba.name, ba.assetAccountId, a.name AS assetName
     FROM BankAccount ba LEFT JOIN Account a ON ba.assetAccountId = a.id
