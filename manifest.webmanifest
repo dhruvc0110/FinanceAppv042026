@@ -1,0 +1,15 @@
+{
+  "name": "FinApp",
+  "short_name": "FinApp",
+  "description": "Personal household finance tracker",
+  "start_url": "/FinanceAppv042026/",
+  "scope": "/FinanceAppv042026/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

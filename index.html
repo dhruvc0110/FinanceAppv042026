@@ -6,6 +6,21 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>Finance</title>
+  <!-- ─── Progressive Web App: home-screen install + standalone launch ─── -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FinApp">
+  <meta name="theme-color" content="#0f172a">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW registration failed:', e.message));
+      });
+    }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>tailwind.config = { corePlugins: { preflight: true } }</script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
