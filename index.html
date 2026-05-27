@@ -84,35 +84,42 @@
    .bn-dot { position:absolute;top:3px;right:3px;width:7px;height:7px;background:#3b82f6;border-radius:50%;pointer-events:none; }
 body.dark-mode .bn-dot { background:#60a5fa; }
 
-  /* ───── Responsive table → card layout (POC: applied to .table-mobile-cards) ─────
-     Below the `md` breakpoint (<768px), tables marked with `.table-mobile-cards`
-     turn into a vertical stack of cards: each row becomes a card; each cell
-     becomes a labelled key:value line using its `data-label` attribute.
-     Above that breakpoint, the table renders normally. */
-  @media (max-width: 767px) {
-    table.table-mobile-cards { min-width: 0 !important; }
-    table.table-mobile-cards thead { display: none; }
-    table.table-mobile-cards, table.table-mobile-cards tbody,
-    table.table-mobile-cards tr, table.table-mobile-cards td { display: block; width: 100%; }
-    table.table-mobile-cards tr {
-      border: 1px solid #e2e8f0; border-radius: 0.5rem;
-      margin-bottom: 0.625rem; padding: 0.5rem 0.75rem; background: #fff;
-    }
-    body.dark-mode table.table-mobile-cards tr { background: #1e293b; border-color: #334155; }
-    table.table-mobile-cards td {
-      padding: 0.25rem 0 !important; text-align: left !important;
-      max-width: none !important; white-space: normal !important; border-top: 0 !important;
-      display: flex; align-items: baseline; gap: 0.5rem;
-    }
-    table.table-mobile-cards td::before {
-      content: attr(data-label);
-      font-weight: 600; color: #64748b; font-size: 0.6875rem;
-      text-transform: uppercase; letter-spacing: 0.03em;
-      flex: 0 0 7rem; min-width: 7rem;
-    }
-    table.table-mobile-cards td[data-label=""]::before,
-    table.table-mobile-cards td:not([data-label])::before { content: none; }
+  /* ───── User-selectable layout views ─────────────────────────────────────
+     Driven by `html.use-cards` (cards view) and `html.use-tablet-hide`
+     (compact tablet view). The Display tab settings toggle these via
+     gcSetView('auto'|'phone'|'tablet'|'desktop'); _applyViewMode() resolves
+     'auto' against window.innerWidth and updates the classes on <html>.
+     CSS handles the visual change with no page re-render. */
+
+  /* Card layout — every .table-mobile-cards becomes a vertical stack of
+     cards. Each <td> uses its data-label as the field label. */
+  html.use-cards table.table-mobile-cards { min-width: 0 !important; }
+  html.use-cards table.table-mobile-cards thead { display: none; }
+  html.use-cards table.table-mobile-cards,
+  html.use-cards table.table-mobile-cards tbody,
+  html.use-cards table.table-mobile-cards tr,
+  html.use-cards table.table-mobile-cards td { display: block; width: 100%; }
+  html.use-cards table.table-mobile-cards tr {
+    border: 1px solid #e2e8f0; border-radius: 0.5rem;
+    margin-bottom: 0.625rem; padding: 0.5rem 0.75rem; background: #fff;
   }
+  body.dark-mode html.use-cards table.table-mobile-cards tr { background: #1e293b; border-color: #334155; }
+  html.use-cards table.table-mobile-cards td {
+    padding: 0.25rem 0 !important; text-align: left !important;
+    max-width: none !important; white-space: normal !important; border-top: 0 !important;
+    display: flex; align-items: baseline; gap: 0.5rem;
+  }
+  html.use-cards table.table-mobile-cards td::before {
+    content: attr(data-label);
+    font-weight: 600; color: #64748b; font-size: 0.6875rem;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    flex: 0 0 7rem; min-width: 7rem;
+  }
+  html.use-cards table.table-mobile-cards td[data-label=""]::before,
+  html.use-cards table.table-mobile-cards td:not([data-label])::before { content: none; }
+
+  /* Tablet compact view — secondary columns marked .tablet-hide disappear. */
+  html.use-tablet-hide .tablet-hide { display: none !important; }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -3133,7 +3140,7 @@ function _renderTxPage(container) {
     return `
       <tr class="border-t border-slate-100 hover:bg-slate-50 group">
         <td data-label="Date" class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-        <td data-label="Created" class="px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
+        <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
         <td data-label="Description" class="px-3 py-2 text-sm text-slate-800 max-w-xs">
           <div class="flex items-center gap-1">
             ${isDup ? `<span onclick="navigate('duplicates')" title="Possible duplicate" class="text-orange-400 cursor-pointer flex-shrink-0">&#9873;</span>` : ''}
@@ -3143,9 +3150,9 @@ function _renderTxPage(container) {
         <td data-label="Amount" class="px-3 py-2 text-sm font-medium text-slate-800 text-right whitespace-nowrap">${fmtCurrency(r.amount, 2)}</td>
         <td data-label="DR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
         <td data-label="CR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
-        <td data-label="Notes" class="px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
-        <td data-label="Source" class="px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
-        <td data-label="Reconciled" class="px-3 py-2 text-center">
+        <td data-label="Notes" class="tablet-hide px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
+        <td data-label="Source" class="tablet-hide px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
+        <td data-label="Reconciled" class="tablet-hide px-3 py-2 text-center">
           <input type="checkbox" ${r.isReconciled ? 'checked' : ''}
             onchange="txToggleReconcile('${r.id}', this.checked)"
             class="w-4 h-4 cursor-pointer accent-slate-700">
@@ -3300,14 +3307,14 @@ function _renderTxPage(container) {
             <thead class="bg-slate-50 border-b border-slate-200" style="position:sticky;top:0;z-index:10;">
               <tr>
                 ${_txSortTh('trxDate',     'Date')}
-                ${_txSortTh('createdAt',   'Created')}
+                ${_txSortTh('createdAt',   'Created', 'left', 'tablet-hide')}
                 ${_txSortTh('description', 'Description')}
                 ${_txSortTh('amount',      'Amount', 'right')}
                 ${_txSortTh('drName',      'DR Account')}
                 ${_txSortTh('crName',      'CR Account')}
-                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
-                <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
-                <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
+                <th class="tablet-hide px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
+                <th class="tablet-hide px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
+                <th class="tablet-hide px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Manage Transaction</th>
               </tr>
             </thead>
@@ -5694,7 +5701,27 @@ function _renderSettingsPage(container) {
   // ── Render ────────────────────────────────────────────────
   // ── DISPLAY TAB ───────────────────────────────────────────
   function displayTab() {
-    return `<div class="space-y-6 max-w-sm">
+    const viewDesc = {
+      auto:    'Adapts to screen size: cards on phone (<768px), compact on tablet (768–1023px), full table on desktop (≥1024px).',
+      phone:   'Cards on every list, regardless of screen size. Best for quick mobile review.',
+      tablet:  'Compact tables with secondary columns (Notes / Source / Reconciled / Created) hidden. Best for tablet width or when you want a denser desktop view.',
+      desktop: 'Always show the full table with every column, regardless of screen size.',
+    };
+    return `<div class="space-y-6 max-w-md">
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-3">Layout</h3>
+        <div class="flex gap-2 flex-wrap">
+          <button onclick="gcSetView('auto')"
+            class="gc-btn ${_viewMode==='auto'?'bg-slate-900 border-slate-900':''}">Auto</button>
+          <button onclick="gcSetView('phone')"
+            class="gc-btn ${_viewMode==='phone'?'bg-slate-900 border-slate-900':''}">Phone (cards)</button>
+          <button onclick="gcSetView('tablet')"
+            class="gc-btn ${_viewMode==='tablet'?'bg-slate-900 border-slate-900':''}">Tablet (compact)</button>
+          <button onclick="gcSetView('desktop')"
+            class="gc-btn ${_viewMode==='desktop'?'bg-slate-900 border-slate-900':''}">Desktop (full)</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2">${viewDesc[_viewMode] || viewDesc.auto}</p>
+      </div>
       <div>
         <h3 class="text-sm font-semibold text-slate-700 mb-3">Color Mode</h3>
         <div class="flex gap-3">
@@ -7981,10 +8008,10 @@ function _ftOrderBy() {
   return `${col} ${d}, t.id ${d}`;
 }
 
-function _ftSortTh(col, label, align) {
+function _ftSortTh(col, label, align, extraCls) {
   const active = ftSortCol === col;
   const arrow  = active ? (ftSortDir === 'asc' ? ' ↑' : ' ↓') : '';
-  const cls    = `px-3 py-2.5 text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
+  const cls    = `px-3 py-2.5 ${extraCls||''} text-${align||'left'} text-xs font-semibold uppercase tracking-wide cursor-pointer select-none whitespace-nowrap transition-colors ${active ? 'text-slate-800' : 'text-slate-500 hover:text-slate-700'}`;
   return `<th class="${cls}" onclick="ftSetSort('${col}')">${label}${arrow}</th>`;
 }
 
@@ -8056,12 +8083,12 @@ function _renderFTPage(container) {
     const crLabel = escHtml((r.crName||'')+(r.crSubName?' · '+r.crSubName:''));
     return `<tr class="border-t border-slate-100 hover:bg-slate-50 group">
       <td data-label="Date" class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-      <td data-label="Created" class="px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
+      <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
       <td data-label="Description" class="px-3 py-2 text-sm text-slate-800 max-w-xs truncate">${escHtml(r.description)}</td>
       <td data-label="Amount" class="px-3 py-2 text-sm font-medium text-slate-800 text-right whitespace-nowrap">${fmtCurrency(r.amount,2)}</td>
       <td data-label="DR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
       <td data-label="CR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
-      <td data-label="Notes" class="px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate">${escHtml(r.notes||'')}</td>
+      <td data-label="Notes" class="tablet-hide px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate">${escHtml(r.notes||'')}</td>
       <td data-label="Manage" class="px-3 py-2 text-right">
         <button onclick="ftStartEdit('${r.id}')" class="text-xs text-slate-400 hover:text-slate-800 md:opacity-0 md:group-hover:opacity-100 transition">Edit</button>
         <button onclick="ftDeleteRow('${r.id}')" class="text-xs text-red-400 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100 transition ml-2">Del</button>
@@ -8120,12 +8147,12 @@ function _renderFTPage(container) {
           <table class="w-full md:min-w-[700px] table-mobile-cards">
             <thead class="bg-slate-50 border-b border-slate-200"><tr>
               ${_ftSortTh('trxDate',     'Date')}
-              ${_ftSortTh('createdAt',   'Created')}
+              ${_ftSortTh('createdAt',   'Created', 'left', 'tablet-hide')}
               ${_ftSortTh('description', 'Description')}
               ${_ftSortTh('amount',      'Amount', 'right')}
               ${_ftSortTh('drName',      'DR Account')}
               ${_ftSortTh('crName',      'CR Account')}
-              <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
+              <th class="tablet-hide px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
               <th class="px-3 py-2.5"></th>
             </tr></thead>
             <tbody>${rows.length ? rowsHtml : '<tr><td colspan="8" class="px-3 py-8 text-center text-sm text-slate-400">No future transactions</td></tr>'}</tbody>
@@ -13259,6 +13286,9 @@ function eqSaveSell() {
 let _darkMode    = localStorage.getItem('dark-mode')      === 'true';
 let _fontSize    = localStorage.getItem('font-size')      || 'md';
 let _showAcctCode = localStorage.getItem('show-acct-code') !== 'false'; // default: show
+// View mode: 'auto' | 'phone' | 'tablet' | 'desktop'. Resolves into the
+// html.use-cards / html.use-tablet-hide classes that drive the responsive CSS.
+let _viewMode    = localStorage.getItem('view-mode')      || 'auto';
 
 // ── Account-code render helpers ───────────────────────────
 // When _showAcctCode is false these return '' so no layout change needed.
@@ -13308,9 +13338,38 @@ function gcSetFontSize(sz) {
   if (settingsTab === 'display') _renderSettingsPage();
 }
 
+// Resolve _viewMode into the html-level classes that the responsive CSS
+// keys off. 'auto' inspects window.innerWidth at call time so it stays
+// correct across resizes (a window listener re-applies on every resize).
+function _applyViewMode() {
+  const html = document.documentElement;
+  html.classList.remove('use-cards', 'use-tablet-hide');
+  let mode = _viewMode;
+  if (mode === 'auto') {
+    const w = window.innerWidth;
+    if (w < 768)       mode = 'phone';
+    else if (w < 1024) mode = 'tablet';
+    else               mode = 'desktop';
+  }
+  if      (mode === 'phone')  html.classList.add('use-cards');
+  else if (mode === 'tablet') html.classList.add('use-tablet-hide');
+  // 'desktop' = no classes added — show everything.
+}
+
+function gcSetView(mode) {
+  _viewMode = mode;
+  localStorage.setItem('view-mode', mode);
+  _applyViewMode();
+  if (settingsTab === 'display') _renderSettingsPage();
+}
+
 // Called once at app start to apply saved preferences
 function _initGlobalControls() {
   _applyTheme();
+  _applyViewMode();
+  window.addEventListener('resize', () => {
+    if (_viewMode === 'auto') _applyViewMode();
+  });
 }
 
 const PAGE_NAMES = {
