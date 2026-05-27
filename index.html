@@ -3630,7 +3630,8 @@ function txDeleteRow(id) {
 function txShowNewForm() {
   document.getElementById('txFormTitle').textContent = 'New Transaction';
   document.getElementById('txFormEditId').value      = '';
-document.getElementById('txFormDate').value        = new Date().toLocaleDateString('en-CA');  document.getElementById('txFormAmt').value         = '';
+  document.getElementById('txFormDate').value        = new Date().toLocaleDateString('en-CA');
+  document.getElementById('txFormAmt').value         = '';
   document.getElementById('txFormDesc').value        = '';
   document.getElementById('txFormNotes').value       = '';
   acctPickerSetValue('formDrAcct', '');
@@ -9585,6 +9586,11 @@ function dtSubmitText() {
 }
 
 // ── Anthropic API call ────────────────────────────────────────
+// Multi-transaction input: an unquoted `#` starts a new transaction.
+// To use a literal `#` inside a description, wrap it in double quotes \u2014 e.g.
+// `Invoice "#"5012 from checking # bought groceries` becomes two drafts:
+//   1. "Invoice #5012 from checking"
+//   2. "bought groceries"
 async function _dtProcessText(text, onComplete) {
   const apiKey = _itGetApiKey();
   if (!apiKey) {
@@ -9594,42 +9600,57 @@ async function _dtProcessText(text, onComplete) {
     return;
   }
 
-  _dtStatus = '<span class="text-slate-400">&#x23F3; Interpreting\u2026</span>';
+  // Split on unquoted `#`. `"#"` is preserved as a literal `#` (quotes stripped).
+  const PH = '\x00HASH\x00';
+  const segments = text
+    .replace(/"#"/g, PH)
+    .split('#')
+    .map(s => s.split(PH).join('#').trim())
+    .filter(s => s);
+
+  if (!segments.length) return;
+
+  _dtStatus = `<span class="text-slate-400">&#x23F3; Interpreting ${segments.length} transaction${segments.length>1?'s':''}\u2026</span>`;
   const statusEl = document.getElementById('dtStatusEl');
   if (statusEl) statusEl.innerHTML = _dtStatus;
 
   const accounts = query(`SELECT id, code, name, type FROM Account WHERE isActive=1 ORDER BY type, code`);
-  const today    = new Date().toISOString().slice(0, 10);
+  const today    = new Date().toLocaleDateString('en-CA');
 
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        messages: [{ role: 'user', content: _dtBuildPrompt(text, accounts, today) }],
-      }),
-    });
+  // Parse all segments in parallel. Each result is { segment, parsed } \u2014 parsed may be null on failure.
+  const results = await Promise.all(segments.map(async (seg) => {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 500,
+          messages: [{ role: 'user', content: _dtBuildPrompt(seg, accounts, today) }],
+        }),
+      });
+      if (!res.ok) return { segment: seg, parsed: null };
+      const data = await res.json();
+      const raw  = data.content?.[0]?.text || '';
+      return { segment: seg, parsed: _dtParseResponse(raw) };
+    } catch(_) {
+      return { segment: seg, parsed: null };
+    }
+  }));
 
-    if (!res.ok) throw new Error('API error ' + res.status);
-    const data = await res.json();
-    const raw  = data.content?.[0]?.text || '';
-    const parsed = _dtParseResponse(raw);
-    if (!parsed) throw new Error('Could not parse AI response. Try rephrasing.');
+  _dtCreateMultiDraft(text, results);
 
-    _dtCreateDraft(text, parsed);
-    _dtStatus          = '<span class="text-green-600">&#x2713; Draft created &mdash; review below.</span>';
-    _dtTranscriptText  = '';
-
-  } catch(e) {
-    _dtStatus = `<span class="text-red-500">Error: ${escHtml(e.message)}</span>`;
-  }
+  const ok  = results.filter(r => r.parsed).length;
+  const bad = results.length - ok;
+  _dtStatus = bad
+    ? `<span class="text-amber-600">&#x2713; ${ok} parsed, ${bad} need account info &mdash; review below.</span>`
+    : `<span class="text-green-600">&#x2713; ${ok} draft${ok>1?'s':''} created &mdash; review below.</span>`;
+  _dtTranscriptText = '';
 
   if (onComplete) onComplete();
   else _renderDTPage();
@@ -9680,27 +9701,42 @@ function _dtParseResponse(raw) {
   } catch(_) { return null; }
 }
 
-function _dtCreateDraft(originalText, parsed) {
+// Create one batch holding N drafts. results = [{segment, parsed}] — parsed=null means
+// the AI couldn't interpret that segment; we keep the raw text as the description and
+// leave accounts blank so the user can complete the row in the review table.
+function _dtCreateMultiDraft(originalText, results) {
   const now     = new Date().toISOString();
   const batchId = genId();
-  const draftId = genId();
 
   db.run(
     `INSERT INTO DraftBatch (id,templateId,detectedCardName,status,rowCount,approvedCount,rejectedCount,source,createdAt,updatedAt)
-     VALUES (?,NULL,?,?,1,0,0,'Dictate',?,?)`,
-    [batchId, originalText.slice(0, 500), 'pending', now, now]
+     VALUES (?,NULL,?,?,?,0,0,'Dictate',?,?)`,
+    [batchId, originalText.slice(0, 500), 'pending', results.length, now, now]
   );
-  db.run(
-    `INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
-     VALUES (?,?,?,?,?,'charge',?,?,?,?,?,?,?)`,
-    [draftId, batchId,
-     parsed.date || '',
-     parsed.description || '',
-     Math.abs(parseFloat(parsed.amount) || 0),
-     parsed.drAccountId || null, parsed.crAccountId || null,
-     parsed.drAccountId || null, parsed.crAccountId || null,
-     'pending', JSON.stringify(parsed), now]
-  );
+
+  for (const r of results) {
+    const draftId = genId();
+    if (r.parsed) {
+      db.run(
+        `INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
+         VALUES (?,?,?,?,?,'charge',?,?,?,?,?,?,?)`,
+        [draftId, batchId,
+         r.parsed.date || '',
+         r.parsed.description || '',
+         Math.abs(parseFloat(r.parsed.amount) || 0),
+         r.parsed.drAccountId || null, r.parsed.crAccountId || null,
+         r.parsed.drAccountId || null, r.parsed.crAccountId || null,
+         'pending', JSON.stringify(r.parsed), now]
+      );
+    } else {
+      // Parse failed — save raw segment as description, blank accounts, amount 0.
+      db.run(
+        `INSERT INTO DraftTransaction (id,batchId,date,description,amount,txnType,suggestedDrAccountId,suggestedCrAccountId,drAccountId,crAccountId,status,rawExtracted,createdAt)
+         VALUES (?,?,?,?,?,'charge',NULL,NULL,NULL,NULL,?,?,?)`,
+        [draftId, batchId, '', r.segment.slice(0, 200), 0, 'pending', JSON.stringify({error:'parse_failed', raw: r.segment}), now]
+      );
+    }
+  }
   syncAfterWrite();
 }
 
@@ -9877,7 +9913,7 @@ function _dtRenderModal() {
   }).join('');
 
   modal.innerHTML = `
-    <div style="background:white;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:680px;max-height:85vh;overflow-y:auto;">
+    <div style="background:white;border-radius:1rem;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:1100px;max-height:85vh;overflow-y:auto;">
       <!-- Header -->
       <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid #e2e8f0;">
         <h2 style="font-size:0.9rem;font-weight:600;color:#1e293b;">&#127908; Dictate Transaction</h2>
@@ -9966,6 +10002,23 @@ function dtModalSubmitText() {
   _dtProcessText(text, _dtRenderModal);
 }
 
+// After approve/reject/discard in the floating modal: stay open if any dictate drafts
+// are still pending; otherwise close the modal and refresh the page the user opened
+// the modal from (so e.g. Account Tracker tiles update with the new balance instead
+// of bouncing the user to the Transactions page).
+function _dtCloseOrRefresh() {
+  const anyPending = queryVal(`
+    SELECT COUNT(*) FROM DraftTransaction dt
+    JOIN DraftBatch db ON dt.batchId = db.id
+    WHERE dt.status='pending' AND db.source='Dictate'`) || 0;
+  if (anyPending > 0) {
+    _dtRenderModal();
+  } else {
+    dtCloseFloatingModal();
+    navigate(currentPage);
+  }
+}
+
 function dtModalApproveDraft(draftId) {
   const d = query(`SELECT * FROM DraftTransaction WHERE id='${draftId}'`)[0];
   if (!d || !d.drAccountId || !d.crAccountId) return;
@@ -9994,9 +10047,7 @@ function dtModalApproveDraft(draftId) {
   db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['approved', draftId]);
   _dtFinishBatch(d.batchId);
   syncAfterWrite();
-  dtCloseFloatingModal();
-  if (_dtTarget === 'ft') { ftPage = 0; _renderFTPage(); }
-  else                    { txPage = 0; _renderTxPage(); }
+  _dtCloseOrRefresh();
 }
 
 function dtModalRejectDraft(draftId) {
@@ -10004,7 +10055,7 @@ function dtModalRejectDraft(draftId) {
   db.run('UPDATE DraftTransaction SET status=? WHERE id=?', ['rejected', draftId]);
   if (d) _dtFinishBatch(d.batchId);
   syncAfterWrite();
-  _dtRenderModal();
+  _dtCloseOrRefresh();
 }
 
 function dtModalDiscardBatch(batchId) {
@@ -10012,7 +10063,7 @@ function dtModalDiscardBatch(batchId) {
   db.run('DELETE FROM DraftTransaction WHERE batchId=?', [batchId]);
   db.run('DELETE FROM DraftBatch WHERE id=?', [batchId]);
   syncAfterWrite();
-  _dtRenderModal();
+  _dtCloseOrRefresh();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -12747,7 +12798,7 @@ function eqOpenBuyModal(prefillTicker) {
   if (!modalDiv) return;
   modalDiv.querySelector('#eqBuyTickerInput').value    = prefillTicker||'';
   modalDiv.querySelector('#eqBuyStockName').value      = '';
-  modalDiv.querySelector('#eqBuyDate').value           = new Date().toISOString().slice(0,10);
+  modalDiv.querySelector('#eqBuyDate').value           = new Date().toLocaleDateString('en-CA');
   modalDiv.querySelector('#eqBuyQty').value            = '';
   modalDiv.querySelector('#eqBuyPrice').value          = '';
   modalDiv.querySelector('#eqBuyAmount').value         = '';

@@ -1,0 +1,5 @@
+# macOS metadata
+.DS_Store
+
+# Claude Code per-project state (sessions, cache, plugin scratch)
+.claude/
