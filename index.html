@@ -13944,10 +13944,48 @@ function _askRenderStarters() {
   ).join('');
 }
 
+// ── Current-date context (date-aware prompts) ────────────────
+// The LLM has no idea what today's date is — without this it falls
+// back to its training cutoff and bakes the wrong year into SQL.
+function _askDateContext() {
+  const d    = new Date();
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  const lastMo = new Date(yyyy, d.getMonth() - 1, 1);
+  const lastY  = d.getMonth() === 0 ? yyyy - 1 : yyyy;
+  const lastM  = String(lastMo.getMonth() + 1).padStart(2, '0');
+  return [
+    `Today: ${yyyy}-${mm}-${dd}`,
+    `Current period (YYYYMM): ${yyyy}${mm}`,
+    `Current year: ${yyyy}`,
+    `Last month period: ${lastY}${lastM}`,
+    `Resolve relative dates: "this year" -> ${yyyy}, "this month" -> ${yyyy}${mm}, "last month" -> ${lastY}${lastM}, "today" -> ${yyyy}-${mm}-${dd}.`,
+  ].join('\n');
+}
+
+// ── Logically-empty detection ────────────────────────────────
+// rows.length === 0 misses aggregate queries that return a single
+// row of all-null/all-zero values (e.g. SUM/COUNT on a filter that
+// matched nothing). Without this, the narrative LLM happily writes
+// "you have $0 of X this year" as if it were a real answer.
+function _askIsLogicallyEmpty(rows, columns) {
+  if (!rows || rows.length === 0) return true;
+  if (rows.length !== 1) return false;
+  if (!columns || !columns.length) return false;
+  const row = rows[0];
+  return columns.every(c => {
+    const v = row[c];
+    if (v === null || v === undefined || v === '') return true;
+    if (v === 0 || v === '0' || v === 0.0)         return true;
+    return false;
+  });
+}
+
 // ── Schema prompt (built fresh on every send) ────────────────
-// Includes the live schema from sqlite_master + business notes that
-// can't be inferred from the schema alone (description-encoded
-// ticker, importSource semantics, dayOfMonth sentinel, etc.).
+// Includes the live schema from sqlite_master + current date
+// context + business notes that can't be inferred from the schema
+// alone (description-encoded ticker, importSource semantics, etc.).
 function _askBuildSchemaPrompt() {
   let schema = '';
   try {
@@ -13963,6 +14001,8 @@ function _askBuildSchemaPrompt() {
   return [
     'You are a SQL analyst for a personal finance app backed by SQLite (via sql.js).',
     'You can use tools to explore the database before answering. Be honest about uncertainty.',
+    '',
+    _askDateContext(),
     '',
     'Live schema:',
     schema,
@@ -14200,12 +14240,17 @@ async function _askKbLookup(question) {
   const system = [
     'You are a pattern matcher. Given a user question and a list of known query patterns, decide if any pattern semantically matches the question.',
     'If matched, extract parameter values from the user question and substitute them into the SQL template (placeholders look like {PARAM_NAME}).',
-    'Confidence levels:',
-    '  - "high": pattern is a clear semantic match; all parameters can be confidently filled.',
-    '  - "medium": pattern matches but some parameter (time range, ticker, etc.) is ambiguous and you guessed.',
-    '  - "low": tangentially related; a fresh query is probably better.',
-    '  - "none": no pattern matches.',
-    'Return STRICT JSON only: {"patternId":"...","confidence":"high|medium|low|none","filledSql":"<sql or empty>","assumptions":"one short line describing the parameters you substituted (or empty)"}.',
+    '',
+    _askDateContext(),
+    '',
+    'Confidence rules — be strict:',
+    '  - "high": EVERY parameter is explicitly stated in the user question (specific ticker, specific period YYYYMM, specific number, etc.). No inference required.',
+    '  - "medium": pattern matches semantically, but at least one parameter had to be INFERRED from context (e.g. "this year" → resolved using current date, "last month" → previous period). Inference is fine, but flag it as medium so the user can verify.',
+    '  - "low": tangentially related pattern; a fresh agent query is probably better.',
+    '  - "none": no pattern semantically matches.',
+    '',
+    'Return STRICT JSON only: {"patternId":"...","confidence":"high|medium|low|none","filledSql":"<sql or empty>","assumptions":"one short line describing what you substituted, ESPECIALLY any inferred parameters with the resolved value"}.',
+    'When you infer a date/period from a relative phrase, write the resolved value explicitly (e.g. \'this year → 2026\', NOT just \'YEAR=2026\').',
     'For "low" or "none", set filledSql to empty string.',
   ].join('\n');
 
@@ -14225,9 +14270,14 @@ async function _askKbStore(question, sql) {
   if (!sql) return;
   const system = [
     'You generalize a question+SQL pair into a reusable pattern.',
-    'Identify parameters: literal values in the question and SQL that would vary across similar questions (tickers, account names, periods, numbers).',
+    'Identify parameters: literal values in the question and SQL that would vary across similar questions (tickers, account names, periods, numbers, years).',
+    '',
+    _askDateContext(),
+    '',
+    'CRITICAL: any date/year/period literal in the SQL that came from a relative phrase ("this year", "this month", "today") MUST be parameterized in the template — never hard-code the current year. Use {YEAR}, {PERIOD_YYYYMM}, {DATE} placeholders. The matcher will resolve relative phrases using the current date at lookup time.',
+    '',
     'Return STRICT JSON: {"signature":"<paraphrased question template with {PARAM_NAME} placeholders>","sqlTemplate":"<sql with {PARAM_NAME} placeholders matching the signature>"}.',
-    'Use UPPER_SNAKE_CASE for parameter names. Examples: {TICKER}, {N}, {PERIOD_YYYYMM}, {ACCOUNT_NAME}.',
+    'Use UPPER_SNAKE_CASE for parameter names. Examples: {TICKER}, {N}, {PERIOD_YYYYMM}, {YEAR}, {ACCOUNT_NAME}.',
     'If the question is so specific that generalizing makes no sense, set both fields to empty strings.',
   ].join('\n');
   const messages = [{ role: 'user', content: JSON.stringify({ question, sql }) }];
@@ -14280,9 +14330,13 @@ async function _askGenNarrative(question, sql, rows, columns, isEmpty, routePath
     : '';
   const system = [
     'You are a financial assistant explaining a query result to the user in plain English.',
+    '',
+    _askDateContext(),
+    '',
     'Be concise: 1-3 sentences. Lead with the headline number or insight. Round currency to whole dollars unless decimals matter.',
     'Speak directly to the user. No preambles like "Based on the data".',
     'NEVER assert that data does not exist — empty-result handling is done elsewhere.',
+    'If the result is a single-row aggregate where COUNT/SUM/etc. are 0 or null, treat it as effectively empty and say the query may have made a wrong assumption — do NOT report "you have $0" as if it were a confident answer.',
     tail,
   ].join('\n');
   const messages = [{ role: 'user', content: 'Question: ' + question + '\n\nResult:\n' + JSON.stringify(payload, null, 2) }];
@@ -14356,17 +14410,18 @@ async function askSubmit() {
       turn.steps     = result.steps;
     }
 
-    // 3. Narrative (honest about empty)
-    const isEmpty = !!(turn.rows && turn.rows.length === 0);
-    if (turn.routePath === 'kb' || !turn.narrative) {
+    // 3. Narrative (honest about empty — including all-zero aggregates)
+    const isEmpty = _askIsLogicallyEmpty(turn.rows, turn.columns);
+    turn.isEmpty  = isEmpty;
+    if (turn.routePath === 'kb' || !turn.narrative || isEmpty) {
       turn.narrative = await _askGenNarrative(question, turn.sql, turn.rows || [], turn.columns || [], isEmpty, turn.routePath);
-    } else if (isEmpty) {
-      // Agent wrote a narrative but the result is empty — override.
-      turn.narrative = await _askGenNarrative(question, turn.sql, [], turn.columns || [], true, turn.routePath);
     }
 
-    // 4. KB auto-population on agent success with non-empty result
-    if (turn.routePath === 'agent' && turn.sql && turn.rows && turn.rows.length > 0) {
+    // 4. KB auto-population on agent success with non-empty result.
+    // We deliberately do NOT cache patterns whose result was logically
+    // empty (rows.length=0 OR all-zero aggregate) — otherwise we'd be
+    // memorizing wrong queries.
+    if (turn.routePath === 'agent' && turn.sql && !isEmpty) {
       _askKbStore(question, turn.sql).catch(()=>{});
     }
   } catch (e) {
@@ -14436,7 +14491,7 @@ function _askRenderTurn(t, i) {
     body += _askRenderFeedback(t, i);
   }
 
-  const isEmpty       = !!(t.rows && t.rows.length === 0);
+  const isEmpty       = !!t.isEmpty;
   const lowConfidence = t.confidence === 'low' || t.routePath === 'agent';
   const forceShowSql  = isEmpty || lowConfidence;
   const sqlBlock = (t.sql && (_askShowSql || forceShowSql)) ? _askRenderSqlPanel(t, i, forceShowSql) : '';
@@ -14445,18 +14500,28 @@ function _askRenderTurn(t, i) {
 }
 
 function _askRenderConfidenceChip(t) {
-  const palette = {
-    high:   { bg:'#dcfce7', fg:'#166534', label:'High confidence' },
-    medium: { bg:'#fef3c7', fg:'#92400e', label:'Medium confidence' },
-    low:    { bg:'#f1f5f9', fg:'#475569', label:'Low confidence' },
-  };
-  const p   = palette[t.confidence] || palette.low;
-  const src = t.routePath === 'kb'
-    ? (t.confidence === 'low' ? 'New pattern' : 'Pattern match')
-    : `Agent · ${(t.steps||[]).length} step${(t.steps||[]).length===1?'':'s'}`;
-  return `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.375rem;">
-    <span style="background:${p.bg};color:${p.fg};padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${p.label}</span>
-    <span style="font-size:0.7rem;color:#94a3b8;">${escHtml(src)}</span>
+  // Honest labeling: the chip describes MATCH QUALITY, not answer
+  // correctness. KB hits show whether parameters were explicit or
+  // inferred; agent runs show their step count.
+  let bg, fg, label;
+  if (t.routePath === 'kb') {
+    if (t.confidence === 'high') {
+      bg = '#dcfce7'; fg = '#166534'; label = 'Strong pattern match';
+    } else if (t.confidence === 'medium') {
+      bg = '#fef3c7'; fg = '#92400e'; label = 'Pattern · inferred params';
+    } else {
+      bg = '#f1f5f9'; fg = '#475569'; label = 'Weak pattern match';
+    }
+  } else {
+    bg = '#e0e7ff'; fg = '#3730a3';
+    label = `Agent · ${(t.steps||[]).length} step${(t.steps||[]).length===1?'':'s'}`;
+  }
+  const emptyChip = t.isEmpty
+    ? `<span style="background:#fee2e2;color:#991b1b;padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Empty result · verify</span>`
+    : '';
+  return `<div style="display:flex;align-items:center;gap:0.375rem;margin-bottom:0.375rem;flex-wrap:wrap;">
+    <span style="background:${bg};color:${fg};padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${label}</span>
+    ${emptyChip}
   </div>`;
 }
 
@@ -14525,9 +14590,9 @@ function _askRenderSqlPanel(t, i, forceShown) {
              <summary style="cursor:pointer;user-select:none;padding:0.25rem 0;color:#64748b;">Show SQL</summary>
              <pre style="background:#0f172a;color:#e2e8f0;padding:0.625rem 0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0.375rem 0 0;">${escHtml(t.sql)}</pre>
            </details>`);
-  const isEmpty = !!(t.rows && t.rows.length === 0);
+  const isEmpty = !!t.isEmpty;
   const warnBar = forceShown && (isEmpty || t.confidence === 'low')
-    ? `<div style="background:#fef3c7;color:#92400e;padding:0.25rem 0.5rem;font-size:0.7rem;border-radius:0.25rem;margin-bottom:0.375rem;">⚠ ${isEmpty?'Empty result — the query may have made a wrong assumption.':'Low-confidence answer — verify the SQL.'}</div>`
+    ? `<div style="background:#fef3c7;color:#92400e;padding:0.25rem 0.5rem;font-size:0.7rem;border-radius:0.25rem;margin-bottom:0.375rem;">⚠ ${isEmpty?'Empty / all-zero result — the query may have made a wrong assumption (e.g. wrong year, wrong description pattern). Verify the SQL.':'Low-confidence answer — verify the SQL.'}</div>`
     : '';
   return `<div style="border:1px dashed #e2e8f0;border-radius:0.375rem;padding:0.375rem 0.5rem;background:#fafbfc;">
     ${warnBar}
@@ -14567,7 +14632,8 @@ async function askRerunSql(i) {
       t.columns = res[0].columns;
       t.rows    = res[0].values.map(row => Object.fromEntries(t.columns.map((c,k) => [c, row[k]])));
     }
-    const isEmpty = t.rows.length === 0;
+    const isEmpty = _askIsLogicallyEmpty(t.rows, t.columns);
+    t.isEmpty = isEmpty;
     t.narrative = await _askGenNarrative(t.question, sql, t.rows, t.columns, isEmpty, t.routePath || 'agent');
   } catch(e) { t.error = e.message; }
   _askRenderConvo();
