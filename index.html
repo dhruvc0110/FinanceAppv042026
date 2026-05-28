@@ -1982,6 +1982,12 @@ function startApp() {
   _updateSidebarTxCount();
   _startInactivityTimer();
   _initBudgetNoteDrag();
+  // Mount the floating Dictate + Ask pill once, globally (visible on every page).
+  if (!document.getElementById('floatingPill')) {
+    const _pillWrap = document.createElement('div');
+    _pillWrap.innerHTML = _floatingPillHtml();
+    document.body.appendChild(_pillWrap.firstElementChild);
+  }
   _historyReady = true;
   // PWA shortcut deep-link: ?startPage=...&sub=... lets long-press
   // shortcuts (declared in manifest.webmanifest) jump straight to a page.
@@ -2112,14 +2118,18 @@ function showToast(msg, durationMs) {
 }
 
 // ── Floating action pill (Dictate + Ask) ─────────────────────
-// One unified pill, bottom-left at left:15rem (sits clear of the
-// sidebar). Left half = Dictate mic (existing behavior, dtCtx is
-// 'tx' | 'ft' | undefined). Right half = Ask FinApp (conversational
-// reporting modal). A thin vertical separator distinguishes the two.
-function _floatingPillHtml(dtCtx) {
-  const ctxArg = dtCtx ? `'${dtCtx}'` : '';
-  return `<div style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;display:flex;border-radius:9999px;box-shadow:0 4px 12px rgba(0,0,0,0.25);overflow:hidden;border:1px solid rgba(0,0,0,0.1);">
-    <button onclick="dtOpenFloatingModal(${ctxArg})" title="Dictate a transaction"
+// Mounted ONCE at the body level in startApp() (after login). Visible
+// on every page because position:fixed. Left half = Dictate mic (target
+// table is derived at click time via _dtCtxFromPage). Right half = Ask
+// FinApp (conversational reporting modal).
+function _dtCtxFromPage() {
+  if (currentPage === 'future-transactions') return 'ft';
+  if (currentPage === 'transactions' && typeof _txComboTab !== 'undefined' && _txComboTab === 'future-transactions') return 'ft';
+  return 'tx';
+}
+function _floatingPillHtml() {
+  return `<div id="floatingPill" style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;display:flex;border-radius:9999px;box-shadow:0 4px 12px rgba(0,0,0,0.25);overflow:hidden;border:1px solid rgba(0,0,0,0.1);">
+    <button onclick="dtOpenFloatingModal(_dtCtxFromPage())" title="Dictate a transaction"
       style="width:3rem;height:3rem;background:#dc2626;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2367,10 +2377,7 @@ function _renderATPage(container) {
   wrap.appendChild(tabBar);
   wrap.appendChild(content);
 
-  // Floating action pill (Dictate + Ask)
-  const pillWrap = document.createElement('div');
-  pillWrap.innerHTML = _floatingPillHtml('tx');
-  wrap.appendChild(pillWrap.firstElementChild);
+  // Floating Dictate + Ask pill is mounted globally in startApp(); no per-page mount needed.
 
   container.innerHTML = '';
   container.appendChild(wrap);
@@ -3578,9 +3585,6 @@ function _renderTxPage(container) {
         </div>
       </div>
     </div>
-
-    <!-- Floating action pill (Dictate + Ask) -->
-    ${_floatingPillHtml('tx')}
 
     <!-- Transaction Link Modal -->
     <div id="txLinkModal" style="display:none"
@@ -8417,8 +8421,6 @@ function _renderFTPage(container) {
       </div>
     </div>
 
-    <!-- Floating action pill (Dictate + Ask) -->
-    ${_floatingPillHtml('ft')}
 
     <!-- Transaction Form Modal (shared with Transactions page) -->
     <div id="txFormModal" style="display:none"

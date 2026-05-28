@@ -15,7 +15,7 @@
 //
 // To force a refresh, bump the CACHE name.
 
-const CACHE = 'finapp-shell-v2';
+const CACHE = 'finapp-shell-v3';
 const SHELL = [
   './',
   './index.html',
