@@ -2059,6 +2059,32 @@ function ytdPeriods() {
   return out;
 }
 
+// ── Day-of-month helpers (Repeatable.dayOfMonth / CreditCard.paymentDueDay) ──
+// Storage: NULL = unset; 1-31 = that calendar day (clamped to month-end for
+// short months); 32 = explicit "Last day of month". DOM_LAST is the sentinel.
+const DOM_LAST = 32;
+function _daysInMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0).getDate();
+}
+function _resolveDom(stored, year, monthIdx) {
+  if (!stored) return null;
+  const dim = _daysInMonth(year, monthIdx);
+  return stored >= DOM_LAST ? dim : Math.min(stored, dim);
+}
+function _domDisplay(stored) {
+  if (!stored) return '—';
+  return stored >= DOM_LAST ? 'Last' : String(stored);
+}
+function _domOptions(selected) {
+  const sel = parseInt(selected) || 0;
+  let html = '<option value="">—</option>';
+  for (let i = 1; i <= 31; i++) {
+    html += `<option value="${i}"${i === sel ? ' selected' : ''}>${i}</option>`;
+  }
+  html += `<option value="${DOM_LAST}"${sel >= DOM_LAST ? ' selected' : ''}>Last day</option>`;
+  return html;
+}
+
 // ════════════════════════════════════════════════════════════
 // BALANCE ENGINE
 // ════════════════════════════════════════════════════════════
@@ -3924,7 +3950,10 @@ function generateRepeatables() {
     const done = queryVal(`SELECT COUNT(*) FROM RepeatableGenLog WHERE repeatableId='${r.id}' AND period='${cp}'`);
     if (done > 0) continue;
 
-    const dom     = parseInt(r.dayOfMonth);
+    const yr      = parseInt(cp.slice(0,4));
+    const moIdx   = parseInt(cp.slice(4,6)) - 1;
+    const dom     = _resolveDom(parseInt(r.dayOfMonth), yr, moIdx);
+    if (!dom) continue;
     const dateStr = `${cp.slice(0,4)}-${cp.slice(4,6)}-${String(dom).padStart(2,'0')}`;
     const isFut   = dateStr > today;
     const table   = isFut ? 'FutureTransaction' : '"Transaction"';
@@ -5564,7 +5593,7 @@ function _renderSettingsPage(container) {
         <td class="px-3 py-2 text-sm text-slate-600">${escHtml(c.liabilityCode||'')} ${escHtml(c.liabilityName||'&mdash;')}</td>
         <td class="px-3 py-2 text-sm text-slate-600">${escHtml(c.paymentCode||'')} ${escHtml(c.paymentName||'&mdash;')}</td>
         <td class="px-3 py-2 text-sm text-right text-slate-700">${c.creditLimit ? fmtCurrency(+c.creditLimit,2) : '&mdash;'}</td>
-        <td class="px-3 py-2 text-sm text-center text-slate-600">${c.paymentDueDay||'&mdash;'}</td>
+        <td class="px-3 py-2 text-sm text-center text-slate-600">${_domDisplay(c.paymentDueDay)}</td>
         <td class="px-3 py-2 text-center">
           <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${c.status}</span>
         </td>
@@ -5803,7 +5832,7 @@ function _renderSettingsPage(container) {
           <td class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount,2)}</td>
           <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode||'')} ${escHtml(r.drName||'')}</td>
           <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode||'')} ${escHtml(r.crName||'')}</td>
-          <td class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth||'&mdash;'}</td>
+          <td class="px-3 py-2 text-sm text-slate-500 text-center">${_domDisplay(r.dayOfMonth)}</td>
           <td class="px-3 py-2 text-center">
             <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${r.status}</span>
           </td>
@@ -6095,7 +6124,7 @@ function _renderSettingsPage(container) {
       const days = (() => { try { return JSON.parse(c.daysInAdvance).join(', '); } catch(_) { return c.daysInAdvance; } })();
       return `<tr class="border-t border-slate-100 hover:bg-slate-50">
         <td class="px-3 py-2 text-sm font-medium text-slate-800">${escHtml(c.cardName)}</td>
-        <td class="px-3 py-2 text-sm text-slate-500 text-center">${c.paymentDueDay || '—'}</td>
+        <td class="px-3 py-2 text-sm text-slate-500 text-center">${_domDisplay(c.paymentDueDay)}</td>
         <td class="px-3 py-2 text-sm text-slate-500">${escHtml(days)}</td>
         <td class="px-3 py-2 text-sm text-slate-500 truncate max-w-[180px]">${escHtml(c.recipientEmail)}</td>
         <td class="px-3 py-2 text-center">
@@ -6320,8 +6349,8 @@ function _renderSettingsPage(container) {
             <div id="repCrPickerWrap"></div>
           </div>
           <div>
-            <label class="block text-xs text-slate-500 mb-1">Day of Month <span class="text-slate-400">(1–28, optional)</span></label>
-            <input id="repDay" type="number" min="1" max="28" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400" placeholder="e.g. 15">
+            <label class="block text-xs text-slate-500 mb-1">Day of Month <span class="text-slate-400">(1–31 or Last day, optional)</span></label>
+            <select id="repDay" class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">${_domOptions(null)}</select>
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
@@ -6377,9 +6406,9 @@ function _renderSettingsPage(container) {
                 class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
             </div>
             <div>
-              <label class="block text-xs text-slate-500 mb-1">Payment Due Day <span class="text-slate-400">(1–28)</span></label>
-              <input id="ccDueDay" type="number" min="1" max="28" placeholder="e.g. 15"
-                class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-slate-400">
+              <label class="block text-xs text-slate-500 mb-1">Payment Due Day <span class="text-slate-400">(1–31 or Last day)</span></label>
+              <select id="ccDueDay"
+                class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">${_domOptions(null)}</select>
             </div>
           </div>
           <div>
@@ -8511,9 +8540,12 @@ function _renderCCPage(container) {
     const utilCls = utilPct >= 90 ? 'bg-red-500' : utilPct >= 70 ? 'bg-amber-500' : 'bg-green-500';
 
     const now = new Date();
-    const dom = +cc.paymentDueDay;
-    let due = new Date(now.getFullYear(), now.getMonth(), dom);
-    if (due <= now) due = new Date(now.getFullYear(), now.getMonth()+1, dom);
+    const domThis = _resolveDom(+cc.paymentDueDay, now.getFullYear(), now.getMonth());
+    let due = new Date(now.getFullYear(), now.getMonth(), domThis);
+    if (due <= now) {
+      const domNext = _resolveDom(+cc.paymentDueDay, now.getFullYear(), now.getMonth()+1);
+      due = new Date(now.getFullYear(), now.getMonth()+1, domNext);
+    }
     const daysUntil = Math.ceil((due - now) / 86400000);
     const dueCls = daysUntil <= 5 ? 'text-red-600' : daysUntil <= 10 ? 'text-amber-600' : 'text-slate-700';
     const available = Math.max(0, lim - bal);
@@ -10523,7 +10555,7 @@ function renderRepeatableInner(container) {
         <td data-label="Amount" class="px-3 py-2 text-sm text-slate-800 text-right font-medium">${fmtCurrency(r.amount, 2)}</td>
         <td data-label="DR Account" class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drCode || '')} ${escHtml(r.drName || '')}</td>
         <td data-label="CR Account" class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crCode || '')} ${escHtml(r.crName || '')}</td>
-        <td data-label="Day" class="px-3 py-2 text-sm text-slate-500 text-center">${r.dayOfMonth || '&mdash;'}</td>
+        <td data-label="Day" class="px-3 py-2 text-sm text-slate-500 text-center">${_domDisplay(r.dayOfMonth)}</td>
         <td data-label="Status" class="px-3 py-2 text-center">
           <span class="text-xs px-1.5 py-0.5 rounded font-medium ${isActive ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}">${r.status}</span>
         </td>
@@ -10605,8 +10637,8 @@ function renderRepeatableInner(container) {
             <input id="repAmt" type="number" step="0.01" min="0" class="${IC}" placeholder="0.00">
           </div>
           <div>
-            <label class="block text-xs text-slate-500 mb-1">Day of Month <span class="text-slate-400">(1–28, optional)</span></label>
-            <input id="repDay" type="number" min="1" max="28" class="${IC}" placeholder="e.g. 15">
+            <label class="block text-xs text-slate-500 mb-1">Day of Month <span class="text-slate-400">(1–31 or Last day, optional)</span></label>
+            <select id="repDay" class="${IC}" style="background:white">${_domOptions(null)}</select>
           </div>
           <div class="col-span-2">
             <label class="block text-xs text-slate-500 mb-1">Transaction Description</label>
@@ -11017,7 +11049,7 @@ function repSave() {
   if (!drId)            return showErr('DR Account is required.');
   if (!crId)            return showErr('CR Account is required.');
 
-  const domVal   = dom ? Math.min(28, Math.max(1, parseInt(dom) || 1)) : null;
+  const domVal   = dom ? Math.min(DOM_LAST, Math.max(1, parseInt(dom) || 1)) : null;
   const now      = new Date().toISOString();
   try {
     if (id) {
@@ -11078,7 +11110,8 @@ function repPlay(id) {
   const now = new Date();
   let date = now.toLocaleDateString('en-CA');
   if (r.dayOfMonth) {
-    const d = new Date(now.getFullYear(), now.getMonth(), +r.dayOfMonth);
+    const dom = _resolveDom(+r.dayOfMonth, now.getFullYear(), now.getMonth());
+    const d = new Date(now.getFullYear(), now.getMonth(), dom);
     date = d.toLocaleDateString('en-CA');
   }
 
@@ -12755,7 +12788,7 @@ function ccSave() {
   if (!name)   return showErr('Card name is required.');
   if (!liabId) return showErr('Liability account is required.');
   if (!payId)  return showErr('Payment account is required.');
-  if (dueDay && (dueDay < 1 || dueDay > 28)) return showErr('Payment due day must be 1–28.');
+  if (dueDay && (dueDay < 1 || dueDay > DOM_LAST)) return showErr('Payment due day must be 1–31 or Last day.');
 
   const now  = new Date().toISOString();
   try {
