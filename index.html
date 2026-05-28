@@ -14017,14 +14017,16 @@ function _askBuildSchemaPrompt() {
     '  - paymentDueDay and dayOfMonth: 1-31 (clamped to month-end on short months); 32 = Last day of month.',
     '  - For "expenses": Account.type=\'EXPENSE\' AND the expense Account appears as Transaction.drAccountId.',
     '  - For "income": Account.type=\'INCOME\' AND the income Account appears as Transaction.crAccountId.',
-    '  - Dividends are Transaction rows where importSource=\'Equity\' AND description LIKE \'Dividend - <TICKER>%\'. The ticker is embedded in the description string, not a foreign key. Use distinct_values to discover the exact format if uncertain.',
+    '  - Dividends are Transaction rows where importSource=\'Equity\' AND the description contains both the word "Dividend" and the ticker symbol. ALWAYS prefer the broad pattern: description LIKE \'%Dividend%\' AND description LIKE \'%<TICKER>%\'. This survives dash variants (hyphen vs en-dash), extra whitespace, and minor format drift. Do NOT use exact-match (description = \'Dividend - TICKER\') for descriptions — it is fragile.',
+    '  - All text uses ASCII characters only: hyphen-minus (-), straight quotes. Never emit Unicode dashes (–, —) or smart quotes in SQL.',
     '',
     'When responding to the user:',
     '  - Use describe_table / distinct_values / sample_rows when you need to verify column names, enum values, or data shape before writing SQL.',
-    '  - Use run_query exactly once when you are ready to compute the final answer. The last run_query call you make IS the answer query.',
+    '  - Use run_query when you are ready to compute the final answer. The last run_query call you make IS the answer query.',
     '  - After run_query, write a brief final text response (1-3 sentences) summarizing the result for the user.',
-    '  - If a run_query returns 0 rows, DO NOT assert that no data exists. Either try a different angle (e.g. broaden the WHERE, check the description pattern) or tell the user your query may have made a wrong assumption.',
-    '  - Be economical: only call exploration tools when the schema prompt isn\'t enough. Most questions need at most 1 exploration call before run_query.',
+    '  - MANDATORY: if a run_query returns 0 rows OR a single all-zero/all-null aggregate row, you MUST NOT stop and assert "no data exists". Instead, immediately call distinct_values or sample_rows on the relevant column to debug your assumptions, then retry run_query with a corrected pattern. Only after a real debugging attempt should you tell the user the result is empty.',
+    '  - For LIKE patterns on free-text columns (especially description), always prefer broad: %WORD% rather than exact starts-with.',
+    '  - Be economical on simple questions: most questions need at most 1 exploration call before run_query. But empty results trigger MANDATORY debugging — never give up after one attempt.',
   ].join('\n');
 }
 
@@ -14033,6 +14035,11 @@ function _askSqlScrub(sqlIn) {
   if (!sqlIn || typeof sqlIn !== 'string') throw new Error('Empty SQL');
   let sql = sqlIn.trim().replace(/;+\s*$/, '');           // strip trailing semicolons
   if (sql.indexOf(';') !== -1) throw new Error('Multiple statements not allowed');
+  // Normalize Unicode dashes that the LLM sometimes emits in LIKE
+  // patterns (en-dash U+2013, em-dash U+2014). User finance data
+  // uses ASCII hyphen-minus; without this, "description LIKE 'Dividend – QQQI%'"
+  // never matches a row containing "Dividend - QQQI".
+  sql = sql.replace(/–/g, '-').replace(/—/g, '-');
   const head = sql.replace(/^\s*\/\*[\s\S]*?\*\//, '').trim().toUpperCase();
   if (!/^(SELECT|WITH)\b/.test(head)) throw new Error('Only SELECT (or WITH ... SELECT) is allowed');
   const blocked = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|PRAGMA|ATTACH|DETACH|CREATE|TRUNCATE|VACUUM|REINDEX)\b/i;
@@ -14275,6 +14282,8 @@ async function _askKbStore(question, sql) {
     _askDateContext(),
     '',
     'CRITICAL: any date/year/period literal in the SQL that came from a relative phrase ("this year", "this month", "today") MUST be parameterized in the template — never hard-code the current year. Use {YEAR}, {PERIOD_YYYYMM}, {DATE} placeholders. The matcher will resolve relative phrases using the current date at lookup time.',
+    '',
+    'ALSO CRITICAL: when the SQL uses LIKE on a free-text column (especially description), the stored template MUST use the broad form: description LIKE \'%KEYWORD%\' AND description LIKE \'%{TICKER}%\' — NOT exact-match (description = \'...\') and NOT prefix-only (LIKE \'X - {TICKER}%\'). Exact and prefix patterns are fragile to dash variants, whitespace, and format drift. Always use ASCII characters in the template — never Unicode dashes (–, —) or smart quotes.',
     '',
     'Return STRICT JSON: {"signature":"<paraphrased question template with {PARAM_NAME} placeholders>","sqlTemplate":"<sql with {PARAM_NAME} placeholders matching the signature>"}.',
     'Use UPPER_SNAKE_CASE for parameter names. Examples: {TICKER}, {N}, {PERIOD_YYYYMM}, {YEAR}, {ACCOUNT_NAME}.',
