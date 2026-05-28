@@ -1040,6 +1040,10 @@ function _initCoreSchema() {
       approvedCount INTEGER NOT NULL DEFAULT 0,
       rejectedCount INTEGER NOT NULL DEFAULT 0,
       importedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS SavedQuery (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL,
+      question TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'table',
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
   ];
   stmts.forEach(sql => {
     try { db.run(sql); } catch(e) { console.warn('_initCoreSchema:', e.message); }
@@ -1798,6 +1802,18 @@ function startApp() {
     )`);
   } catch(e) { console.warn('ScratchPad init:', e.message); }
 
+  // Ensure SavedQuery table exists (Ask FinApp feature)
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS SavedQuery (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      question TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'table',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('SavedQuery init:', e.message); }
+
   // Ensure BankAccount table exists
   try {
     db.run(`CREATE TABLE IF NOT EXISTS BankAccount (
@@ -2085,6 +2101,45 @@ function _domOptions(selected) {
   return html;
 }
 
+// Small toast helper used across new features (Ask, etc.).
+function showToast(msg, durationMs) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;color:white;padding:0.5rem 1rem;border-radius:0.5rem;font-size:0.8125rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.2);opacity:0;transition:opacity 0.15s;';
+  document.body.appendChild(t);
+  requestAnimationFrame(() => { t.style.opacity = '1'; });
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 200); }, durationMs || 2200);
+}
+
+// ── Floating action pill (Dictate + Ask) ─────────────────────
+// One unified pill, bottom-left at left:15rem (sits clear of the
+// sidebar). Left half = Dictate mic (existing behavior, dtCtx is
+// 'tx' | 'ft' | undefined). Right half = Ask FinApp (conversational
+// reporting modal). A thin vertical separator distinguishes the two.
+function _floatingPillHtml(dtCtx) {
+  const ctxArg = dtCtx ? `'${dtCtx}'` : '';
+  return `<div style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;display:flex;border-radius:9999px;box-shadow:0 4px 12px rgba(0,0,0,0.25);overflow:hidden;border:1px solid rgba(0,0,0,0.1);">
+    <button onclick="dtOpenFloatingModal(${ctxArg})" title="Dictate a transaction"
+      style="width:3rem;height:3rem;background:#dc2626;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+    <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
+    <button onclick="askOpen()" title="Ask FinApp"
+      style="width:3rem;height:3rem;background:#334155;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#334155'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+      </svg>
+    </button>
+  </div>`;
+}
+
 // ════════════════════════════════════════════════════════════
 // BALANCE ENGINE
 // ════════════════════════════════════════════════════════════
@@ -2312,20 +2367,10 @@ function _renderATPage(container) {
   wrap.appendChild(tabBar);
   wrap.appendChild(content);
 
-  // Floating dictate button
-  const micBtn = document.createElement('button');
-  micBtn.title = 'Dictate a transaction';
-  micBtn.style.cssText = 'position:fixed;bottom:1.5rem;left:15rem;z-index:200;width:3rem;height:3rem;border-radius:50%;background:#dc2626;border:2px solid #991b1b;color:white;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(220,38,38,0.4);cursor:pointer;transition:transform 0.1s,background 0.1s;';
-  micBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-    <line x1="12" y1="19" x2="12" y2="23"/>
-    <line x1="8" y1="23" x2="16" y2="23"/>
-  </svg>`;
-  micBtn.onmouseover = () => { micBtn.style.background = '#b91c1c'; micBtn.style.transform = 'scale(1.1)'; };
-  micBtn.onmouseout  = () => { micBtn.style.background = '#dc2626'; micBtn.style.transform = ''; };
-  micBtn.onclick     = () => dtOpenFloatingModal('tx');
-  wrap.appendChild(micBtn);
+  // Floating action pill (Dictate + Ask)
+  const pillWrap = document.createElement('div');
+  pillWrap.innerHTML = _floatingPillHtml('tx');
+  wrap.appendChild(pillWrap.firstElementChild);
 
   container.innerHTML = '';
   container.appendChild(wrap);
@@ -3534,18 +3579,8 @@ function _renderTxPage(container) {
       </div>
     </div>
 
-    <!-- Floating dictate mic button -->
-    <button onclick="dtOpenFloatingModal()"
-      title="Dictate a transaction"
-      style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;"
-      class="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl flex items-center justify-center transition-all hover:scale-110 focus:outline-none border-2 border-red-800">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-        <line x1="12" y1="19" x2="12" y2="23"/>
-        <line x1="8" y1="23" x2="16" y2="23"/>
-      </svg>
-    </button>
+    <!-- Floating action pill (Dictate + Ask) -->
+    ${_floatingPillHtml('tx')}
 
     <!-- Transaction Link Modal -->
     <div id="txLinkModal" style="display:none"
@@ -6636,6 +6671,27 @@ function aboutTab() {
       </p>
     </div>
 
+    <!-- Roadmap -->
+    <div class="border border-slate-200 rounded-lg p-4 space-y-3">
+      <h3 class="text-sm font-semibold text-slate-800">Roadmap — Conversational reporting</h3>
+      <table class="w-full text-xs">
+        <thead><tr class="text-left text-slate-500 border-b border-slate-200">
+          <th class="pb-1 pr-2 font-medium">Phase</th>
+          <th class="pb-1 pr-2 font-medium">Scope</th>
+          <th class="pb-1 font-medium">Status</th>
+        </tr></thead>
+        <tbody class="text-slate-700">
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">1+2</td><td class="py-1 pr-2">Floating pill (Dictate + Ask), modal with Table/Chat toggle, runtime schema, SQL scrub, show/edit SQL, starter prompts, CSV export, saved queries (DB-backed), in-session multi-turn chat history</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">3</td><td class="py-1 pr-2">Persist conversation history across sessions; pin a saved query to a Dashboard tile</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">4</td><td class="py-1 pr-2">Auto-rendered charts for "trend / over time" questions; drill-down from chat answer to filtered Transactions view</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">5</td><td class="py-1 pr-2">Voice input on Ask (reuse Dictate's Web Speech); floating pill optional auto-dismiss after inactivity</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+        </tbody>
+      </table>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        Updated as phases ship. Status keys: <strong>Shipped</strong> · <strong>Next</strong> · <strong>Later</strong>.
+      </p>
+    </div>
+
     <!-- API Usage -->
     <div class="border border-slate-200 rounded-lg p-4 space-y-3">
       <div class="flex items-center justify-between">
@@ -8361,18 +8417,8 @@ function _renderFTPage(container) {
       </div>
     </div>
 
-    <!-- Floating dictate mic button -->
-    <button onclick="dtOpenFloatingModal('ft')"
-      title="Dictate a future transaction"
-      style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;"
-      class="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-xl flex items-center justify-center transition-all hover:scale-110 focus:outline-none border-2 border-red-800">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-        <line x1="12" y1="19" x2="12" y2="23"/>
-        <line x1="8" y1="23" x2="16" y2="23"/>
-      </svg>
-    </button>
+    <!-- Floating action pill (Dictate + Ask) -->
+    ${_floatingPillHtml('ft')}
 
     <!-- Transaction Form Modal (shared with Transactions page) -->
     <div id="txFormModal" style="display:none"
@@ -13713,6 +13759,541 @@ function renderPlaceholder(container, page) {
         <p class="text-slate-400 text-sm mt-2">Coming in the next chunk</p>
       </div>
     </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// ASK FINAPP — conversational reporting (Phase 1+2)
+// ════════════════════════════════════════════════════════════
+// Floating-pill -> Ask -> modal. Two modes: Table (rows) and Chat
+// (narrative). Pipeline:
+//   user question -> LLM call 1: SQL -> scrub -> sql.js exec -> rows
+//   if Chat: rows + question -> LLM call 2: narrative
+// State is kept in module-level lets so the modal preserves convo
+// across open/close within a session. SavedQuery rows persist to DB.
+
+let _askMode       = localStorage.getItem('_askMode') || 'table';   // 'table' | 'chat'
+let _askConvo      = [];      // [{ role:'user'|'assistant', question, sql, rows, columns, narrative, error, mode, ts }]
+let _askInflight   = false;
+let _askEditingIdx = null;    // index of turn whose SQL is being edited
+
+const ASK_MAX_HISTORY_TURNS = 5;   // turns included in chat-mode context
+const ASK_MAX_ROWS          = 500; // hard ceiling on returned rows
+const ASK_MODEL             = 'claude-sonnet-4-20250514';
+
+function askOpen() {
+  if (!_itHasApiKey || !_itHasApiKey()) {
+    alert('Anthropic API key not set. Add one in Settings → Configuration → API key, then try again.');
+    return;
+  }
+  _askEnsureModal();
+  document.getElementById('askModal').style.display = 'flex';
+  _askLoadSaved();
+  _askRenderConvo();
+  setTimeout(() => document.getElementById('askInput')?.focus(), 50);
+}
+
+function askClose() {
+  const m = document.getElementById('askModal');
+  if (m) m.style.display = 'none';
+}
+
+function askSetMode(mode) {
+  _askMode = (mode === 'chat') ? 'chat' : 'table';
+  localStorage.setItem('_askMode', _askMode);
+  const tBtn = document.getElementById('askModeTable');
+  const cBtn = document.getElementById('askModeChat');
+  if (tBtn && cBtn) {
+    const active   = 'bg-slate-900 text-white';
+    const inactive = 'bg-white text-slate-600 hover:bg-slate-100';
+    tBtn.className = `px-3 py-1 text-sm rounded-l-md border border-slate-300 ${_askMode==='table'?active:inactive}`;
+    cBtn.className = `px-3 py-1 text-sm rounded-r-md border border-slate-300 border-l-0 ${_askMode==='chat'?active:inactive}`;
+  }
+}
+
+function askClear() {
+  if (_askConvo.length && !confirm('Clear the conversation?')) return;
+  _askConvo = [];
+  _askEditingIdx = null;
+  _askRenderConvo();
+}
+
+function askStarter(text) {
+  const inp = document.getElementById('askInput');
+  if (!inp) return;
+  inp.value = text;
+  inp.focus();
+}
+
+// ── Modal HTML (built once, reused) ──────────────────────────
+function _askEnsureModal() {
+  if (document.getElementById('askModal')) return;
+  const wrap = document.createElement('div');
+  wrap.id = 'askModal';
+  wrap.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:1rem;';
+  wrap.onclick = e => { if (e.target === wrap) askClose(); };
+  wrap.innerHTML = `
+    <div style="background:white;border-radius:0.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.3);width:90vw;max-width:1100px;height:85vh;max-height:820px;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:0.75rem 1rem;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:0.75rem;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:0.5rem;flex:1;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          <h2 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">Ask FinApp</h2>
+        </div>
+        <div style="display:flex;">
+          <button id="askModeTable" onclick="askSetMode('table')" class="px-3 py-1 text-sm rounded-l-md border border-slate-300 bg-slate-900 text-white">Table</button>
+          <button id="askModeChat"  onclick="askSetMode('chat')"  class="px-3 py-1 text-sm rounded-r-md border border-slate-300 border-l-0 bg-white text-slate-600 hover:bg-slate-100">Chat</button>
+        </div>
+        <button onclick="askClear()" title="Clear conversation"
+          style="border:1px solid #cbd5e1;background:white;color:#64748b;padding:0.25rem 0.5rem;border-radius:0.375rem;font-size:0.75rem;cursor:pointer;">Clear</button>
+        <button onclick="askClose()" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;padding:0 0.5rem;" title="Close">&times;</button>
+      </div>
+      <div style="flex:1;display:flex;overflow:hidden;min-height:0;">
+        <aside id="askSidebar" style="width:14rem;flex-shrink:0;border-right:1px solid #e2e8f0;background:#f8fafc;padding:0.75rem;overflow-y:auto;display:flex;flex-direction:column;gap:1rem;">
+          <div>
+            <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Starter prompts</div>
+            <div id="askStarters" style="display:flex;flex-direction:column;gap:0.25rem;"></div>
+          </div>
+          <div>
+            <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Saved queries</div>
+            <div id="askSavedList" style="display:flex;flex-direction:column;gap:0.25rem;"></div>
+          </div>
+        </aside>
+        <main id="askConvo" style="flex:1;overflow-y:auto;padding:1rem;background:white;min-width:0;"></main>
+      </div>
+      <div style="padding:0.75rem 1rem;border-top:1px solid #e2e8f0;flex-shrink:0;display:flex;gap:0.5rem;align-items:center;">
+        <textarea id="askInput" rows="1" placeholder="Ask about your data…"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askSubmit();}"
+          style="flex:1;border:1px solid #cbd5e1;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;resize:none;font-family:inherit;outline:none;max-height:6rem;"></textarea>
+        <button id="askSubmitBtn" onclick="askSubmit()"
+          style="background:#0f172a;color:white;border:none;border-radius:0.5rem;padding:0.5rem 1rem;font-size:0.875rem;cursor:pointer;flex-shrink:0;">Send</button>
+        <button onclick="askSaveQuery()" title="Save the last question"
+          style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;cursor:pointer;flex-shrink:0;">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  _askRenderStarters();
+  askSetMode(_askMode);
+}
+
+// Starter prompts shown in the sidebar.
+const ASK_STARTERS = [
+  'Top 10 expenses in the current month',
+  'Total spend by category this year',
+  'Recent transactions over $500',
+  'Sum of dividends received this year',
+  'Credit card balances right now',
+  'Net worth: assets minus liabilities',
+];
+
+function _askRenderStarters() {
+  const el = document.getElementById('askStarters');
+  if (!el) return;
+  el.innerHTML = ASK_STARTERS.map(s =>
+    `<button onclick="askStarter(${JSON.stringify(s)})"
+       style="text-align:left;background:white;border:1px solid #e2e8f0;color:#475569;padding:0.375rem 0.5rem;border-radius:0.375rem;font-size:0.75rem;cursor:pointer;line-height:1.3;"
+       onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">${escHtml(s)}</button>`
+  ).join('');
+}
+
+// ── Schema prompt (built fresh on every send) ────────────────
+function _askBuildSchemaPrompt() {
+  let schema = '';
+  try {
+    const tables = query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`);
+    for (const t of tables) {
+      const cols = query(`PRAGMA table_info("${t.name.replace(/"/g, '""')}")`);
+      const colList = cols.map(c => `${c.name} ${c.type}${c.pk?' PK':''}${c.notnull?' NOT NULL':''}`).join(', ');
+      schema += `  "${t.name}"(${colList})\n`;
+    }
+  } catch(e) {
+    schema = '  (schema introspection failed: ' + e.message + ')';
+  }
+  return [
+    'You are a SQL generator for a personal finance app backed by SQLite (via sql.js).',
+    'Generate ONE read-only SELECT query that answers the user\'s question.',
+    '',
+    'Live schema:',
+    schema,
+    'Business notes:',
+    '  - "Transaction" is a reserved word; always quote it as "Transaction" in SQL.',
+    '  - Transactions are double-entry: drAccountId is debit, crAccountId is credit. amount is positive.',
+    '  - Account.type: ASSET, LIABILITY, EQUITY, INCOME, EXPENSE.',
+    '  - Account.role values: BELOW_THE_LINE, EXCLUDED, FLUX_PL, NULL. Exclude where role=\'EXCLUDED\' for typical financial totals.',
+    '  - importSource values: Manual, Scheduled, Recurring, Imported, Equity, Dictate, excel.',
+    '  - period is a TEXT column with format YYYYMM (e.g. \'202604\').',
+    '  - trxDate, createdAt, updatedAt are ISO 8601 strings.',
+    '  - paymentDueDay and dayOfMonth: 1-31 (clamped to month-end on short months); 32 = Last day of month.',
+    '  - For "expenses" use accounts where type=\'EXPENSE\'; for "income" use type=\'INCOME\'.',
+    '',
+    'Rules:',
+    '  - Output STRICT JSON only: {"sql": "...", "explanation": "..."}',
+    '  - SELECT only. No INSERT/UPDATE/DELETE/DROP/ALTER/PRAGMA/REPLACE/ATTACH/DETACH.',
+    '  - No trailing semicolons.',
+    '  - If a "current month/year" is referenced, use date(\'now\') / strftime in SQLite.',
+    '  - Always cap with LIMIT 500 unless the question is an aggregate scalar.',
+    '  - explanation: one sentence describing what the query returns.',
+  ].join('\n');
+}
+
+// ── SQL safety scrub ─────────────────────────────────────────
+function _askSqlScrub(sqlIn) {
+  if (!sqlIn || typeof sqlIn !== 'string') throw new Error('Empty SQL');
+  let sql = sqlIn.trim().replace(/;+\s*$/, '');           // strip trailing semicolons
+  if (sql.indexOf(';') !== -1) throw new Error('Multiple statements not allowed');
+  const head = sql.replace(/^\s*\/\*[\s\S]*?\*\//, '').trim().toUpperCase();
+  if (!/^(SELECT|WITH)\b/.test(head)) throw new Error('Only SELECT (or WITH ... SELECT) is allowed');
+  const blocked = /\b(INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE|PRAGMA|ATTACH|DETACH|CREATE|TRUNCATE|VACUUM|REINDEX)\b/i;
+  if (blocked.test(sql)) throw new Error('Write/DDL keywords are not allowed');
+  if (!/\bLIMIT\s+\d+/i.test(sql)) sql += ` LIMIT ${ASK_MAX_ROWS}`;
+  return sql;
+}
+
+// ── LLM calls ────────────────────────────────────────────────
+async function _askCallLlm(systemPrompt, messages, maxTokens) {
+  const apiKey = _itGetApiKey();
+  if (!apiKey) throw new Error('Anthropic API key not configured');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: ASK_MODEL,
+      max_tokens: maxTokens || 1024,
+      system: systemPrompt,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(()=>'');
+    throw new Error(`Anthropic API ${res.status}: ${errText.slice(0,200)}`);
+  }
+  const data = await res.json();
+  return data.content?.[0]?.text || '';
+}
+
+function _askHistoryMessages() {
+  // Build alternating user/assistant messages from the last N turns.
+  // Each assistant turn is condensed (SQL + brief result summary) to save tokens.
+  const turns = _askConvo.slice(-ASK_MAX_HISTORY_TURNS);
+  const out = [];
+  for (const t of turns) {
+    out.push({ role: 'user', content: t.question });
+    let resp;
+    if (t.error) {
+      resp = `(error: ${t.error})`;
+    } else {
+      const colHeader = (t.columns || []).join(', ');
+      const sample    = (t.rows || []).slice(0, 3).map(r => JSON.stringify(r)).join('\n');
+      resp = `SQL: ${t.sql || '(none)'}\nReturned ${t.rows?.length||0} row(s). Columns: ${colHeader}.\nSample:\n${sample}`;
+      if (t.narrative) resp += `\nNarrative: ${t.narrative}`;
+    }
+    out.push({ role: 'assistant', content: resp });
+  }
+  return out;
+}
+
+async function _askLlmSql(question) {
+  const system   = _askBuildSchemaPrompt();
+  const history  = _askMode === 'chat' ? _askHistoryMessages() : [];
+  const messages = history.concat([{ role: 'user', content: question }]);
+  const raw      = await _askCallLlm(system, messages, 800);
+  // Extract JSON — be forgiving about fenced code blocks.
+  let txt = raw.trim();
+  const fence = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) txt = fence[1].trim();
+  let parsed;
+  try { parsed = JSON.parse(txt); }
+  catch (e) {
+    // Fallback: try to find the first {...} block
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) { try { parsed = JSON.parse(m[0]); } catch(_) {} }
+    if (!parsed) throw new Error('Could not parse SQL response: ' + raw.slice(0,200));
+  }
+  if (!parsed.sql) throw new Error('Response missing sql field');
+  return { sql: parsed.sql, explanation: parsed.explanation || '' };
+}
+
+async function _askLlmSummarize(question, sql, rows, columns) {
+  // Cap the rows sent — for large result sets, send a sample + counts.
+  const total = rows.length;
+  const sample = rows.slice(0, 50);
+  const payload = {
+    question,
+    sql,
+    columns,
+    rowCount: total,
+    rowsShown: sample.length,
+    rows: sample,
+  };
+  const system = [
+    'You are a financial assistant explaining a query result to the user in plain English.',
+    'Be concise: 1-3 sentences. Lead with the headline number/insight. Round currency to whole dollars unless decimals matter.',
+    'If the result is empty, say so plainly. If a sample is provided, you may reference specific rows but do not list more than a handful.',
+    'No preambles like "Based on the data". Speak directly to the user.',
+  ].join('\n');
+  const messages = [{ role: 'user', content: 'Question: ' + question + '\n\nResult:\n' + JSON.stringify(payload, null, 2) }];
+  return await _askCallLlm(system, messages, 400);
+}
+
+// ── Main pipeline ────────────────────────────────────────────
+async function askSubmit() {
+  if (_askInflight) return;
+  const inp = document.getElementById('askInput');
+  const question = (inp?.value || '').trim();
+  if (!question) return;
+  inp.value = '';
+  _askInflight = true;
+  _askSetSendBtn(true);
+
+  const turn = { role: 'assistant', question, sql:'', rows:null, columns:null, narrative:'', error:'', mode:_askMode, ts: Date.now() };
+  _askConvo.push(turn);
+  _askRenderConvo();
+
+  try {
+    const { sql: rawSql, explanation } = await _askLlmSql(question);
+    let sql;
+    try { sql = _askSqlScrub(rawSql); }
+    catch (e) { turn.sql = rawSql; throw new Error('Generated SQL was rejected by the safety scrub: ' + e.message); }
+    turn.sql = sql;
+    turn.explanation = explanation;
+    _askRenderConvo();
+
+    const res  = db.exec(sql);
+    if (!res || !res.length) {
+      turn.columns = [];
+      turn.rows    = [];
+    } else {
+      turn.columns = res[0].columns;
+      turn.rows    = res[0].values.map(row => Object.fromEntries(turn.columns.map((c,i) => [c, row[i]])));
+    }
+    _askRenderConvo();
+
+    if (_askMode === 'chat') {
+      turn.narrative = await _askLlmSummarize(question, sql, turn.rows, turn.columns);
+    }
+  } catch (e) {
+    turn.error = e.message || String(e);
+  } finally {
+    _askInflight = false;
+    _askSetSendBtn(false);
+    _askRenderConvo();
+    document.getElementById('askInput')?.focus();
+  }
+}
+
+function _askSetSendBtn(busy) {
+  const b = document.getElementById('askSubmitBtn');
+  if (!b) return;
+  b.disabled    = busy;
+  b.textContent = busy ? 'Thinking…' : 'Send';
+  b.style.opacity = busy ? '0.6' : '1';
+}
+
+// ── Conversation rendering ───────────────────────────────────
+function _askRenderConvo() {
+  const el = document.getElementById('askConvo');
+  if (!el) return;
+  if (_askConvo.length === 0) {
+    el.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94a3b8;text-align:center;padding:2rem;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:0.75rem;opacity:0.6;">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        </svg>
+        <div style="font-size:0.875rem;font-weight:500;color:#475569;margin-bottom:0.25rem;">Ask FinApp anything about your data</div>
+        <div style="font-size:0.75rem;">Toggle <strong>Table</strong> for rows, <strong>Chat</strong> for narrative. Try a starter on the left.</div>
+      </div>`;
+    return;
+  }
+  el.innerHTML = _askConvo.map((t, i) => _askRenderTurn(t, i)).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function _askRenderTurn(t, i) {
+  const qBlock = `
+    <div style="margin-bottom:0.5rem;">
+      <div style="display:inline-block;background:#0f172a;color:white;padding:0.5rem 0.75rem;border-radius:0.75rem 0.75rem 0.25rem 0.75rem;max-width:80%;font-size:0.875rem;">${escHtml(t.question)}</div>
+    </div>`;
+  let body = '';
+  if (t.error) {
+    body = `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:0.5rem 0.75rem;border-radius:0.5rem;font-size:0.8125rem;">${escHtml(t.error)}</div>`;
+  } else if (t.rows === null && !t.sql) {
+    body = `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Generating SQL…</div>`;
+  } else if (t.rows === null && t.sql) {
+    body = `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Running query…</div>`;
+  } else {
+    const isChat = t.mode === 'chat';
+    if (isChat && t.narrative) {
+      body += `<div style="background:#f1f5f9;border-radius:0.5rem;padding:0.75rem;font-size:0.875rem;color:#1e293b;line-height:1.5;margin-bottom:0.5rem;white-space:pre-wrap;">${escHtml(t.narrative)}</div>`;
+    } else if (isChat && t.rows !== null) {
+      body += `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;margin-bottom:0.5rem;">Summarizing…</div>`;
+    }
+    body += _askRenderTable(t, i, isChat);
+  }
+
+  const sqlBlock = t.sql ? _askRenderSqlPanel(t, i) : '';
+  return `<div style="margin-bottom:1.25rem;">${qBlock}${body}${sqlBlock}</div>`;
+}
+
+function _askRenderTable(t, i, compact) {
+  if (!t.rows || !t.columns) return '';
+  if (t.rows.length === 0) {
+    return `<div style="font-size:0.8125rem;color:#64748b;font-style:italic;">No rows returned.</div>`;
+  }
+  // For chat-mode-compact: cap the inline preview at 5 rows; full export still available.
+  const maxRows = compact ? Math.min(5, t.rows.length) : t.rows.length;
+  const headers = t.columns.map(c => `<th style="text-align:left;padding:0.375rem 0.5rem;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.03em;background:#f8fafc;">${escHtml(c)}</th>`).join('');
+  const rowsHtml = t.rows.slice(0, maxRows).map(r => `<tr>${
+    t.columns.map(c => `<td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;font-size:0.8125rem;color:#1e293b;">${escHtml(r[c] === null || r[c] === undefined ? '' : String(r[c]))}</td>`).join('')
+  }</tr>`).join('');
+  const more = (t.rows.length > maxRows)
+    ? `<div style="font-size:0.75rem;color:#64748b;padding:0.375rem 0.5rem;">${t.rows.length - maxRows} more row(s). Use Export CSV for the full set.</div>`
+    : '';
+  const exportBtn = `<button onclick="askExportCsv(${i})" style="font-size:0.75rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Export CSV</button>`;
+  return `<div style="border:1px solid #e2e8f0;border-radius:0.5rem;overflow:hidden;margin-bottom:0.5rem;">
+    <div style="overflow-x:auto;max-height:24rem;overflow-y:auto;">
+      <table style="width:100%;border-collapse:collapse;"><thead><tr>${headers}</tr></thead><tbody>${rowsHtml}</tbody></table>
+    </div>
+    ${more}
+    <div style="padding:0.375rem 0.5rem;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:0.75rem;color:#64748b;">${t.rows.length} row${t.rows.length===1?'':'s'}${t.explanation?' · ' + escHtml(t.explanation):''}</span>
+      ${exportBtn}
+    </div>
+  </div>`;
+}
+
+function _askRenderSqlPanel(t, i) {
+  const isEditing = _askEditingIdx === i;
+  const headerBtns = isEditing
+    ? `<button onclick="askRerunSql(${i})" style="font-size:0.7rem;background:#0f172a;color:white;border:none;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Run</button>
+       <button onclick="askEditSqlCancel(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Cancel</button>`
+    : `<button onclick="askEditSql(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Edit</button>
+       <button onclick="askCopySql(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Copy</button>`;
+  const body = isEditing
+    ? `<textarea id="askSqlEdit${i}" style="width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.75rem;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.5rem;resize:vertical;min-height:6rem;">${escHtml(t.sql)}</textarea>`
+    : `<details style="font-size:0.75rem;color:#475569;">
+         <summary style="cursor:pointer;user-select:none;padding:0.25rem 0;color:#64748b;">Show SQL</summary>
+         <pre style="background:#0f172a;color:#e2e8f0;padding:0.625rem 0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0.375rem 0 0;">${escHtml(t.sql)}</pre>
+       </details>`;
+  return `<div style="border:1px dashed #e2e8f0;border-radius:0.375rem;padding:0.375rem 0.5rem;background:#fafbfc;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+      <span style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Generated SQL</span>
+      <div style="display:flex;gap:0.25rem;">${headerBtns}</div>
+    </div>
+    <div style="margin-top:0.25rem;">${body}</div>
+  </div>`;
+}
+
+function askEditSql(i)       { _askEditingIdx = i; _askRenderConvo(); }
+function askEditSqlCancel(i) { _askEditingIdx = null; _askRenderConvo(); }
+function askCopySql(i) {
+  const t = _askConvo[i]; if (!t) return;
+  navigator.clipboard?.writeText(t.sql).then(() => showToast('SQL copied'), () => {});
+}
+async function askRerunSql(i) {
+  const ta = document.getElementById('askSqlEdit'+i);
+  if (!ta) return;
+  let sql;
+  try { sql = _askSqlScrub(ta.value); }
+  catch (e) { alert('SQL rejected: ' + e.message); return; }
+  const t = _askConvo[i];
+  if (!t) return;
+  t.sql       = sql;
+  t.error     = '';
+  t.rows      = null;
+  t.columns   = null;
+  t.narrative = '';
+  _askEditingIdx = null;
+  _askRenderConvo();
+  try {
+    const res = db.exec(sql);
+    if (!res || !res.length) { t.columns = []; t.rows = []; }
+    else {
+      t.columns = res[0].columns;
+      t.rows    = res[0].values.map(row => Object.fromEntries(t.columns.map((c,k) => [c, row[k]])));
+    }
+    if (t.mode === 'chat') t.narrative = await _askLlmSummarize(t.question, sql, t.rows, t.columns);
+  } catch(e) { t.error = e.message; }
+  _askRenderConvo();
+}
+
+// ── CSV export ───────────────────────────────────────────────
+function askExportCsv(i) {
+  const t = _askConvo[i];
+  if (!t || !t.rows) return;
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [t.columns.join(',')].concat(t.rows.map(r => t.columns.map(c => esc(r[c])).join(',')));
+  const blob  = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a');
+  a.href      = url;
+  a.download  = 'finapp-ask-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Saved queries ────────────────────────────────────────────
+function _askLoadSaved() {
+  const el = document.getElementById('askSavedList');
+  if (!el) return;
+  let rows = [];
+  try { rows = query(`SELECT id, name, question, mode FROM SavedQuery ORDER BY updatedAt DESC LIMIT 50`); } catch(_) {}
+  if (!rows.length) {
+    el.innerHTML = `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;padding:0.25rem;">None yet. Run a question, then click Save.</div>`;
+    return;
+  }
+  el.innerHTML = rows.map(r => `
+    <div style="display:flex;align-items:flex-start;gap:0.25rem;background:white;border:1px solid #e2e8f0;border-radius:0.375rem;padding:0.375rem 0.5rem;">
+      <button onclick="askLoadQuery('${escHtml(r.id)}')"
+        style="flex:1;text-align:left;background:none;border:none;color:#1e293b;font-size:0.75rem;cursor:pointer;padding:0;line-height:1.3;"
+        title="${escHtml(r.question)}">${escHtml(r.name)}</button>
+      <button onclick="askDeleteQuery('${escHtml(r.id)}')" title="Delete"
+        style="background:none;border:none;color:#cbd5e1;font-size:0.875rem;cursor:pointer;padding:0;line-height:1;">×</button>
+    </div>`).join('');
+}
+
+function askSaveQuery() {
+  const last = _askConvo[_askConvo.length - 1];
+  if (!last || !last.question) { alert('No question to save yet.'); return; }
+  const name = prompt('Name this saved query:', last.question.slice(0, 60));
+  if (!name) return;
+  const now = new Date().toISOString();
+  try {
+    db.run(
+      `INSERT INTO SavedQuery (id, name, question, mode, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
+      [genId(), name.trim(), last.question, last.mode || _askMode, now, now]
+    );
+    syncAfterWrite();
+    _askLoadSaved();
+    showToast('Saved');
+  } catch(e) { alert('Save failed: ' + e.message); }
+}
+
+function askLoadQuery(id) {
+  const row = query(`SELECT question, mode FROM SavedQuery WHERE id='${id.replace(/'/g, "''")}'`)[0];
+  if (!row) return;
+  askSetMode(row.mode || 'table');
+  document.getElementById('askInput').value = row.question;
+  askSubmit();
+}
+
+function askDeleteQuery(id) {
+  if (!confirm('Delete this saved query?')) return;
+  try {
+    db.run(`DELETE FROM SavedQuery WHERE id=?`, [id]);
+    syncAfterWrite();
+    _askLoadSaved();
+  } catch(e) { alert('Delete failed: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
