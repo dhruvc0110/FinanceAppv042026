@@ -14063,6 +14063,9 @@ function _askSqlScrub(sqlIn) {
 }
 
 // ── LLM API wrapper (supports tools + returns full response) ──
+// opts.cacheSystem=true wraps the system prompt with cache_control
+// so multi-iteration agent runs reuse it within the 5-minute TTL —
+// massive savings on input tokens and on the per-minute rate limit.
 async function _askCallLlm(opts) {
   const apiKey = _itGetApiKey();
   if (!apiKey) throw new Error('Anthropic API key not configured');
@@ -14071,8 +14074,12 @@ async function _askCallLlm(opts) {
     max_tokens: opts.maxTokens || 1024,
     messages: opts.messages,
   };
-  if (opts.system) body.system = opts.system;
-  if (opts.tools)  body.tools  = opts.tools;
+  if (opts.system) {
+    body.system = opts.cacheSystem
+      ? [{ type: 'text', text: opts.system, cache_control: { type: 'ephemeral' } }]
+      : opts.system;
+  }
+  if (opts.tools) body.tools = opts.tools;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -14084,8 +14091,27 @@ async function _askCallLlm(opts) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const errText = await res.text().catch(()=>'');
-    throw new Error(`Anthropic API ${res.status}: ${errText.slice(0,300)}`);
+    const errText = await res.text().catch(() => '');
+    let msg = `Anthropic API ${res.status}`;
+    let isRateLimit = false;
+    try {
+      const errObj = JSON.parse(errText);
+      const errType = errObj.error && errObj.error.type;
+      if (errType === 'rate_limit_error') {
+        isRateLimit = true;
+        const raw = (errObj.error.message || '');
+        const m = raw.match(/(\d[\d,]*)\s+input tokens per minute/);
+        const limit = m ? m[1] : '30,000';
+        msg = `Anthropic rate limit hit (${limit} input tokens/minute). Wait ~60 seconds and try again. Tip: clear the KB cache (sidebar) to avoid burning tokens on stale patterns; ask one question at a time during heavy use.`;
+      } else if (errObj.error && errObj.error.message) {
+        msg = errObj.error.message;
+      }
+    } catch(_) {
+      msg += ': ' + errText.slice(0, 200);
+    }
+    const e = new Error(msg);
+    e.isRateLimit = isRateLimit;
+    throw e;
   }
   return await res.json();
 }
@@ -14196,13 +14222,17 @@ function _askExecTool(name, input) {
 }
 
 // Cap rows sent back to the LLM so token budget stays bounded.
+// Smaller cap (was 25) trades a tiny bit of agent insight for
+// significantly lower per-iteration token cost — important because
+// these tool results stack in the conversation history across all
+// agent iterations.
 function _askCondenseToolResult(result) {
   if (!result.ok) return { ok: false, error: result.error };
-  if (result.rows && result.rows.length > 25) {
+  if (result.rows && result.rows.length > 15) {
     return {
       ok: true, columns: result.columns,
-      rowCount: result.rowCount, rowsShown: 25,
-      rows: result.rows.slice(0, 25), truncated: true, sql: result.sql
+      rowCount: result.rowCount, rowsShown: 15,
+      rows: result.rows.slice(0, 15), truncated: true, sql: result.sql
     };
   }
   return result;
@@ -14216,7 +14246,7 @@ async function _askAgentRun(question, onStep) {
   let finalSql = null, finalRows = null, finalColumns = null, finalNarrative = '';
 
   for (let iter = 0; iter < ASK_MAX_AGENT_ITERS; iter++) {
-    const resp = await _askCallLlm({ system, messages, tools: ASK_TOOLS, maxTokens: 2000 });
+    const resp = await _askCallLlm({ system, messages, tools: ASK_TOOLS, maxTokens: 2000, cacheSystem: true });
     const blocks = resp.content || [];
     const toolUses = blocks.filter(b => b.type === 'tool_use');
     const texts    = blocks.filter(b => b.type === 'text');
