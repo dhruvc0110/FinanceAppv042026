@@ -1044,6 +1044,15 @@ function _initCoreSchema() {
       id TEXT PRIMARY KEY, name TEXT NOT NULL,
       question TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'table',
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS QueryPattern (
+      id TEXT PRIMARY KEY,
+      signature TEXT NOT NULL,
+      sqlTemplate TEXT NOT NULL,
+      originalQuestion TEXT NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 1,
+      confidence TEXT NOT NULL DEFAULT 'low',
+      lastUsedAt TEXT NOT NULL,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
   ];
   stmts.forEach(sql => {
     try { db.run(sql); } catch(e) { console.warn('_initCoreSchema:', e.message); }
@@ -1813,6 +1822,21 @@ function startApp() {
       updatedAt TEXT NOT NULL
     )`);
   } catch(e) { console.warn('SavedQuery init:', e.message); }
+
+  // Ensure QueryPattern table exists (Ask FinApp KB — Phase 2C)
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS QueryPattern (
+      id TEXT PRIMARY KEY,
+      signature TEXT NOT NULL,
+      sqlTemplate TEXT NOT NULL,
+      originalQuestion TEXT NOT NULL,
+      hits INTEGER NOT NULL DEFAULT 1,
+      confidence TEXT NOT NULL DEFAULT 'low',
+      lastUsedAt TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('QueryPattern init:', e.message); }
 
   // Ensure BankAccount table exists
   try {
@@ -6685,14 +6709,18 @@ function aboutTab() {
           <th class="pb-1 font-medium">Status</th>
         </tr></thead>
         <tbody class="text-slate-700">
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">1+2</td><td class="py-1 pr-2">Floating pill (Dictate + Ask), modal with Table/Chat toggle, runtime schema, SQL scrub, show/edit SQL, starter prompts, CSV export, saved queries (DB-backed), in-session multi-turn chat history</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">1</td><td class="py-1 pr-2">Original bi-modal (Table/Chat) Ask with single-shot SQL — confident-but-wrong on empty results</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">Superseded</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2A</td><td class="py-1 pr-2">Drop Table/Chat toggle → single Chat mode. Show SQL preference (off by default, persisted). Honest empty-result narrative; SQL panel auto-shown on uncertainty</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2B</td><td class="py-1 pr-2">Tool-using agent: describe_table, distinct_values, sample_rows, run_query. LLM iterates to ground in real data before answering</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2C</td><td class="py-1 pr-2">Knowledge Base (QueryPattern table): LLM-matches each new question against learned patterns. HIGH → single-shot; MEDIUM → with visible assumptions; LOW → agent. Auto-populates after agent successes</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2D</td><td class="py-1 pr-2">Confidence chip on each answer; 👍/👎 feedback promotes/removes the KB pattern. Agent-step trace visible during exploration</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">3</td><td class="py-1 pr-2">Persist conversation history across sessions; pin a saved query to a Dashboard tile</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">4</td><td class="py-1 pr-2">Auto-rendered charts for "trend / over time" questions; drill-down from chat answer to filtered Transactions view</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">5</td><td class="py-1 pr-2">Voice input on Ask (reuse Dictate's Web Speech); floating pill optional auto-dismiss after inactivity</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
         </tbody>
       </table>
       <p class="text-xs text-slate-400 leading-relaxed">
-        Updated as phases ship. Status keys: <strong>Shipped</strong> · <strong>Next</strong> · <strong>Later</strong>.
+        Status keys: <strong>Shipped</strong> · <strong>Superseded</strong> · <strong>Later</strong>. KB confidence ladder: 1 hit = low → 2–4 hits = medium → 5+ hits or 👍 = high; 👎 deletes.
       </p>
     </div>
 
@@ -13764,24 +13792,41 @@ function renderPlaceholder(container, page) {
 }
 
 // ════════════════════════════════════════════════════════════
-// ASK FINAPP — conversational reporting (Phase 1+2)
+// ASK FINAPP — conversational reporting (Phase 2 rebuild)
 // ════════════════════════════════════════════════════════════
-// Floating-pill -> Ask -> modal. Two modes: Table (rows) and Chat
-// (narrative). Pipeline:
-//   user question -> LLM call 1: SQL -> scrub -> sql.js exec -> rows
-//   if Chat: rows + question -> LLM call 2: narrative
-// State is kept in module-level lets so the modal preserves convo
-// across open/close within a session. SavedQuery rows persist to DB.
+// One unified Chat mode (no Table/Chat toggle). Three execution paths
+// picked by KB confidence:
+//   HIGH    → KB single-shot: reuse cached SQL template from a prior
+//             accepted answer. 1 LLM call (the KB matcher).
+//   MEDIUM  → KB single-shot, but the matcher's assumptions are
+//             rendered visibly so the user can spot a mismatch.
+//   LOW/none→ Tool-using agent: explore the data with tools
+//             (describe_table / distinct_values / sample_rows /
+//             run_query), iterate until confident, then answer.
+// After every successful agent run we generalize the question+SQL
+// into a QueryPattern and store it in the KB; over time, more
+// questions hit the cheap KB path.
+//
+// Honest empty-results: 0-row results NEVER get a confident
+// narrative; SQL panel auto-opens with a yellow flag.
+//
+// Show SQL preference: off by default, persisted in localStorage.
+// The preference is overridden (SQL forced visible) whenever the
+// answer is low-confidence or returned 0 rows.
 
-let _askMode       = localStorage.getItem('_askMode') || 'table';   // 'table' | 'chat'
-let _askConvo      = [];      // [{ role:'user'|'assistant', question, sql, rows, columns, narrative, error, mode, ts }]
+// ── State ─────────────────────────────────────────────────────
+let _askConvo      = [];      // turns (assistant entries)
 let _askInflight   = false;
+let _askShowSql    = localStorage.getItem('_askShowSql') === 'true';
 let _askEditingIdx = null;    // index of turn whose SQL is being edited
 
-const ASK_MAX_HISTORY_TURNS = 5;   // turns included in chat-mode context
-const ASK_MAX_ROWS          = 500; // hard ceiling on returned rows
-const ASK_MODEL             = 'claude-sonnet-4-20250514';
+// ── Constants ────────────────────────────────────────────────
+const ASK_MAX_ROWS         = 500;
+const ASK_MODEL            = 'claude-sonnet-4-20250514';
+const ASK_MAX_AGENT_ITERS  = 8;
+const ASK_KB_TOP_N         = 30;
 
+// ── Public entry points ──────────────────────────────────────
 function askOpen() {
   if (!_itHasApiKey || !_itHasApiKey()) {
     alert('Anthropic API key not set. Add one in Settings → Configuration → API key, then try again.');
@@ -13791,25 +13836,13 @@ function askOpen() {
   document.getElementById('askModal').style.display = 'flex';
   _askLoadSaved();
   _askRenderConvo();
+  _askSyncShowSqlToggle();
   setTimeout(() => document.getElementById('askInput')?.focus(), 50);
 }
 
 function askClose() {
   const m = document.getElementById('askModal');
   if (m) m.style.display = 'none';
-}
-
-function askSetMode(mode) {
-  _askMode = (mode === 'chat') ? 'chat' : 'table';
-  localStorage.setItem('_askMode', _askMode);
-  const tBtn = document.getElementById('askModeTable');
-  const cBtn = document.getElementById('askModeChat');
-  if (tBtn && cBtn) {
-    const active   = 'bg-slate-900 text-white';
-    const inactive = 'bg-white text-slate-600 hover:bg-slate-100';
-    tBtn.className = `px-3 py-1 text-sm rounded-l-md border border-slate-300 ${_askMode==='table'?active:inactive}`;
-    cBtn.className = `px-3 py-1 text-sm rounded-r-md border border-slate-300 border-l-0 ${_askMode==='chat'?active:inactive}`;
-  }
 }
 
 function askClear() {
@@ -13824,6 +13857,21 @@ function askStarter(text) {
   if (!inp) return;
   inp.value = text;
   inp.focus();
+}
+
+function askToggleShowSql() {
+  _askShowSql = !_askShowSql;
+  localStorage.setItem('_askShowSql', _askShowSql ? 'true' : 'false');
+  _askSyncShowSqlToggle();
+  _askRenderConvo();
+}
+
+function _askSyncShowSqlToggle() {
+  const btn = document.getElementById('askShowSqlToggle');
+  if (!btn) return;
+  btn.textContent = 'SQL: ' + (_askShowSql ? 'On' : 'Off');
+  btn.style.background = _askShowSql ? '#0f172a' : 'white';
+  btn.style.color      = _askShowSql ? 'white'   : '#475569';
 }
 
 // ── Modal HTML (built once, reused) ──────────────────────────
@@ -13842,10 +13890,8 @@ function _askEnsureModal() {
           </svg>
           <h2 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">Ask FinApp</h2>
         </div>
-        <div style="display:flex;">
-          <button id="askModeTable" onclick="askSetMode('table')" class="px-3 py-1 text-sm rounded-l-md border border-slate-300 bg-slate-900 text-white">Table</button>
-          <button id="askModeChat"  onclick="askSetMode('chat')"  class="px-3 py-1 text-sm rounded-r-md border border-slate-300 border-l-0 bg-white text-slate-600 hover:bg-slate-100">Chat</button>
-        </div>
+        <button id="askShowSqlToggle" onclick="askToggleShowSql()" title="Show generated SQL by default"
+          style="border:1px solid #cbd5e1;background:white;color:#475569;padding:0.25rem 0.5rem;border-radius:0.375rem;font-size:0.7rem;cursor:pointer;font-weight:600;">SQL: Off</button>
         <button onclick="askClear()" title="Clear conversation"
           style="border:1px solid #cbd5e1;background:white;color:#64748b;padding:0.25rem 0.5rem;border-radius:0.375rem;font-size:0.75rem;cursor:pointer;">Clear</button>
         <button onclick="askClose()" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;padding:0 0.5rem;" title="Close">&times;</button>
@@ -13875,7 +13921,7 @@ function _askEnsureModal() {
     </div>`;
   document.body.appendChild(wrap);
   _askRenderStarters();
-  askSetMode(_askMode);
+  _askSyncShowSqlToggle();
 }
 
 // Starter prompts shown in the sidebar.
@@ -13899,6 +13945,9 @@ function _askRenderStarters() {
 }
 
 // ── Schema prompt (built fresh on every send) ────────────────
+// Includes the live schema from sqlite_master + business notes that
+// can't be inferred from the schema alone (description-encoded
+// ticker, importSource semantics, dayOfMonth sentinel, etc.).
 function _askBuildSchemaPrompt() {
   let schema = '';
   try {
@@ -13912,8 +13961,8 @@ function _askBuildSchemaPrompt() {
     schema = '  (schema introspection failed: ' + e.message + ')';
   }
   return [
-    'You are a SQL generator for a personal finance app backed by SQLite (via sql.js).',
-    'Generate ONE read-only SELECT query that answers the user\'s question.',
+    'You are a SQL analyst for a personal finance app backed by SQLite (via sql.js).',
+    'You can use tools to explore the database before answering. Be honest about uncertainty.',
     '',
     'Live schema:',
     schema,
@@ -13922,19 +13971,20 @@ function _askBuildSchemaPrompt() {
     '  - Transactions are double-entry: drAccountId is debit, crAccountId is credit. amount is positive.',
     '  - Account.type: ASSET, LIABILITY, EQUITY, INCOME, EXPENSE.',
     '  - Account.role values: BELOW_THE_LINE, EXCLUDED, FLUX_PL, NULL. Exclude where role=\'EXCLUDED\' for typical financial totals.',
-    '  - importSource values: Manual, Scheduled, Recurring, Imported, Equity, Dictate, excel.',
-    '  - period is a TEXT column with format YYYYMM (e.g. \'202604\').',
+    '  - importSource values seen in data: Manual, Scheduled, Recurring, Imported, Equity, Dictate, excel.',
+    '  - period is TEXT formatted YYYYMM (e.g. \'202605\' = May 2026).',
     '  - trxDate, createdAt, updatedAt are ISO 8601 strings.',
     '  - paymentDueDay and dayOfMonth: 1-31 (clamped to month-end on short months); 32 = Last day of month.',
-    '  - For "expenses" use accounts where type=\'EXPENSE\'; for "income" use type=\'INCOME\'.',
+    '  - For "expenses": Account.type=\'EXPENSE\' AND the expense Account appears as Transaction.drAccountId.',
+    '  - For "income": Account.type=\'INCOME\' AND the income Account appears as Transaction.crAccountId.',
+    '  - Dividends are Transaction rows where importSource=\'Equity\' AND description LIKE \'Dividend - <TICKER>%\'. The ticker is embedded in the description string, not a foreign key. Use distinct_values to discover the exact format if uncertain.',
     '',
-    'Rules:',
-    '  - Output STRICT JSON only: {"sql": "...", "explanation": "..."}',
-    '  - SELECT only. No INSERT/UPDATE/DELETE/DROP/ALTER/PRAGMA/REPLACE/ATTACH/DETACH.',
-    '  - No trailing semicolons.',
-    '  - If a "current month/year" is referenced, use date(\'now\') / strftime in SQLite.',
-    '  - Always cap with LIMIT 500 unless the question is an aggregate scalar.',
-    '  - explanation: one sentence describing what the query returns.',
+    'When responding to the user:',
+    '  - Use describe_table / distinct_values / sample_rows when you need to verify column names, enum values, or data shape before writing SQL.',
+    '  - Use run_query exactly once when you are ready to compute the final answer. The last run_query call you make IS the answer query.',
+    '  - After run_query, write a brief final text response (1-3 sentences) summarizing the result for the user.',
+    '  - If a run_query returns 0 rows, DO NOT assert that no data exists. Either try a different angle (e.g. broaden the WHERE, check the description pattern) or tell the user your query may have made a wrong assumption.',
+    '  - Be economical: only call exploration tools when the schema prompt isn\'t enough. Most questions need at most 1 exploration call before run_query.',
   ].join('\n');
 }
 
@@ -13951,10 +14001,17 @@ function _askSqlScrub(sqlIn) {
   return sql;
 }
 
-// ── LLM calls ────────────────────────────────────────────────
-async function _askCallLlm(systemPrompt, messages, maxTokens) {
+// ── LLM API wrapper (supports tools + returns full response) ──
+async function _askCallLlm(opts) {
   const apiKey = _itGetApiKey();
   if (!apiKey) throw new Error('Anthropic API key not configured');
+  const body = {
+    model: ASK_MODEL,
+    max_tokens: opts.maxTokens || 1024,
+    messages: opts.messages,
+  };
+  if (opts.system) body.system = opts.system;
+  if (opts.tools)  body.tools  = opts.tools;
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -13963,86 +14020,281 @@ async function _askCallLlm(systemPrompt, messages, maxTokens) {
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: ASK_MODEL,
-      max_tokens: maxTokens || 1024,
-      system: systemPrompt,
-      messages,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errText = await res.text().catch(()=>'');
-    throw new Error(`Anthropic API ${res.status}: ${errText.slice(0,200)}`);
+    throw new Error(`Anthropic API ${res.status}: ${errText.slice(0,300)}`);
   }
-  const data = await res.json();
-  return data.content?.[0]?.text || '';
+  return await res.json();
 }
 
-function _askHistoryMessages() {
-  // Build alternating user/assistant messages from the last N turns.
-  // Each assistant turn is condensed (SQL + brief result summary) to save tokens.
-  const turns = _askConvo.slice(-ASK_MAX_HISTORY_TURNS);
-  const out = [];
-  for (const t of turns) {
-    out.push({ role: 'user', content: t.question });
-    let resp;
-    if (t.error) {
-      resp = `(error: ${t.error})`;
-    } else {
-      const colHeader = (t.columns || []).join(', ');
-      const sample    = (t.rows || []).slice(0, 3).map(r => JSON.stringify(r)).join('\n');
-      resp = `SQL: ${t.sql || '(none)'}\nReturned ${t.rows?.length||0} row(s). Columns: ${colHeader}.\nSample:\n${sample}`;
-      if (t.narrative) resp += `\nNarrative: ${t.narrative}`;
-    }
-    out.push({ role: 'assistant', content: resp });
-  }
-  return out;
+// Extract concatenated text content from an Anthropic response.
+function _askResponseText(resp) {
+  return ((resp && resp.content) || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
 }
 
-async function _askLlmSql(question) {
-  const system   = _askBuildSchemaPrompt();
-  const history  = _askMode === 'chat' ? _askHistoryMessages() : [];
-  const messages = history.concat([{ role: 'user', content: question }]);
-  const raw      = await _askCallLlm(system, messages, 800);
-  // Extract JSON — be forgiving about fenced code blocks.
+// Parse JSON from LLM output, tolerating ```json fences and stray text.
+function _askParseJson(raw) {
+  if (!raw) return null;
   let txt = raw.trim();
   const fence = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) txt = fence[1].trim();
-  let parsed;
-  try { parsed = JSON.parse(txt); }
-  catch (e) {
-    // Fallback: try to find the first {...} block
-    const m = txt.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch(_) {} }
-    if (!parsed) throw new Error('Could not parse SQL response: ' + raw.slice(0,200));
-  }
-  if (!parsed.sql) throw new Error('Response missing sql field');
-  return { sql: parsed.sql, explanation: parsed.explanation || '' };
+  try { return JSON.parse(txt); } catch(_) {}
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch(_) {} }
+  return null;
 }
 
-async function _askLlmSummarize(question, sql, rows, columns) {
-  // Cap the rows sent — for large result sets, send a sample + counts.
+// ── Tool schemas (for the agent) ─────────────────────────────
+const ASK_TOOLS = [
+  {
+    name: 'describe_table',
+    description: 'Get the columns and their types for a table. Use this to verify a table\'s shape before querying.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string', description: 'Exact table name (case-sensitive). "Transaction" must be quoted in subsequent SQL.' }
+      },
+      required: ['table_name']
+    }
+  },
+  {
+    name: 'distinct_values',
+    description: 'List distinct values in a column (capped). Use this to see what values exist — e.g. importSource values, common description prefixes, ticker symbols.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string' },
+        column:     { type: 'string' },
+        limit:      { type: 'integer', description: 'Default 30, max 100.' }
+      },
+      required: ['table_name', 'column']
+    }
+  },
+  {
+    name: 'sample_rows',
+    description: 'Return up to N rows from a table to see the data shape. Optional WHERE clause (without the WHERE keyword).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        table_name: { type: 'string' },
+        n:          { type: 'integer', description: 'Default 5, max 20.' },
+        where:      { type: 'string', description: 'Optional WHERE clause body, e.g. "importSource = \'Equity\'".' }
+      },
+      required: ['table_name']
+    }
+  },
+  {
+    name: 'run_query',
+    description: 'Execute a SELECT (or WITH ... SELECT) query and return rows. This is how you compute the final answer for the user. The last run_query call is treated as the answer query.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sql: { type: 'string', description: 'A single SELECT query.' }
+      },
+      required: ['sql']
+    }
+  }
+];
+
+// ── Tool executor ────────────────────────────────────────────
+function _askExecTool(name, input) {
+  try {
+    if (name === 'describe_table') {
+      const t = String(input.table_name || '').replace(/"/g, '""');
+      const cols = query(`PRAGMA table_info("${t}")`);
+      if (!cols.length) return { ok: false, error: `Table "${input.table_name}" not found` };
+      return { ok: true, columns: cols.map(c => ({ name: c.name, type: c.type, notnull: !!c.notnull, pk: !!c.pk })) };
+    }
+    let sql;
+    if (name === 'distinct_values') {
+      const t = String(input.table_name || '').replace(/"/g, '""');
+      const c = String(input.column || '').replace(/"/g, '""');
+      const lim = Math.min(100, Math.max(1, parseInt(input.limit) || 30));
+      sql = `SELECT DISTINCT "${c}" AS value FROM "${t}" WHERE "${c}" IS NOT NULL LIMIT ${lim}`;
+    } else if (name === 'sample_rows') {
+      const t = String(input.table_name || '').replace(/"/g, '""');
+      const n = Math.min(20, Math.max(1, parseInt(input.n) || 5));
+      const w = input.where ? ` WHERE ${input.where}` : '';
+      sql = `SELECT * FROM "${t}"${w} LIMIT ${n}`;
+    } else if (name === 'run_query') {
+      sql = input.sql;
+    } else {
+      return { ok: false, error: 'Unknown tool: ' + name };
+    }
+    sql = _askSqlScrub(sql);
+    const res = db.exec(sql);
+    if (!res || !res.length) return { ok: true, columns: [], rows: [], rowCount: 0, sql };
+    const columns = res[0].columns;
+    const rows = res[0].values.map(row => Object.fromEntries(columns.map((c,i) => [c, row[i]])));
+    return { ok: true, columns, rows, rowCount: rows.length, sql };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Cap rows sent back to the LLM so token budget stays bounded.
+function _askCondenseToolResult(result) {
+  if (!result.ok) return { ok: false, error: result.error };
+  if (result.rows && result.rows.length > 25) {
+    return {
+      ok: true, columns: result.columns,
+      rowCount: result.rowCount, rowsShown: 25,
+      rows: result.rows.slice(0, 25), truncated: true, sql: result.sql
+    };
+  }
+  return result;
+}
+
+// ── Agent loop ───────────────────────────────────────────────
+async function _askAgentRun(question, onStep) {
+  const system   = _askBuildSchemaPrompt();
+  const messages = [{ role: 'user', content: question }];
+  const steps    = [];
+  let finalSql = null, finalRows = null, finalColumns = null, finalNarrative = '';
+
+  for (let iter = 0; iter < ASK_MAX_AGENT_ITERS; iter++) {
+    const resp = await _askCallLlm({ system, messages, tools: ASK_TOOLS, maxTokens: 2000 });
+    const blocks = resp.content || [];
+    const toolUses = blocks.filter(b => b.type === 'tool_use');
+    const texts    = blocks.filter(b => b.type === 'text');
+
+    if (toolUses.length === 0) {
+      finalNarrative = texts.map(b => b.text).join('\n').trim();
+      break;
+    }
+
+    const toolResults = [];
+    for (const tb of toolUses) {
+      const result = _askExecTool(tb.name, tb.input || {});
+      steps.push({ tool: tb.name, input: tb.input, result });
+      if (onStep) onStep(steps);
+      if (tb.name === 'run_query' && result.ok) {
+        finalSql     = result.sql;
+        finalRows    = result.rows;
+        finalColumns = result.columns;
+      }
+      toolResults.push({
+        type:         'tool_result',
+        tool_use_id:  tb.id,
+        content:      JSON.stringify(_askCondenseToolResult(result))
+      });
+    }
+
+    messages.push({ role: 'assistant', content: blocks });
+    messages.push({ role: 'user',      content: toolResults });
+  }
+
+  return { sql: finalSql, rows: finalRows, columns: finalColumns, narrative: finalNarrative, steps };
+}
+
+// ── KB lookup ────────────────────────────────────────────────
+async function _askKbLookup(question) {
+  let patterns;
+  try {
+    patterns = query(`SELECT id, signature, sqlTemplate, hits, confidence FROM QueryPattern ORDER BY (CASE confidence WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END) DESC, hits DESC, lastUsedAt DESC LIMIT ${ASK_KB_TOP_N}`);
+  } catch(_) { return null; }
+  if (!patterns || !patterns.length) return null;
+
+  const system = [
+    'You are a pattern matcher. Given a user question and a list of known query patterns, decide if any pattern semantically matches the question.',
+    'If matched, extract parameter values from the user question and substitute them into the SQL template (placeholders look like {PARAM_NAME}).',
+    'Confidence levels:',
+    '  - "high": pattern is a clear semantic match; all parameters can be confidently filled.',
+    '  - "medium": pattern matches but some parameter (time range, ticker, etc.) is ambiguous and you guessed.',
+    '  - "low": tangentially related; a fresh query is probably better.',
+    '  - "none": no pattern matches.',
+    'Return STRICT JSON only: {"patternId":"...","confidence":"high|medium|low|none","filledSql":"<sql or empty>","assumptions":"one short line describing the parameters you substituted (or empty)"}.',
+    'For "low" or "none", set filledSql to empty string.',
+  ].join('\n');
+
+  const messages = [{ role: 'user', content: JSON.stringify({ question, patterns }, null, 2) }];
+  let resp;
+  try { resp = await _askCallLlm({ system, messages, maxTokens: 700 }); }
+  catch(_) { return null; }
+
+  const parsed = _askParseJson(_askResponseText(resp));
+  if (!parsed || !parsed.confidence || parsed.confidence === 'none') return null;
+  if (!parsed.filledSql || !parsed.filledSql.trim()) return null;
+  return parsed;
+}
+
+// ── KB store (called after a successful agent answer) ────────
+async function _askKbStore(question, sql) {
+  if (!sql) return;
+  const system = [
+    'You generalize a question+SQL pair into a reusable pattern.',
+    'Identify parameters: literal values in the question and SQL that would vary across similar questions (tickers, account names, periods, numbers).',
+    'Return STRICT JSON: {"signature":"<paraphrased question template with {PARAM_NAME} placeholders>","sqlTemplate":"<sql with {PARAM_NAME} placeholders matching the signature>"}.',
+    'Use UPPER_SNAKE_CASE for parameter names. Examples: {TICKER}, {N}, {PERIOD_YYYYMM}, {ACCOUNT_NAME}.',
+    'If the question is so specific that generalizing makes no sense, set both fields to empty strings.',
+  ].join('\n');
+  const messages = [{ role: 'user', content: JSON.stringify({ question, sql }) }];
+  let resp;
+  try { resp = await _askCallLlm({ system, messages, maxTokens: 500 }); }
+  catch(_) { return; }
+  const parsed = _askParseJson(_askResponseText(resp));
+  if (!parsed || !parsed.signature || !parsed.sqlTemplate) return;
+  const now = new Date().toISOString();
+  try {
+    db.run(
+      `INSERT INTO QueryPattern (id, signature, sqlTemplate, originalQuestion, hits, confidence, lastUsedAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, 1, 'low', ?, ?, ?)`,
+      [genId(), parsed.signature, parsed.sqlTemplate, question, now, now, now]
+    );
+    syncAfterWrite();
+  } catch(_) {}
+}
+
+// ── KB bump: thumbs up promotes; thumbs down deletes ─────────
+function _askKbBump(patternId, delta) {
+  if (!patternId) return;
+  if (delta < 0) {
+    try { db.run(`DELETE FROM QueryPattern WHERE id=?`, [patternId]); syncAfterWrite(); } catch(_) {}
+    return;
+  }
+  try {
+    const row = query(`SELECT hits FROM QueryPattern WHERE id='${patternId.replace(/'/g, "''")}'`)[0];
+    if (!row) return;
+    const newHits = row.hits + 1;
+    const newConfidence = newHits >= 5 ? 'high' : (newHits >= 2 ? 'medium' : 'low');
+    const now = new Date().toISOString();
+    db.run(`UPDATE QueryPattern SET hits=?, confidence=?, lastUsedAt=?, updatedAt=? WHERE id=?`,
+      [newHits, newConfidence, now, now, patternId]);
+    syncAfterWrite();
+  } catch(_) {}
+}
+
+// ── Narrative generation (honest about empty results) ────────
+async function _askGenNarrative(question, sql, rows, columns, isEmpty, routePath) {
+  if (isEmpty) {
+    return 'The query returned no rows. That usually means either there is genuinely no matching data, OR the query made a wrong assumption (column, value pattern, time range). Open the SQL below to verify, or rephrase the question.';
+  }
+  if (!rows || !rows.length) return '(no data)';
   const total = rows.length;
   const sample = rows.slice(0, 50);
-  const payload = {
-    question,
-    sql,
-    columns,
-    rowCount: total,
-    rowsShown: sample.length,
-    rows: sample,
-  };
+  const payload = { question, sql, columns, rowCount: total, rowsShown: sample.length, rows: sample };
+  const tail = routePath === 'agent'
+    ? '\nThis result came from a fresh agent-mode query. If anything looks off, flag it.'
+    : '';
   const system = [
     'You are a financial assistant explaining a query result to the user in plain English.',
-    'Be concise: 1-3 sentences. Lead with the headline number/insight. Round currency to whole dollars unless decimals matter.',
-    'If the result is empty, say so plainly. If a sample is provided, you may reference specific rows but do not list more than a handful.',
-    'No preambles like "Based on the data". Speak directly to the user.',
+    'Be concise: 1-3 sentences. Lead with the headline number or insight. Round currency to whole dollars unless decimals matter.',
+    'Speak directly to the user. No preambles like "Based on the data".',
+    'NEVER assert that data does not exist — empty-result handling is done elsewhere.',
+    tail,
   ].join('\n');
   const messages = [{ role: 'user', content: 'Question: ' + question + '\n\nResult:\n' + JSON.stringify(payload, null, 2) }];
-  return await _askCallLlm(system, messages, 400);
+  try {
+    const resp = await _askCallLlm({ system, messages, maxTokens: 400 });
+    return _askResponseText(resp) || '(no narrative generated)';
+  } catch(e) {
+    return '(narrative unavailable: ' + e.message + ')';
+  }
 }
 
-// ── Main pipeline ────────────────────────────────────────────
+// ── Main pipeline: KB lookup → single-shot or full agent ─────
 async function askSubmit() {
   if (_askInflight) return;
   const inp = document.getElementById('askInput');
@@ -14052,31 +14304,70 @@ async function askSubmit() {
   _askInflight = true;
   _askSetSendBtn(true);
 
-  const turn = { role: 'assistant', question, sql:'', rows:null, columns:null, narrative:'', error:'', mode:_askMode, ts: Date.now() };
+  const turn = {
+    role: 'assistant', question,
+    sql: '', rows: null, columns: null,
+    narrative: '', error: '',
+    confidence: 'low',     // 'high' | 'medium' | 'low'
+    routePath:  'agent',   // 'kb' | 'agent'
+    patternId:  null,
+    assumptions: '',
+    steps: [],
+    feedback: 0,           // +1 thumbs up, -1 thumbs down
+    ts: Date.now()
+  };
   _askConvo.push(turn);
   _askRenderConvo();
 
   try {
-    const { sql: rawSql, explanation } = await _askLlmSql(question);
-    let sql;
-    try { sql = _askSqlScrub(rawSql); }
-    catch (e) { turn.sql = rawSql; throw new Error('Generated SQL was rejected by the safety scrub: ' + e.message); }
-    turn.sql = sql;
-    turn.explanation = explanation;
-    _askRenderConvo();
+    // 1. Try the KB
+    let kb = null;
+    try { kb = await _askKbLookup(question); } catch(_) {}
 
-    const res  = db.exec(sql);
-    if (!res || !res.length) {
-      turn.columns = [];
-      turn.rows    = [];
+    if (kb && kb.filledSql) {
+      // 2a. KB hit — single-shot
+      turn.routePath  = 'kb';
+      turn.confidence = kb.confidence || 'medium';
+      turn.patternId  = kb.patternId || null;
+      turn.assumptions = kb.assumptions || '';
+      const sql = _askSqlScrub(kb.filledSql);
+      turn.sql = sql;
+      _askRenderConvo();
+      const res = db.exec(sql);
+      if (!res || !res.length) { turn.columns = []; turn.rows = []; }
+      else {
+        turn.columns = res[0].columns;
+        turn.rows = res[0].values.map(r => Object.fromEntries(turn.columns.map((c,i) => [c, r[i]])));
+      }
+      _askKbBump(turn.patternId, +1);
     } else {
-      turn.columns = res[0].columns;
-      turn.rows    = res[0].values.map(row => Object.fromEntries(turn.columns.map((c,i) => [c, row[i]])));
+      // 2b. No KB match — run the agent
+      turn.routePath  = 'agent';
+      turn.confidence = 'low';
+      _askRenderConvo();
+      const result = await _askAgentRun(question, (steps) => {
+        turn.steps = steps;
+        _askRenderConvo();
+      });
+      turn.sql       = result.sql || '';
+      turn.rows      = result.rows;
+      turn.columns   = result.columns;
+      turn.narrative = result.narrative || '';
+      turn.steps     = result.steps;
     }
-    _askRenderConvo();
 
-    if (_askMode === 'chat') {
-      turn.narrative = await _askLlmSummarize(question, sql, turn.rows, turn.columns);
+    // 3. Narrative (honest about empty)
+    const isEmpty = !!(turn.rows && turn.rows.length === 0);
+    if (turn.routePath === 'kb' || !turn.narrative) {
+      turn.narrative = await _askGenNarrative(question, turn.sql, turn.rows || [], turn.columns || [], isEmpty, turn.routePath);
+    } else if (isEmpty) {
+      // Agent wrote a narrative but the result is empty — override.
+      turn.narrative = await _askGenNarrative(question, turn.sql, [], turn.columns || [], true, turn.routePath);
+    }
+
+    // 4. KB auto-population on agent success with non-empty result
+    if (turn.routePath === 'agent' && turn.sql && turn.rows && turn.rows.length > 0) {
+      _askKbStore(question, turn.sql).catch(()=>{});
     }
   } catch (e) {
     turn.error = e.message || String(e);
@@ -14107,7 +14398,7 @@ function _askRenderConvo() {
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
         </svg>
         <div style="font-size:0.875rem;font-weight:500;color:#475569;margin-bottom:0.25rem;">Ask FinApp anything about your data</div>
-        <div style="font-size:0.75rem;">Toggle <strong>Table</strong> for rows, <strong>Chat</strong> for narrative. Try a starter on the left.</div>
+        <div style="font-size:0.75rem;">First-time questions explore your data and may take a few seconds. Familiar patterns answer instantly.</div>
       </div>`;
     return;
   }
@@ -14123,70 +14414,128 @@ function _askRenderTurn(t, i) {
   let body = '';
   if (t.error) {
     body = `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:0.5rem 0.75rem;border-radius:0.5rem;font-size:0.8125rem;">${escHtml(t.error)}</div>`;
+  } else if (t.rows === null && t.routePath === 'agent' && (t.steps && t.steps.length > 0)) {
+    body = _askRenderAgentSteps(t) + `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Exploring…</div>`;
   } else if (t.rows === null && !t.sql) {
-    body = `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Generating SQL…</div>`;
+    body = `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Thinking…</div>`;
   } else if (t.rows === null && t.sql) {
     body = `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;">Running query…</div>`;
   } else {
-    const isChat = t.mode === 'chat';
-    if (isChat && t.narrative) {
+    body += _askRenderConfidenceChip(t);
+    if (t.assumptions) {
+      body += `<div style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:0.375rem 0.625rem;border-radius:0.375rem;font-size:0.7rem;margin-bottom:0.5rem;line-height:1.4;"><strong>Assumed:</strong> ${escHtml(t.assumptions)}</div>`;
+    }
+    if (t.narrative) {
       body += `<div style="background:#f1f5f9;border-radius:0.5rem;padding:0.75rem;font-size:0.875rem;color:#1e293b;line-height:1.5;margin-bottom:0.5rem;white-space:pre-wrap;">${escHtml(t.narrative)}</div>`;
-    } else if (isChat && t.rows !== null) {
+    } else if (t.rows && t.rows.length > 0) {
       body += `<div style="color:#94a3b8;font-size:0.8125rem;font-style:italic;margin-bottom:0.5rem;">Summarizing…</div>`;
     }
-    body += _askRenderTable(t, i, isChat);
+    if (t.rows && t.rows.length > 0) {
+      body += _askRenderTable(t, i);
+    }
+    body += _askRenderFeedback(t, i);
   }
 
-  const sqlBlock = t.sql ? _askRenderSqlPanel(t, i) : '';
+  const isEmpty       = !!(t.rows && t.rows.length === 0);
+  const lowConfidence = t.confidence === 'low' || t.routePath === 'agent';
+  const forceShowSql  = isEmpty || lowConfidence;
+  const sqlBlock = (t.sql && (_askShowSql || forceShowSql)) ? _askRenderSqlPanel(t, i, forceShowSql) : '';
+
   return `<div style="margin-bottom:1.25rem;">${qBlock}${body}${sqlBlock}</div>`;
 }
 
-function _askRenderTable(t, i, compact) {
-  if (!t.rows || !t.columns) return '';
-  if (t.rows.length === 0) {
-    return `<div style="font-size:0.8125rem;color:#64748b;font-style:italic;">No rows returned.</div>`;
-  }
-  // For chat-mode-compact: cap the inline preview at 5 rows; full export still available.
-  const maxRows = compact ? Math.min(5, t.rows.length) : t.rows.length;
+function _askRenderConfidenceChip(t) {
+  const palette = {
+    high:   { bg:'#dcfce7', fg:'#166534', label:'High confidence' },
+    medium: { bg:'#fef3c7', fg:'#92400e', label:'Medium confidence' },
+    low:    { bg:'#f1f5f9', fg:'#475569', label:'Low confidence' },
+  };
+  const p   = palette[t.confidence] || palette.low;
+  const src = t.routePath === 'kb'
+    ? (t.confidence === 'low' ? 'New pattern' : 'Pattern match')
+    : `Agent · ${(t.steps||[]).length} step${(t.steps||[]).length===1?'':'s'}`;
+  return `<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.375rem;">
+    <span style="background:${p.bg};color:${p.fg};padding:0.15rem 0.5rem;border-radius:9999px;font-size:0.65rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${p.label}</span>
+    <span style="font-size:0.7rem;color:#94a3b8;">${escHtml(src)}</span>
+  </div>`;
+}
+
+function _askRenderAgentSteps(t) {
+  if (!t.steps || !t.steps.length) return '';
+  const items = t.steps.map(s => {
+    const ok = s.result && s.result.ok;
+    const n = ok ? (s.result.rowCount !== undefined ? `${s.result.rowCount} row${s.result.rowCount===1?'':'s'}` : 'ok') : (s.result?.error || 'failed');
+    const arg = s.input?.table_name || s.input?.sql?.slice(0,60) || '';
+    return `<li style="font-size:0.7rem;color:#64748b;padding:0.125rem 0;line-height:1.3;">${escHtml(s.tool)} ${arg?`<code style="color:#94a3b8;">${escHtml(arg)}</code>`:''} → ${ok?'<span style="color:#10b981;">':'<span style="color:#dc2626;">'}${escHtml(String(n))}</span></li>`;
+  }).join('');
+  return `<details style="margin-bottom:0.375rem;" open>
+    <summary style="font-size:0.7rem;color:#64748b;cursor:pointer;user-select:none;">Agent steps (${t.steps.length})</summary>
+    <ul style="list-style:none;margin:0.25rem 0 0;padding:0 0 0 0.75rem;border-left:2px solid #e2e8f0;">${items}</ul>
+  </details>`;
+}
+
+function _askRenderFeedback(t, i) {
+  const up   = t.feedback > 0 ? 'background:#10b981;color:white;border-color:#10b981;' : 'background:white;color:#64748b;';
+  const down = t.feedback < 0 ? 'background:#dc2626;color:white;border-color:#dc2626;' : 'background:white;color:#64748b;';
+  return `<div style="display:flex;gap:0.25rem;align-items:center;margin-top:0.375rem;font-size:0.7rem;color:#94a3b8;">
+    <span>Was this answer right?</span>
+    <button onclick="askFeedback(${i}, 1)"  title="Promote this pattern in the KB"
+      style="border:1px solid #e2e8f0;${up}padding:0.125rem 0.5rem;border-radius:0.25rem;cursor:pointer;font-size:0.7rem;">👍</button>
+    <button onclick="askFeedback(${i}, -1)" title="Remove this pattern from the KB"
+      style="border:1px solid #e2e8f0;${down}padding:0.125rem 0.5rem;border-radius:0.25rem;cursor:pointer;font-size:0.7rem;">👎</button>
+  </div>`;
+}
+
+function _askRenderTable(t, i) {
+  if (!t.rows || !t.columns || !t.rows.length) return '';
   const headers = t.columns.map(c => `<th style="text-align:left;padding:0.375rem 0.5rem;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.03em;background:#f8fafc;">${escHtml(c)}</th>`).join('');
-  const rowsHtml = t.rows.slice(0, maxRows).map(r => `<tr>${
+  const PREVIEW_ROWS = 8;
+  const shown = Math.min(PREVIEW_ROWS, t.rows.length);
+  const rowsHtml = t.rows.slice(0, shown).map(r => `<tr>${
     t.columns.map(c => `<td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;font-size:0.8125rem;color:#1e293b;">${escHtml(r[c] === null || r[c] === undefined ? '' : String(r[c]))}</td>`).join('')
   }</tr>`).join('');
-  const more = (t.rows.length > maxRows)
-    ? `<div style="font-size:0.75rem;color:#64748b;padding:0.375rem 0.5rem;">${t.rows.length - maxRows} more row(s). Use Export CSV for the full set.</div>`
+  const more = (t.rows.length > shown)
+    ? `<div style="font-size:0.75rem;color:#64748b;padding:0.375rem 0.5rem;">${t.rows.length - shown} more row(s). Export CSV for the full set.</div>`
     : '';
   const exportBtn = `<button onclick="askExportCsv(${i})" style="font-size:0.75rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Export CSV</button>`;
   return `<div style="border:1px solid #e2e8f0;border-radius:0.5rem;overflow:hidden;margin-bottom:0.5rem;">
-    <div style="overflow-x:auto;max-height:24rem;overflow-y:auto;">
+    <div style="overflow-x:auto;max-height:20rem;overflow-y:auto;">
       <table style="width:100%;border-collapse:collapse;"><thead><tr>${headers}</tr></thead><tbody>${rowsHtml}</tbody></table>
     </div>
     ${more}
     <div style="padding:0.375rem 0.5rem;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
-      <span style="font-size:0.75rem;color:#64748b;">${t.rows.length} row${t.rows.length===1?'':'s'}${t.explanation?' · ' + escHtml(t.explanation):''}</span>
+      <span style="font-size:0.75rem;color:#64748b;">${t.rows.length} row${t.rows.length===1?'':'s'}</span>
       ${exportBtn}
     </div>
   </div>`;
 }
 
-function _askRenderSqlPanel(t, i) {
+function _askRenderSqlPanel(t, i, forceShown) {
   const isEditing = _askEditingIdx === i;
   const headerBtns = isEditing
     ? `<button onclick="askRerunSql(${i})" style="font-size:0.7rem;background:#0f172a;color:white;border:none;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Run</button>
        <button onclick="askEditSqlCancel(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Cancel</button>`
     : `<button onclick="askEditSql(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Edit</button>
        <button onclick="askCopySql(${i})" style="font-size:0.7rem;background:white;border:1px solid #cbd5e1;color:#475569;padding:0.2rem 0.5rem;border-radius:0.25rem;cursor:pointer;">Copy</button>`;
-  const body = isEditing
+  const sqlBody = isEditing
     ? `<textarea id="askSqlEdit${i}" style="width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.75rem;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.5rem;resize:vertical;min-height:6rem;">${escHtml(t.sql)}</textarea>`
-    : `<details style="font-size:0.75rem;color:#475569;">
-         <summary style="cursor:pointer;user-select:none;padding:0.25rem 0;color:#64748b;">Show SQL</summary>
-         <pre style="background:#0f172a;color:#e2e8f0;padding:0.625rem 0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0.375rem 0 0;">${escHtml(t.sql)}</pre>
-       </details>`;
+    : (forceShown
+        ? `<pre style="background:#0f172a;color:#e2e8f0;padding:0.625rem 0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0.375rem 0 0;">${escHtml(t.sql)}</pre>`
+        : `<details style="font-size:0.75rem;color:#475569;">
+             <summary style="cursor:pointer;user-select:none;padding:0.25rem 0;color:#64748b;">Show SQL</summary>
+             <pre style="background:#0f172a;color:#e2e8f0;padding:0.625rem 0.75rem;border-radius:0.375rem;font-size:0.75rem;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0.375rem 0 0;">${escHtml(t.sql)}</pre>
+           </details>`);
+  const isEmpty = !!(t.rows && t.rows.length === 0);
+  const warnBar = forceShown && (isEmpty || t.confidence === 'low')
+    ? `<div style="background:#fef3c7;color:#92400e;padding:0.25rem 0.5rem;font-size:0.7rem;border-radius:0.25rem;margin-bottom:0.375rem;">⚠ ${isEmpty?'Empty result — the query may have made a wrong assumption.':'Low-confidence answer — verify the SQL.'}</div>`
+    : '';
   return `<div style="border:1px dashed #e2e8f0;border-radius:0.375rem;padding:0.375rem 0.5rem;background:#fafbfc;">
+    ${warnBar}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
       <span style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;">Generated SQL</span>
       <div style="display:flex;gap:0.25rem;">${headerBtns}</div>
     </div>
-    <div style="margin-top:0.25rem;">${body}</div>
+    <div style="margin-top:0.25rem;">${sqlBody}</div>
   </div>`;
 }
 
@@ -14218,8 +14567,18 @@ async function askRerunSql(i) {
       t.columns = res[0].columns;
       t.rows    = res[0].values.map(row => Object.fromEntries(t.columns.map((c,k) => [c, row[k]])));
     }
-    if (t.mode === 'chat') t.narrative = await _askLlmSummarize(t.question, sql, t.rows, t.columns);
+    const isEmpty = t.rows.length === 0;
+    t.narrative = await _askGenNarrative(t.question, sql, t.rows, t.columns, isEmpty, t.routePath || 'agent');
   } catch(e) { t.error = e.message; }
+  _askRenderConvo();
+}
+
+// ── Feedback: thumbs up promotes the KB pattern; thumbs down deletes ──
+function askFeedback(i, delta) {
+  const t = _askConvo[i];
+  if (!t) return;
+  t.feedback = (t.feedback === delta) ? 0 : delta;
+  if (t.patternId) _askKbBump(t.patternId, t.feedback);
   _askRenderConvo();
 }
 
@@ -14273,7 +14632,7 @@ function askSaveQuery() {
   try {
     db.run(
       `INSERT INTO SavedQuery (id, name, question, mode, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
-      [genId(), name.trim(), last.question, last.mode || _askMode, now, now]
+      [genId(), name.trim(), last.question, 'chat', now, now]
     );
     syncAfterWrite();
     _askLoadSaved();
@@ -14282,9 +14641,8 @@ function askSaveQuery() {
 }
 
 function askLoadQuery(id) {
-  const row = query(`SELECT question, mode FROM SavedQuery WHERE id='${id.replace(/'/g, "''")}'`)[0];
+  const row = query(`SELECT question FROM SavedQuery WHERE id='${id.replace(/'/g, "''")}'`)[0];
   if (!row) return;
-  askSetMode(row.mode || 'table');
   document.getElementById('askInput').value = row.question;
   askSubmit();
 }
