@@ -294,6 +294,11 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Equity</span>
       </button>
 
+      <button onclick="navigate('reports')" data-page="reports" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <span class="nav-label">Reports</span>
+      </button>
+
       <!-- ── TRANSACT ── -->
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
 
@@ -1052,6 +1057,11 @@ function _initCoreSchema() {
       hits INTEGER NOT NULL DEFAULT 1,
       confidence TEXT NOT NULL DEFAULT 'low',
       lastUsedAt TEXT NOT NULL,
+      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS SavedReport (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      config TEXT NOT NULL,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
   ];
   stmts.forEach(sql => {
@@ -1838,6 +1848,17 @@ function startApp() {
     )`);
   } catch(e) { console.warn('QueryPattern init:', e.message); }
 
+  // Ensure SavedReport table exists (Reports — pivot builder)
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS SavedReport (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      config TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('SavedReport init:', e.message); }
+
   // Ensure BankAccount table exists
   try {
     db.run(`CREATE TABLE IF NOT EXISTS BankAccount (
@@ -2164,11 +2185,14 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
-    <button onclick="askOpen()" title="Ask FinApp"
+    <button onclick="navigate('reports')" title="Build a report"
       style="width:3rem;height:3rem;background:#334155;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#334155'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+        <rect x="3" y="3" width="7" height="7"/>
+        <rect x="14" y="3" width="7" height="7"/>
+        <rect x="3" y="14" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/>
       </svg>
     </button>
   </div>`;
@@ -2222,6 +2246,7 @@ function navigate(page) {
   else if (page === 'financial-statements') renderFinancialStatements(container);
   else if (page === 'account-tracker')      renderAccountTracker(container);
   else if (page === 'review-equity')        renderReviewEquity(container);
+  else if (page === 'reports')              renderReports(container);
   // ── Transact pages ───────────────────────────────────────
   else if (page === 'transactions')         renderTransactions(container);
   else if (page === 'budget')               renderBudget(container);
@@ -6701,7 +6726,7 @@ function aboutTab() {
 
     <!-- Roadmap -->
     <div class="border border-slate-200 rounded-lg p-4 space-y-3">
-      <h3 class="text-sm font-semibold text-slate-800">Roadmap — Conversational reporting</h3>
+      <h3 class="text-sm font-semibold text-slate-800">Roadmap — Reports (self-service pivot builder)</h3>
       <table class="w-full text-xs">
         <thead><tr class="text-left text-slate-500 border-b border-slate-200">
           <th class="pb-1 pr-2 font-medium">Phase</th>
@@ -6709,18 +6734,16 @@ function aboutTab() {
           <th class="pb-1 font-medium">Status</th>
         </tr></thead>
         <tbody class="text-slate-700">
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">1</td><td class="py-1 pr-2">Original bi-modal (Table/Chat) Ask with single-shot SQL — confident-but-wrong on empty results</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">Superseded</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2A</td><td class="py-1 pr-2">Drop Table/Chat toggle → single Chat mode. Show SQL preference (off by default, persisted). Honest empty-result narrative; SQL panel auto-shown on uncertainty</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2B</td><td class="py-1 pr-2">Tool-using agent: describe_table, distinct_values, sample_rows, run_query. LLM iterates to ground in real data before answering</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2C</td><td class="py-1 pr-2">Knowledge Base (QueryPattern table): LLM-matches each new question against learned patterns. HIGH → single-shot; MEDIUM → with visible assumptions; LOW → agent. Auto-populates after agent successes</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">2D</td><td class="py-1 pr-2">Confidence chip on each answer; 👍/👎 feedback promotes/removes the KB pattern. Agent-step trace visible during exploration</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">3</td><td class="py-1 pr-2">Persist conversation history across sessions; pin a saved query to a Dashboard tile</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">4</td><td class="py-1 pr-2">Auto-rendered charts for "trend / over time" questions; drill-down from chat answer to filtered Transactions view</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
-          <tr><td class="py-1 pr-2 font-semibold">5</td><td class="py-1 pr-2">Voice input on Ask (reuse Dictate's Web Speech); floating pill optional auto-dismiss after inactivity</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">A</td><td class="py-1 pr-2">Reports page in sidebar. Drag-and-drop (or click) field library, Filters / Rows / Cols / Values zones. 15 dimensions across When / Where / What. 5 measures. Live pivot result with totals + Export CSV + Show SQL. Deterministic — no LLM.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">B</td><td class="py-1 pr-2">Saved reports: SavedReport DB table (Drive-synced). Save / Save as / Load / Delete. Click any cell to drill down into the underlying transactions in a modal with its own CSV export.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">C</td><td class="py-1 pr-2">Auto-rendered charts based on result shape (line for time series, bar for categories, stacked bar for row×col). Toggle table vs chart. Reuses the existing Chart.js bundle.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">D</td><td class="py-1 pr-2">Date presets (YTD / MTD / This quarter / Last quarter), side-by-side period comparison, % of grand total, conditional row highlighting on threshold.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">E</td><td class="py-1 pr-2">Mobile / responsive polish: stacked layout under narrow viewports, touch-friendly drop zones, inline filter editor that replaces the prompt() dialogs.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Earlier LLM-driven "conversational reporting" feature (single-shot, then agent + KB). Reliability was uneven; pivoted to deterministic Reports. Ask code remains in the file but the pill button now opens Reports instead.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">Superseded</span></td></tr>
         </tbody>
       </table>
       <p class="text-xs text-slate-400 leading-relaxed">
-        Status keys: <strong>Shipped</strong> · <strong>Superseded</strong> · <strong>Later</strong>. KB confidence ladder: 1 hit = low → 2–4 hits = medium → 5+ hits or 👍 = high; 👎 deletes.
+        Status keys: <strong>Shipped</strong> · <strong>Later</strong> · <strong>Superseded</strong>.
       </p>
     </div>
 
@@ -13789,6 +13812,679 @@ function renderPlaceholder(container, page) {
         <p class="text-slate-400 text-sm mt-2">Coming in the next chunk</p>
       </div>
     </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// REPORTS — self-service pivot builder
+// ════════════════════════════════════════════════════════════
+// Excel-pivot-style but deterministic and finance-aware. No LLM.
+// Pipeline:
+//   user drags fields into Filters / Rows / Columns / Values
+//   -> _rptBuildQuery compiles to a single SELECT
+//   -> sql.js executes against Transaction JOIN dr+cr Accounts
+//   -> _rptPivot transforms flat group-by into a rows×cols matrix
+//   -> render as HTML table with totals + drill-down on click
+// Saved configs persist to SavedReport (synced via Drive).
+
+// ── State ────────────────────────────────────────────────────
+let _rptConfig = { filters: [], rows: [], cols: [], values: [] };
+let _rptResult = null;          // { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal }
+let _rptSavedId = null;         // id of loaded SavedReport, null when unsaved
+let _rptSavedName = '';
+let _rptInflight = false;
+let _rptDragField = null;       // currently dragging field id
+
+// ── Semantic model: dimensions ───────────────────────────────
+// Each dimension carries a SQL expression that goes into both the
+// SELECT and GROUP BY. The expression assumes the standard FROM:
+//   FROM "Transaction" tx
+//   LEFT JOIN Account dra ON dra.id = tx.drAccountId
+//   LEFT JOIN Account cra ON cra.id = tx.crAccountId
+const RPT_DIMENSIONS = [
+  // WHEN
+  { id: 'date',         label: 'Date',              category: 'When',  sql: "substr(tx.trxDate, 1, 10)",                                                                                                              kind: 'date' },
+  { id: 'year',         label: 'Year',              category: 'When',  sql: "substr(tx.period, 1, 4)",                                                                                                                kind: 'period' },
+  { id: 'quarter',      label: 'Quarter',           category: 'When',  sql: "substr(tx.period, 1, 4) || '-Q' || CAST(((CAST(substr(tx.period, 5, 2) AS INTEGER) - 1) / 3 + 1) AS TEXT)",                              kind: 'period' },
+  { id: 'period',       label: 'Month (YYYYMM)',    category: 'When',  sql: "tx.period",                                                                                                                              kind: 'period' },
+  { id: 'month_name',   label: 'Month name',        category: 'When',  sql: "substr(tx.period, 1, 4) || '-' || substr(tx.period, 5, 2)",                                                                              kind: 'text'   },
+  { id: 'day_of_week',  label: 'Day of week',       category: 'When',  sql: "CASE strftime('%w', tx.trxDate) WHEN '0' THEN 'Sun' WHEN '1' THEN 'Mon' WHEN '2' THEN 'Tue' WHEN '3' THEN 'Wed' WHEN '4' THEN 'Thu' WHEN '5' THEN 'Fri' WHEN '6' THEN 'Sat' END", kind: 'text' },
+
+  // WHERE — debit side
+  { id: 'dr_name',      label: 'Debit account',     category: 'Where', sql: "dra.name",      kind: 'text' },
+  { id: 'dr_type',      label: 'Debit type',        category: 'Where', sql: "dra.type",      kind: 'text' },
+  { id: 'dr_grouping',  label: 'Debit grouping',    category: 'Where', sql: "dra.grouping",  kind: 'text' },
+  // WHERE — credit side
+  { id: 'cr_name',      label: 'Credit account',    category: 'Where', sql: "cra.name",      kind: 'text' },
+  { id: 'cr_type',      label: 'Credit type',       category: 'Where', sql: "cra.type",      kind: 'text' },
+  { id: 'cr_grouping',  label: 'Credit grouping',   category: 'Where', sql: "cra.grouping",  kind: 'text' },
+
+  // WHAT
+  { id: 'description',  label: 'Description',       category: 'What',  sql: "tx.description",                                                kind: 'text' },
+  { id: 'source',       label: 'Source',            category: 'What',  sql: "tx.importSource",                                               kind: 'text' },
+  { id: 'reconciled',   label: 'Reconciled',        category: 'What',  sql: "CASE tx.isReconciled WHEN 1 THEN 'Yes' ELSE 'No' END",          kind: 'text' },
+];
+
+// ── Semantic model: measures ─────────────────────────────────
+const RPT_MEASURES = [
+  { id: 'amount_sum',   label: 'Sum of amount',     sql: "SUM(tx.amount)",   format: 'currency' },
+  { id: 'amount_avg',   label: 'Average amount',    sql: "AVG(tx.amount)",   format: 'currency' },
+  { id: 'amount_max',   label: 'Max amount',        sql: "MAX(tx.amount)",   format: 'currency' },
+  { id: 'amount_min',   label: 'Min amount',        sql: "MIN(tx.amount)",   format: 'currency' },
+  { id: 'count',        label: 'Transaction count', sql: "COUNT(*)",         format: 'integer'  },
+];
+
+// Field lookup helpers
+function _rptDim(id)     { return RPT_DIMENSIONS.find(d => d.id === id); }
+function _rptMeasure(id) { return RPT_MEASURES.find(m => m.id === id); }
+function _rptFmt(value, format) {
+  if (value === null || value === undefined || value === '') return '';
+  if (format === 'currency') return fmtCurrency(+value, 2);
+  if (format === 'integer')  return (+value).toLocaleString();
+  return String(value);
+}
+
+// ── Filter ops ───────────────────────────────────────────────
+// Each filter is { dimensionId, op, value, value2 }. value2 used by 'between'.
+const RPT_FILTER_OPS = {
+  eq:       { label: 'is',           render: 'one' },
+  ne:       { label: 'is not',       render: 'one' },
+  contains: { label: 'contains',     render: 'one' },
+  between:  { label: 'between',      render: 'two' },
+};
+function _rptFilterSql(f) {
+  const dim = _rptDim(f.dimensionId);
+  if (!dim) return null;
+  const expr = dim.sql;
+  const v  = String(f.value  || '').replace(/'/g, "''");
+  const v2 = String(f.value2 || '').replace(/'/g, "''");
+  if (f.op === 'eq')       return `${expr} = '${v}'`;
+  if (f.op === 'ne')       return `${expr} <> '${v}'`;
+  if (f.op === 'contains') return `${expr} LIKE '%${v}%'`;
+  if (f.op === 'between')  return `${expr} >= '${v}' AND ${expr} <= '${v2}'`;
+  return null;
+}
+
+// ── Query compiler ───────────────────────────────────────────
+// Returns the SQL string. Throws on empty Values (no aggregate to compute).
+function _rptBuildQuery(cfg) {
+  if (!cfg.values || !cfg.values.length) {
+    throw new Error('Pick at least one Value (Sum / Count / etc.) to build a report.');
+  }
+  const allDims = [...(cfg.rows||[]), ...(cfg.cols||[])];
+  const dimSelects = allDims.map(d => {
+    const dim = _rptDim(d.dimensionId);
+    if (!dim) throw new Error('Unknown dimension: ' + d.dimensionId);
+    return `${dim.sql} AS "${dim.id}"`;
+  });
+  const valSelects = cfg.values.map(v => {
+    const m = _rptMeasure(v.measureId);
+    if (!m) throw new Error('Unknown measure: ' + v.measureId);
+    return `${m.sql} AS "${m.id}"`;
+  });
+  const selects = [...dimSelects, ...valSelects].join(', ');
+  const whereParts = (cfg.filters || []).map(_rptFilterSql).filter(Boolean);
+  const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+  const groupClause = allDims.length
+    ? `GROUP BY ${allDims.map((_, i) => i + 1).join(', ')}`
+    : '';
+  const orderClause = allDims.length
+    ? `ORDER BY ${allDims.map((_, i) => i + 1).join(', ')}`
+    : '';
+  return `SELECT ${selects}
+FROM "Transaction" tx
+LEFT JOIN Account dra ON dra.id = tx.drAccountId
+LEFT JOIN Account cra ON cra.id = tx.crAccountId
+${whereClause}
+${groupClause}
+${orderClause}
+LIMIT 5000`;
+}
+
+// ── Pivot transformer ────────────────────────────────────────
+// Takes the flat GROUP BY result and pivots it into a rowKey × colKey
+// matrix. Returns:
+//   { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal }
+// matrix[rowKey][colKey] = value (uses the first Value measure only)
+// rowKeys / headerCols are sorted strings used as labels.
+function _rptPivot(flatRows, cfg) {
+  const rowDims    = cfg.rows  || [];
+  const colDims    = cfg.cols  || [];
+  const valueDef   = cfg.values[0];
+  const measure    = _rptMeasure(valueDef.measureId);
+
+  const rowKeyOf = r => rowDims.length ? rowDims.map(d => r[d.dimensionId] ?? '').join(' | ') : '(All)';
+  const colKeyOf = r => colDims.length ? colDims.map(d => r[d.dimensionId] ?? '').join(' | ') : measure.label;
+
+  const rowKeySet = new Set();
+  const colKeySet = new Set();
+  const matrix    = {};
+  for (const r of flatRows) {
+    const rk = rowKeyOf(r);
+    const ck = colKeyOf(r);
+    rowKeySet.add(rk);
+    colKeySet.add(ck);
+    matrix[rk]     = matrix[rk] || {};
+    matrix[rk][ck] = r[valueDef.measureId];
+  }
+
+  const rowKeys    = [...rowKeySet].sort();
+  const headerCols = [...colKeySet].sort();
+  // Totals
+  const rowTotals  = {};
+  const colTotals  = {};
+  let grandTotal   = 0;
+  let totalsValid  = (measure.format !== 'integer' || measure.id === 'count');
+  // For SUM and COUNT, totals are meaningful. For AVG/MIN/MAX, totals are not arithmetic-summable, so we skip them.
+  const sumOk = ['amount_sum', 'count'].includes(valueDef.measureId);
+  for (const rk of rowKeys) {
+    let rTotal = 0;
+    for (const ck of headerCols) {
+      const v = matrix[rk]?.[ck];
+      if (v !== null && v !== undefined && !isNaN(+v) && sumOk) rTotal += +v;
+      if (v !== null && v !== undefined && !isNaN(+v) && sumOk) {
+        colTotals[ck] = (colTotals[ck] || 0) + (+v);
+      }
+    }
+    if (sumOk) { rowTotals[rk] = rTotal; grandTotal += rTotal; }
+  }
+
+  return { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal, measure, totalsValid: sumOk };
+}
+
+// ── Main render ──────────────────────────────────────────────
+function renderReports(container) {
+  if (!container) container = document.getElementById('pageContent');
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;min-height:70vh;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Reports</h2>
+          <span id="rptSavedLabel" style="font-size:0.75rem;color:#64748b;"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.375rem;flex-wrap:wrap;">
+          <select id="rptSavedDropdown" onchange="rptLoad(this.value)"
+            style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.25rem 0.5rem;font-size:0.75rem;background:white;">
+            <option value="">— Saved reports —</option>
+          </select>
+          <button onclick="rptSave()"   style="background:#0f172a;color:white;border:none;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Save</button>
+          <button onclick="rptSaveAs()" style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Save as…</button>
+          <button id="rptDeleteBtn" onclick="rptDeleteSaved()" style="display:none;background:white;border:1px solid #fecaca;color:#991b1b;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Delete</button>
+          <button onclick="rptReset()"  style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Reset</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.75rem;flex:1;min-height:0;">
+        <aside id="rptFieldLibrary" style="width:12rem;flex-shrink:0;background:white;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.5rem;overflow-y:auto;max-height:80vh;"></aside>
+        <main style="flex:1;display:flex;flex-direction:column;gap:0.5rem;min-width:0;">
+          <div id="rptFiltersZone" data-zone="filters" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:3.5rem;">
+            <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Filters</div>
+            <div id="rptFiltersChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:0.5rem;">
+            <div id="rptRowsZone" data-zone="rows" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
+              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Rows</div>
+              <div id="rptRowsChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+            </div>
+            <div id="rptColsZone" data-zone="cols" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
+              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Columns</div>
+              <div id="rptColsChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+            </div>
+            <div id="rptValuesZone" data-zone="values" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
+              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Values</div>
+              <div id="rptValuesChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+            </div>
+          </div>
+          <div id="rptResult" style="background:white;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem;min-height:12rem;"></div>
+        </main>
+      </div>
+    </div>`;
+  _rptRenderFieldLibrary();
+  _rptRenderZones();
+  _rptRunReport();
+  _rptRefreshSavedDropdown();
+  _rptWireDragDrop();
+}
+
+function _rptRenderFieldLibrary() {
+  const cats = [
+    { label: 'When',     items: RPT_DIMENSIONS.filter(d => d.category === 'When'),  type: 'dim' },
+    { label: 'Where',    items: RPT_DIMENSIONS.filter(d => d.category === 'Where'), type: 'dim' },
+    { label: 'What',     items: RPT_DIMENSIONS.filter(d => d.category === 'What'),  type: 'dim' },
+    { label: 'How much', items: RPT_MEASURES,                                       type: 'measure' },
+  ];
+  document.getElementById('rptFieldLibrary').innerHTML = cats.map(c => `
+    <div style="margin-bottom:0.625rem;">
+      <div style="font-size:0.65rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:0 0.25rem 0.25rem;">${escHtml(c.label)}</div>
+      <div style="display:flex;flex-direction:column;gap:0.125rem;">
+        ${c.items.map(it => `
+          <button draggable="true"
+            ondragstart="_rptDragStart(event, '${escHtml(it.id)}', '${c.type}')"
+            onclick="_rptFieldClick('${escHtml(it.id)}', '${c.type}')"
+            title="Drag to a zone, or click to add to ${c.type === 'measure' ? 'Values' : 'Rows'}"
+            style="text-align:left;font-size:0.75rem;padding:0.25rem 0.5rem;border-radius:0.25rem;border:none;background:white;color:#1e293b;cursor:grab;"
+            onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
+            ${escHtml(it.label)}
+          </button>
+        `).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function _rptRenderZones() {
+  document.getElementById('rptFiltersChips').innerHTML = _rptConfig.filters.length
+    ? _rptConfig.filters.map((f, i) => _rptFilterChipHtml(f, i)).join('')
+    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here to filter (optional)</div>`;
+  document.getElementById('rptRowsChips').innerHTML = _rptConfig.rows.length
+    ? _rptConfig.rows.map((r, i) => _rptDimChipHtml(r.dimensionId, 'rows', i)).join('')
+    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here</div>`;
+  document.getElementById('rptColsChips').innerHTML = _rptConfig.cols.length
+    ? _rptConfig.cols.map((r, i) => _rptDimChipHtml(r.dimensionId, 'cols', i)).join('')
+    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here (optional)</div>`;
+  document.getElementById('rptValuesChips').innerHTML = _rptConfig.values.length
+    ? _rptConfig.values.map((v, i) => _rptValueChipHtml(v.measureId, i)).join('')
+    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a measure here (required)</div>`;
+}
+
+function _rptDimChipHtml(dimId, zone, idx) {
+  const dim = _rptDim(dimId);
+  if (!dim) return '';
+  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#dbeafe;color:#1e40af;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">
+    ${escHtml(dim.label)}
+    <button onclick="rptRemove('${zone}', ${idx})" title="Remove"
+      style="background:none;border:none;color:#1e40af;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+  </span>`;
+}
+
+function _rptValueChipHtml(mid, idx) {
+  const m = _rptMeasure(mid);
+  if (!m) return '';
+  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#fef3c7;color:#92400e;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">
+    ${escHtml(m.label)}
+    <button onclick="rptRemove('values', ${idx})" title="Remove"
+      style="background:none;border:none;color:#92400e;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+  </span>`;
+}
+
+function _rptFilterChipHtml(f, idx) {
+  const dim = _rptDim(f.dimensionId);
+  if (!dim) return '';
+  const op = RPT_FILTER_OPS[f.op] || RPT_FILTER_OPS.eq;
+  const valLabel = f.op === 'between' ? `${f.value || '?'} – ${f.value2 || '?'}` : (f.value === '' || f.value === undefined ? '?' : f.value);
+  return `<span onclick="rptEditFilter(${idx})" title="Click to edit"
+    style="display:inline-flex;align-items:center;gap:0.25rem;background:#ede9fe;color:#5b21b6;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;cursor:pointer;">
+    ${escHtml(dim.label)} ${escHtml(op.label)} ${escHtml(valLabel)}
+    <button onclick="event.stopPropagation(); rptRemove('filters', ${idx})" title="Remove"
+      style="background:none;border:none;color:#5b21b6;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+  </span>`;
+}
+
+function _rptDragStart(event, fieldId, fieldType) {
+  _rptDragField = { id: fieldId, type: fieldType };
+  try { event.dataTransfer.setData('text/plain', fieldId); event.dataTransfer.effectAllowed = 'copy'; } catch(_) {}
+}
+function _rptWireDragDrop() {
+  ['rptFiltersZone', 'rptRowsZone', 'rptColsZone', 'rptValuesZone'].forEach(zoneId => {
+    const el = document.getElementById(zoneId);
+    if (!el) return;
+    el.addEventListener('dragover',  e => { e.preventDefault(); el.style.background = '#f0f9ff'; el.style.borderColor = '#0ea5e9'; });
+    el.addEventListener('dragleave', () => { el.style.background = 'white'; el.style.borderColor = '#cbd5e1'; });
+    el.addEventListener('drop', e => {
+      e.preventDefault();
+      el.style.background = 'white'; el.style.borderColor = '#cbd5e1';
+      if (!_rptDragField) return;
+      _rptAddField(el.dataset.zone, _rptDragField);
+      _rptDragField = null;
+    });
+  });
+}
+
+function _rptFieldClick(fieldId, fieldType) {
+  _rptAddField(fieldType === 'measure' ? 'values' : 'rows', { id: fieldId, type: fieldType });
+}
+
+function _rptAddField(zone, field) {
+  if (field.type === 'measure') {
+    if (zone !== 'values') { showToast('Measures go in Values'); return; }
+    if (_rptConfig.values.some(v => v.measureId === field.id)) { showToast('Already added'); return; }
+    _rptConfig.values.push({ measureId: field.id });
+  } else {
+    if (zone === 'values') { showToast('Drag a measure (How much) here'); return; }
+    if (zone === 'filters') {
+      _rptConfig.filters.push({ dimensionId: field.id, op: 'eq', value: '' });
+      _rptRenderZones();
+      rptEditFilter(_rptConfig.filters.length - 1);
+      return;
+    }
+    if (_rptConfig[zone].some(d => d.dimensionId === field.id)) { showToast('Already added'); return; }
+    _rptConfig[zone].push({ dimensionId: field.id });
+  }
+  _rptRenderZones();
+  _rptRunReport();
+}
+
+function rptRemove(zone, idx) {
+  if (!_rptConfig[zone]) return;
+  _rptConfig[zone].splice(idx, 1);
+  _rptRenderZones();
+  _rptRunReport();
+}
+
+function rptReset() {
+  if ((_rptConfig.filters.length + _rptConfig.rows.length + _rptConfig.cols.length + _rptConfig.values.length) > 0
+    && !confirm('Reset the report?')) return;
+  _rptConfig = { filters: [], rows: [], cols: [], values: [] };
+  _rptSavedId = null; _rptSavedName = '';
+  _rptResult = null;
+  _rptRenderZones();
+  _rptRenderResult();
+  _rptRefreshSavedDropdown();
+  _rptUpdateSavedLabel();
+}
+
+function rptEditFilter(idx) {
+  const f = _rptConfig.filters[idx]; if (!f) return;
+  const dim = _rptDim(f.dimensionId); if (!dim) return;
+  let hint = '';
+  if (dim.kind === 'period') hint = ' (format: YYYYMM, e.g. 202605)';
+  else if (dim.kind === 'date') hint = ' (format: YYYY-MM-DD)';
+  const ops = ['eq', 'ne', 'contains', 'between'];
+  const opChoice = prompt('Filter: ' + dim.label + '\n\nOperator (eq, ne, contains, between):', f.op || 'eq');
+  if (opChoice === null) return;
+  if (!ops.includes(opChoice)) { alert('Invalid operator. Use one of: ' + ops.join(', ')); return; }
+  f.op = opChoice;
+  if (opChoice === 'between') {
+    const v1 = prompt('From value' + hint + ':', f.value || ''); if (v1 === null) return;
+    const v2 = prompt('To value'   + hint + ':', f.value2 || ''); if (v2 === null) return;
+    f.value = v1; f.value2 = v2;
+  } else {
+    const v = prompt('Value' + hint + ':', f.value || ''); if (v === null) return;
+    f.value = v;
+  }
+  _rptRenderZones();
+  _rptRunReport();
+}
+
+function _rptRunReport() {
+  if (!_rptConfig.values.length) { _rptResult = null; _rptRenderResult(); return; }
+  let sql;
+  try { sql = _rptBuildQuery(_rptConfig); }
+  catch (e) { _rptResult = { error: e.message }; _rptRenderResult(); return; }
+  try {
+    const res  = db.exec(sql);
+    const cols = res && res[0] ? res[0].columns : [];
+    const flat = res && res[0] ? res[0].values.map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]]))) : [];
+    _rptResult = _rptPivot(flat, _rptConfig);
+    _rptResult.sql = sql;
+  } catch (e) { _rptResult = { error: e.message, sql }; }
+  _rptRenderResult();
+}
+
+function _rptRenderResult() {
+  const el = document.getElementById('rptResult');
+  if (!el) return;
+  if (!_rptResult) {
+    el.innerHTML = `<div style="font-size:0.875rem;color:#94a3b8;font-style:italic;text-align:center;padding:2rem;">Add fields to Rows / Columns / Values to build a report.<br><span style="font-size:0.75rem;">Drag from the left, or click a field.</span></div>`;
+    return;
+  }
+  if (_rptResult.error) {
+    el.innerHTML = `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:0.8125rem;padding:0.75rem;border-radius:0.5rem;white-space:pre-wrap;">${escHtml(_rptResult.error)}</div>`;
+    return;
+  }
+  const p = _rptResult;
+  const fmt = v => _rptFmt(v, p.measure.format);
+  const rowLabelHeader = _rptConfig.rows.map(r => _rptDim(r.dimensionId).label).join(' / ');
+
+  const headerRow = `<tr>
+    <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;">${escHtml(rowLabelHeader || '')}</th>
+    ${p.headerCols.map(c => `<th style="padding:0.375rem 0.5rem;text-align:right;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;">${escHtml(c)}</th>`).join('')}
+    ${p.totalsValid ? `<th style="padding:0.375rem 0.5rem;text-align:right;font-size:0.7rem;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;background:#f1f5f9;text-transform:uppercase;letter-spacing:0.03em;">Total</th>` : ''}
+  </tr>`;
+
+  const bodyRows = p.rowKeys.map(rk => `<tr>
+    <td style="padding:0.375rem 0.5rem;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;">${escHtml(rk)}</td>
+    ${p.headerCols.map(ck => {
+      const v = p.matrix[rk] && p.matrix[rk][ck];
+      const has = v !== null && v !== undefined;
+      const click = has ? `onclick="rptDrillDown(${JSON.stringify(rk).replace(/"/g, '&quot;')}, ${JSON.stringify(ck).replace(/"/g, '&quot;')})"` : '';
+      return `<td ${click} style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;${has ? 'cursor:pointer;' : ''}">${has ? escHtml(fmt(v)) : ''}</td>`;
+    }).join('')}
+    ${p.totalsValid ? `<td style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;background:#f8fafc;">${escHtml(fmt(p.rowTotals[rk] || 0))}</td>` : ''}
+  </tr>`).join('');
+
+  const footerRow = p.totalsValid ? `<tr>
+    <td style="padding:0.5rem;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#f1f5f9;">Total</td>
+    ${p.headerCols.map(ck => `<td style="padding:0.5rem;text-align:right;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#f1f5f9;">${escHtml(fmt(p.colTotals[ck] || 0))}</td>`).join('')}
+    <td style="padding:0.5rem;text-align:right;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#e2e8f0;">${escHtml(fmt(p.grandTotal))}</td>
+  </tr>` : '';
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem;">
+      <div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${p.headerCols.length} column${p.headerCols.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>
+      <div style="display:flex;gap:0.25rem;">
+        <button onclick="rptExportCsv()" style="font-size:0.7rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Export CSV</button>
+        <button onclick="rptShowSql()" style="font-size:0.7rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Show SQL</button>
+      </div>
+    </div>
+    <div style="overflow:auto;max-height:50vh;border:1px solid #e2e8f0;border-radius:0.375rem;">
+      <table style="width:100%;border-collapse:collapse;background:white;">
+        <thead>${headerRow}</thead>
+        <tbody>${bodyRows}${footerRow}</tbody>
+      </table>
+    </div>`;
+}
+
+function rptDrillDown(rowKey, colKey) {
+  if (!_rptResult || _rptResult.error) return;
+  const rowParts = rowKey === '(All)' ? [] : rowKey.split(' | ');
+  const colParts = colKey === _rptResult.measure.label ? [] : colKey.split(' | ');
+  const conds = [];
+  for (const f of (_rptConfig.filters || [])) { const sql = _rptFilterSql(f); if (sql) conds.push(sql); }
+  _rptConfig.rows.forEach((r, i) => {
+    if (rowParts[i] !== undefined) {
+      const d = _rptDim(r.dimensionId);
+      conds.push(`${d.sql} = '${rowParts[i].replace(/'/g, "''")}'`);
+    }
+  });
+  _rptConfig.cols.forEach((c, i) => {
+    if (colParts[i] !== undefined) {
+      const d = _rptDim(c.dimensionId);
+      conds.push(`${d.sql} = '${colParts[i].replace(/'/g, "''")}'`);
+    }
+  });
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const sql = `SELECT tx.trxDate, tx.description, tx.amount, dra.name AS dr_name, cra.name AS cr_name, tx.notes
+FROM "Transaction" tx
+LEFT JOIN Account dra ON dra.id = tx.drAccountId
+LEFT JOIN Account cra ON cra.id = tx.crAccountId
+${where}
+ORDER BY tx.trxDate DESC LIMIT 500`;
+  try {
+    const res  = db.exec(sql);
+    const cols = res && res[0] ? res[0].columns : [];
+    const rows = res && res[0] ? res[0].values.map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]]))) : [];
+    _rptShowDrillModal(rows, rowKey, colKey);
+  } catch (e) { alert('Drill-down failed: ' + e.message); }
+}
+
+function _rptShowDrillModal(rows, rowKey, colKey) {
+  let m = document.getElementById('rptDrillModal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'rptDrillModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:1rem;';
+    m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
+    document.body.appendChild(m);
+  }
+  m._drillRows = rows;
+  m.innerHTML = `
+    <div style="background:white;border-radius:0.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.3);width:90vw;max-width:1000px;height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;border-bottom:1px solid #e2e8f0;">
+        <div>
+          <h3 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">Drill-down</h3>
+          <div style="font-size:0.7rem;color:#64748b;margin-top:0.125rem;">${escHtml(rowKey)} × ${escHtml(colKey)} — ${rows.length} transaction${rows.length===1?'':'s'}</div>
+        </div>
+        <div style="display:flex;gap:0.25rem;">
+          <button onclick="rptDrillExportCsv()" style="font-size:0.7rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.625rem;border-radius:0.375rem;cursor:pointer;">Export CSV</button>
+          <button onclick="document.getElementById('rptDrillModal').style.display='none'" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;padding:0 0.5rem;">&times;</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:0.75rem;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Date</th>
+              <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Description</th>
+              <th style="padding:0.375rem 0.5rem;text-align:right;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Amount</th>
+              <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Debit</th>
+              <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Credit</th>
+              <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;text-transform:uppercase;">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `<tr>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap;">${escHtml(String(r.trxDate || '').slice(0,10))}</td>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#1e293b;">${escHtml(r.description || '')}</td>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#1e293b;text-align:right;white-space:nowrap;">${escHtml(fmtCurrency(+r.amount || 0, 2))}</td>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#64748b;">${escHtml(r.dr_name || '')}</td>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#64748b;">${escHtml(r.cr_name || '')}</td>
+              <td style="padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;color:#94a3b8;font-size:0.75rem;">${escHtml(r.notes || '')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  m.style.display = 'flex';
+}
+
+function rptDrillExportCsv() {
+  const m = document.getElementById('rptDrillModal');
+  if (!m || !m._drillRows) return;
+  const rows = m._drillRows;
+  const headers = ['Date', 'Description', 'Amount', 'Debit', 'Credit', 'Notes'];
+  const keys    = ['trxDate', 'description', 'amount', 'dr_name', 'cr_name', 'notes'];
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [headers.join(',')].concat(rows.map(r => keys.map(k => esc(r[k])).join(',')));
+  const blob  = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement('a');
+  a.href = url; a.download = 'finapp-drilldown-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function rptExportCsv() {
+  if (!_rptResult || _rptResult.error) return;
+  const p = _rptResult;
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const rowLabel = _rptConfig.rows.map(r => _rptDim(r.dimensionId).label).join(' / ') || '';
+  const headers = [rowLabel, ...p.headerCols];
+  if (p.totalsValid) headers.push('Total');
+  const lines = [headers.map(esc).join(',')];
+  for (const rk of p.rowKeys) {
+    const row = [rk];
+    for (const ck of p.headerCols) row.push(p.matrix[rk] && p.matrix[rk][ck] !== undefined ? p.matrix[rk][ck] : '');
+    if (p.totalsValid) row.push(p.rowTotals[rk] || 0);
+    lines.push(row.map(esc).join(','));
+  }
+  if (p.totalsValid) {
+    const t = ['Total', ...p.headerCols.map(ck => p.colTotals[ck] || 0), p.grandTotal];
+    lines.push(t.map(esc).join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'finapp-report-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function rptShowSql() {
+  if (!_rptResult || !_rptResult.sql) return;
+  prompt('Generated SQL (read-only — copy if needed):', _rptResult.sql);
+}
+
+function _rptRefreshSavedDropdown() {
+  const sel = document.getElementById('rptSavedDropdown');
+  if (!sel) return;
+  let rows = [];
+  try { rows = query(`SELECT id, name FROM SavedReport ORDER BY updatedAt DESC LIMIT 50`); } catch(_) {}
+  sel.innerHTML = '<option value="">— Saved reports —</option>' +
+    rows.map(r => `<option value="${escHtml(r.id)}" ${_rptSavedId === r.id ? 'selected' : ''}>${escHtml(r.name)}</option>`).join('');
+  _rptUpdateSavedLabel();
+}
+
+function _rptUpdateSavedLabel() {
+  const lbl = document.getElementById('rptSavedLabel');
+  const del = document.getElementById('rptDeleteBtn');
+  if (lbl) lbl.textContent = _rptSavedId ? '— ' + _rptSavedName : '— Unsaved';
+  if (del) del.style.display = _rptSavedId ? '' : 'none';
+}
+
+function rptSave() {
+  if (!_rptConfig.values.length) { alert('Build a report (add at least one Value) before saving.'); return; }
+  if (_rptSavedId) {
+    try {
+      const now = new Date().toISOString();
+      db.run(`UPDATE SavedReport SET config = ?, updatedAt = ? WHERE id = ?`,
+        [JSON.stringify(_rptConfig), now, _rptSavedId]);
+      syncAfterWrite();
+      showToast('Saved "' + _rptSavedName + '"');
+    } catch (e) { alert('Save failed: ' + e.message); }
+  } else { rptSaveAs(); }
+}
+
+function rptSaveAs() {
+  if (!_rptConfig.values.length) { alert('Build a report (add at least one Value) before saving.'); return; }
+  const name = prompt('Name this report:', _rptSavedName || '');
+  if (!name || !name.trim()) return;
+  try {
+    const now = new Date().toISOString();
+    const id  = genId();
+    db.run(`INSERT INTO SavedReport (id, name, config, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`,
+      [id, name.trim(), JSON.stringify(_rptConfig), now, now]);
+    syncAfterWrite();
+    _rptSavedId = id; _rptSavedName = name.trim();
+    _rptRefreshSavedDropdown();
+    showToast('Saved as "' + name.trim() + '"');
+  } catch (e) { alert('Save failed: ' + e.message); }
+}
+
+function rptLoad(id) {
+  if (!id) { _rptSavedId = null; _rptSavedName = ''; _rptUpdateSavedLabel(); return; }
+  try {
+    const row = query(`SELECT name, config FROM SavedReport WHERE id = '${id.replace(/'/g, "''")}'`)[0];
+    if (!row) return;
+    _rptConfig = JSON.parse(row.config);
+    if (!_rptConfig.filters) _rptConfig.filters = [];
+    if (!_rptConfig.rows)    _rptConfig.rows = [];
+    if (!_rptConfig.cols)    _rptConfig.cols = [];
+    if (!_rptConfig.values)  _rptConfig.values = [];
+    _rptSavedId   = id;
+    _rptSavedName = row.name;
+    _rptRenderZones();
+    _rptRunReport();
+    _rptUpdateSavedLabel();
+    showToast('Loaded "' + row.name + '"');
+  } catch (e) { alert('Load failed: ' + e.message); }
+}
+
+function rptDeleteSaved() {
+  if (!_rptSavedId) { alert('No saved report loaded.'); return; }
+  if (!confirm('Delete saved report "' + _rptSavedName + '"?')) return;
+  try {
+    db.run(`DELETE FROM SavedReport WHERE id = ?`, [_rptSavedId]);
+    syncAfterWrite();
+    _rptSavedId = null; _rptSavedName = '';
+    _rptRefreshSavedDropdown();
+    showToast('Deleted');
+  } catch (e) { alert('Delete failed: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
