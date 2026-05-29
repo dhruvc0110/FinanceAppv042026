@@ -462,6 +462,26 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - `aboutFetchBuilds()` calls GitHub API to list recent commits on `main`
 - Read-only display, useful for "what changed recently?"
 
+### Universal transaction drill-down (Session 3, late)
+- Helper: `showTxDrillPanel(anchorEl, {id, txId | ftId | where, label, limit?, filterArgs?})` — folds out a tile right where the user clicked. Detects table context (`closest('tr')`) and inserts as a colspan'd `<tr>` inside tables, or as a sibling `<div>` outside. One panel open at a time; click-outside dismiss; re-clicking the source anchor toggles it off.
+- Shared row actions: `_txRowActionsHtml(txId, kind?)` returns Edit + Link + Open-in-Tx as small icon buttons. `kind='ft'` substitutes a single Open-in-Future-Tx button (FutureTransaction has no Edit/Link wired). Used by both the drill panel AND the existing tile expansions.
+- Navigation: `txOpenFiltered(partial, label?)` merges partial filter overrides into `txF`, sets `_txComboTab='transactions'`, opens the filter bar, navigates. Falls back to a toast showing the active filter label.
+- Edit / Link: `drillEditTx(id)` / `drillLinkTx(id)` — if the user is already on the Transactions tab, the modals are mounted and open immediately. Otherwise navigate then `setTimeout(60)` before opening.
+- Surfaces wired:
+  - **CC / BA / AI / Accruals tile expansions** — gained an Actions column with `_txRowActionsHtml` on each row.
+  - **P&L rows** — clicking the Actual cell folds out the tx that make up that account's sum across the selected period range. Filter side (drId vs crId) routed by account type.
+  - **Balance Sheet rows** — clicking the Balance cell folds out the running balance's underlying tx through `bsPeriod`. Header label notes "running balance through YYYYMM" since SUM(panel rows) ≠ displayed balance.
+  - **Dashboard MTD Income/Expenses tiles** — Actions column added to the existing transaction list.
+  - **Recent / Scheduled Dividends** — Actions column on both tables; Scheduled uses `kind='ft'`.
+- **Surfaces deferred** (Phase 2):
+  - Projected Balance Sheet — cells are forward-looking budget projections, not transaction sums, so drilling doesn't have a direct mapping.
+  - Budget grid — cells own onclick for budget edit + oncontextmenu for notes; drill would conflict. Could be added via alt+click.
+  - Future Transactions list — rows already have Edit / Del; the user can drill on the FT row itself via showTxDrillPanel({ftId}) but no inline wiring yet.
+  - Equity lots / sales — each is linked to a Transaction via `linkedTxId`; could drill into the linked tx.
+  - Duplicate Review pairs — could fold out both tx side by side.
+  - Transactions list main rows — already have Edit / Link / Delete inline; no additional drill needed (user is already there).
+- **How to add a new surface**: in the surface's row HTML, set `data-drill-anchor` on the cell + `onclick="showTxDrillPanel(this, {id:'<unique>', where:\"<sql>\", label:<json>, filterArgs:{...}})"`. Or for already-rendered tx lists, just add `<td>${_txRowActionsHtml(t.id)}</td>` to the row.
+
 ---
 
 ## Features Snapshot (Session 3 additions)
