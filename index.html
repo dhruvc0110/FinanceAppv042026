@@ -940,6 +940,7 @@ function _initCoreSchema() {
       description TEXT, amount REAL NOT NULL,
       drAccountId TEXT, crAccountId TEXT, drSubId TEXT, crSubId TEXT,
       notes TEXT, isReconciled INTEGER NOT NULL DEFAULT 0,
+      isPending INTEGER NOT NULL DEFAULT 0,
       importSource TEXT, linkedTxId TEXT,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
     `CREATE TABLE IF NOT EXISTS FutureTransaction (
@@ -1870,6 +1871,14 @@ function startApp() {
   // Ensure importSource column exists on Transaction (migration for existing DBs)
   try {
     db.run(`ALTER TABLE "Transaction" ADD COLUMN importSource TEXT`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
+  // Ensure isPending column exists on Transaction. Used to flag partially-
+  // posted transactions (e.g. restaurant charge before tip arrives).
+  // Replaces the Reconciled column in the UI; reconciled data is kept in the
+  // DB but no longer surfaced.
+  try {
+    db.run(`ALTER TABLE "Transaction" ADD COLUMN isPending INTEGER NOT NULL DEFAULT 0`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
   // Ensure importSource column exists on FutureTransaction so origin is
@@ -3215,7 +3224,7 @@ function _dashInjectTileDetail(key, tiles) {
 
 // Page-level state — txF persists across re-renders (filters stay put);
 // txPage and txEditId reset on each fresh navigate('transactions').
-let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', createdFrom:'', createdTo:'' };
+let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', createdFrom:'', createdTo:'', pending:'' };
 let txPage   = 0;
 let txEditId = null;
 let txFiltersOpen = false;
@@ -3260,11 +3269,13 @@ function buildTxWhere(f) {
   if (f.source)      parts.push(`t.importSource = '${f.source.replace(/'/g,"''")}'`);
   if (f.createdFrom) parts.push(`substr(t.createdAt,1,10) >= '${f.createdFrom}'`);
   if (f.createdTo)   parts.push(`substr(t.createdAt,1,10) <= '${f.createdTo}'`);
+  if (f.pending === 'yes') parts.push(`COALESCE(t.isPending,0) = 1`);
+  if (f.pending === 'no')  parts.push(`COALESCE(t.isPending,0) = 0`);
   return parts.length ? 'WHERE ' + parts.join(' AND ') : '';
 }
 
 function _txActiveFilterCount() {
-  return [txF.dateFrom, txF.dateTo, txF.drId, txF.crId, txF.desc, txF.source, txF.createdFrom, txF.createdTo]
+  return [txF.dateFrom, txF.dateTo, txF.drId, txF.crId, txF.desc, txF.source, txF.createdFrom, txF.createdTo, txF.pending]
     .filter(Boolean).length;
 }
 
@@ -3334,7 +3345,7 @@ function _renderTxPage(container) {
       t.crAccountId, ca.name AS crName,
       t.drSubId, ds.name AS drSubName,
       t.crSubId, cs.name AS crSubName,
-      t.notes, t.isReconciled, t.importSource, t.createdAt
+      t.notes, t.isReconciled, t.isPending, t.importSource, t.createdAt
     FROM "Transaction" t
     LEFT JOIN Account da ON t.drAccountId = da.id
     LEFT JOIN Account ca ON t.crAccountId = ca.id
@@ -3391,10 +3402,11 @@ function _renderTxPage(container) {
         <td data-label="CR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${crLabel}">${crLabel}</td>
         <td data-label="Notes" class="tablet-hide px-3 py-2 text-sm text-slate-400 max-w-[120px] truncate" title="${escHtml(r.notes||'')}">${escHtml(r.notes||'')}</td>
         <td data-label="Source" class="tablet-hide px-3 py-2 text-xs text-center whitespace-nowrap">${_txSourceBadge(r.importSource)}</td>
-        <td data-label="Reconciled" class="tablet-hide px-3 py-2 text-center">
-          <input type="checkbox" ${r.isReconciled ? 'checked' : ''}
-            onchange="txToggleReconcile('${r.id}', this.checked)"
-            class="w-4 h-4 cursor-pointer accent-slate-700">
+        <td data-label="Pending" class="tablet-hide px-3 py-2 text-center">
+          <input type="checkbox" ${r.isPending ? 'checked' : ''}
+            onchange="txTogglePending('${r.id}', this.checked)"
+            title="Mark as pending (partially posted — e.g. restaurant charge before tip)"
+            class="w-4 h-4 cursor-pointer accent-amber-600">
         </td>
         <td data-label="Manage" class="px-3 py-2 text-center whitespace-nowrap">
           <div class="flex items-center justify-center gap-3">
@@ -3525,6 +3537,14 @@ function _renderTxPage(container) {
                 <option value="Equity" ${txF.source==='Equity'?'selected':''}>Equity</option>
               </select>
             </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Pending</label>
+              <select id="fPending" class="${ic}">
+                <option value="">All</option>
+                <option value="yes" ${txF.pending==='yes'?'selected':''}>Pending only</option>
+                <option value="no" ${txF.pending==='no'?'selected':''}>Posted only</option>
+              </select>
+            </div>
             <div class="flex items-end gap-2">
               <button onclick="txApplyFilters()"
                 class="flex-1 bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700 transition">
@@ -3553,7 +3573,7 @@ function _renderTxPage(container) {
                 ${_txSortTh('crName',      'CR Account')}
                 <th class="tablet-hide px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</th>
                 <th class="tablet-hide px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
-                <th class="tablet-hide px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Reconciled</th>
+                <th class="tablet-hide px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Pending</th>
                 <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wide">Manage Transaction</th>
               </tr>
             </thead>
@@ -3853,13 +3873,14 @@ function txApplyFilters() {
   txF.source      = document.getElementById('fSource')?.value   || '';
   txF.createdFrom = document.getElementById('fCreatedFrom')?.value || '';
   txF.createdTo   = document.getElementById('fCreatedTo')?.value   || '';
+  txF.pending     = document.getElementById('fPending')?.value  || '';
   txPage   = 0;
   txEditId = null;
   _renderTxPage();
 }
 
 function txClearFilters() {
-  txF = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', createdFrom:'', createdTo:'' };
+  txF = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', createdFrom:'', createdTo:'', pending:'' };
   txPage   = 0;
   txEditId = null;
   _renderTxPage();
@@ -3869,12 +3890,13 @@ function txPrevPage()            { if (txPage > 0) { txPage--; txEditId = null; 
 function txNextPage(totalPages)  { if (txPage < totalPages - 1) { txPage++; txEditId = null; _renderTxPage(); } }
 
 // ── Row actions ────────────────────────────────────────────
-function txToggleReconcile(id, checked) {
+function txTogglePending(id, checked) {
   try {
-    db.run('UPDATE "Transaction" SET isReconciled=?, updatedAt=? WHERE id=?', [checked?1:0, new Date().toISOString(), id]);
+    db.run('UPDATE "Transaction" SET isPending=?, updatedAt=? WHERE id=?', [checked?1:0, new Date().toISOString(), id]);
     syncAfterWrite();
-  } catch(e) { console.error('Reconcile error:', e.message); }
+  } catch(e) { console.error('Pending toggle error:', e.message); }
 }
+
 
 function txStartEdit(id) {
   const tx = query(`SELECT * FROM "Transaction" WHERE id='${id}'`)[0];
@@ -5294,7 +5316,7 @@ function aiInjectPanel(accountId) {
   };
 
   const txs = pList ? query(`
-    SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled,
+    SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled, t.isPending, t.isPending,
       t.drAccountId, t.crAccountId,
       da.name AS drName, ca.name AS crName,
       ds.name AS drSub,  cs.name AS crSub
@@ -5339,10 +5361,11 @@ function aiInjectPanel(accountId) {
           </td>
           <td data-label="Sub-Account" class="px-3 py-1.5 text-xs text-slate-400 whitespace-nowrap">${escHtml(ownSub)}</td>
           <td data-label="Counterpart" class="px-3 py-1.5 text-sm text-slate-500 max-w-[160px] truncate" title="${counterpart}">${counterpart}</td>
-          <td data-label="Reconciled" class="px-3 py-1.5 text-center">
-            <input type="checkbox" ${tx.isReconciled ? 'checked' : ''}
-              onchange="aiToggleReconcile('${tx.id}', this.checked)"
-              class="w-4 h-4 cursor-pointer accent-slate-700">
+          <td data-label="Pending" class="px-3 py-1.5 text-center">
+            <input type="checkbox" ${tx.isPending ? 'checked' : ''}
+              onchange="txTogglePending('${tx.id}', this.checked)"
+              title="Mark as pending (partially posted)"
+              class="w-4 h-4 cursor-pointer accent-amber-600">
           </td>
           <td data-label="Actions" class="px-3 py-1.5 text-right whitespace-nowrap">${_txRowActionsHtml(tx.id)}</td>
         </tr>`;
@@ -5382,7 +5405,7 @@ function aiInjectPanel(accountId) {
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Sub-Account</th>
              <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
-             <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Rec</th>
+             <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Pending</th>
              <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Actions</th>
            </tr>
          </thead>
@@ -5394,12 +5417,6 @@ function aiInjectPanel(accountId) {
   anchor.after(panel);
 }
 
-function aiToggleReconcile(txId, checked) {
-  try {
-    db.run('UPDATE "Transaction" SET isReconciled=?, updatedAt=? WHERE id=?', [checked?1:0, new Date().toISOString(), txId]);
-    syncAfterWrite();
-  } catch(e) { console.error('Reconcile error:', e.message); }
-}
 
 // ════════════════════════════════════════════════════════════
 // SETTINGS PAGE
@@ -5967,7 +5984,7 @@ function _renderSettingsPage(container) {
     const viewDesc = {
       auto:    'Adapts to screen size: cards on phone (<768px), compact on tablet (768–1023px), full table on desktop (≥1024px).',
       phone:   'Cards on every list, regardless of screen size. Best for quick mobile review.',
-      tablet:  'Compact tables with secondary columns (Notes / Source / Reconciled / Created) hidden. Best for tablet width or when you want a denser desktop view.',
+      tablet:  'Compact tables with secondary columns (Notes / Source / Pending / Created) hidden. Best for tablet width or when you want a denser desktop view.',
       desktop: 'Always show the full table with every column, regardless of screen size.',
     };
     return `<div class="space-y-6 max-w-md">
@@ -11673,7 +11690,7 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
   };
 
   const txs = actPList ? query(`
-    SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled,
+    SELECT t.id, t.trxDate, t.description, t.amount, t.isReconciled, t.isPending,
       t.drAccountId, t.crAccountId, t.drSubId, t.crSubId,
       da.name AS drName, ca.name AS crName
     FROM "Transaction" t
@@ -11708,7 +11725,12 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
             <span class="text-xs font-semibold px-1.5 py-0.5 rounded ${sideCls}">${sideLbl}</span>
           </td>
           <td class="px-3 py-1.5 text-sm text-slate-500 truncate max-w-[160px]">${counterpart}</td>
-          <td class="px-3 py-1.5 text-center">${tx.isReconciled ? '<span class="text-green-600 text-sm">&#10003;</span>' : ''}</td>
+          <td class="px-3 py-1.5 text-center">
+            <input type="checkbox" ${tx.isPending ? 'checked' : ''}
+              onchange="txTogglePending('${tx.id}', this.checked)"
+              title="Mark as pending (partially posted)"
+              class="w-4 h-4 cursor-pointer accent-amber-600">
+          </td>
           <td class="px-3 py-1.5 text-right whitespace-nowrap">${_txRowActionsHtml(tx.id)}</td>
         </tr>`;
       }).join('')
@@ -11758,7 +11780,7 @@ function _accrualInjectPanel(tile, pFrom, pTo, actPList, prevPList) {
             ${sortTh('amount',      'Effect', 'right')}
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Side</th>
             <th class="px-3 py-2 text-left text-xs font-semibold text-slate-400 uppercase">Counterpart</th>
-            <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Rec</th>
+            <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Pending</th>
             <th class="px-3 py-2 text-right text-xs font-semibold text-slate-400 uppercase">Actions</th>
           </tr>
         </thead>
@@ -13873,6 +13895,7 @@ const RPT_DIMENSIONS = [
   { id: 'description',  label: 'Description',       category: 'What',  sql: "tx.description",                                                kind: 'text' },
   { id: 'source',       label: 'Source',            category: 'What',  sql: "tx.importSource",                                               kind: 'text' },
   { id: 'reconciled',   label: 'Reconciled',        category: 'What',  sql: "CASE tx.isReconciled WHEN 1 THEN 'Yes' ELSE 'No' END",          kind: 'text' },
+  { id: 'pending',      label: 'Pending',           category: 'What',  sql: "CASE COALESCE(tx.isPending,0) WHEN 1 THEN 'Yes' ELSE 'No' END", kind: 'text' },
 ];
 
 // ── Semantic model: measures ─────────────────────────────────
