@@ -2908,6 +2908,7 @@ function _renderDashboard(container) {
   const mtdNet   = mtdIncome - mtdExpense;
   const ytdNet   = ytdIncome - ytdExpense;
   const upcoming = queryVal('SELECT COUNT(*) FROM FutureTransaction') || 0;
+  const pendingCount = queryVal('SELECT COUNT(*) FROM "Transaction" WHERE COALESCE(isPending,0)=1') || 0;
 
   let tilePrefs = {};
   try {
@@ -2932,6 +2933,7 @@ function _renderDashboard(container) {
     { key: 'MTD Net',           val: mtdNet,           label: 'MTD Net',                color: mtdNet >= 0 ? 'text-green-700' : 'text-red-600' },
     { key: 'YTD Net',           val: ytdNet,           label: 'YTD Net',                color: ytdNet >= 0 ? 'text-green-700' : 'text-red-600' },
     { key: 'Upcoming',          val: upcoming,         label: 'Upcoming Transactions',  color: 'text-slate-800', isCount: true, nav: 'future-transactions' },
+    { key: 'Pending',           val: pendingCount,     label: 'Pending Transactions',   color: pendingCount > 0 ? 'text-amber-600' : 'text-slate-800', isCount: true, pendingTx: true },
   ].filter(t => tilePrefs[t.key] !== false);
 
   const isOpen = k => _dashTileOpenKey === k;
@@ -3114,6 +3116,7 @@ function _dashGetTiles() {
   const ytdMap=buildBalanceMap(ytd);let ytdIncome=0,ytdExpense=0;
   for(const a of Object.values(ytdMap)){if(a.type==='INCOME')ytdIncome+=a.balance;if(a.type==='EXPENSE')ytdExpense+=a.balance;}
   const upcoming=queryVal('SELECT COUNT(*) FROM FutureTransaction')||0;
+  const pendingCount=queryVal('SELECT COUNT(*) FROM "Transaction" WHERE COALESCE(isPending,0)=1')||0;
   let tilePrefs={};
   try{const u=query('SELECT preferences FROM User LIMIT 1')[0];if(u&&u.preferences){const p=typeof u.preferences==='string'?JSON.parse(u.preferences):u.preferences;tilePrefs=p.dashboardTiles||{};}}catch(e){}
   return [
@@ -3130,6 +3133,7 @@ function _dashGetTiles() {
     {key:'MTD Net',val:mtdIncome-mtdExpense,label:'MTD Net'},
     {key:'YTD Net',val:ytdIncome-ytdExpense,label:'YTD Net'},
     {key:'Upcoming',val:upcoming,label:'Upcoming Transactions',isCount:true,nav:'future-transactions'},
+    {key:'Pending',val:pendingCount,label:'Pending Transactions',isCount:true,pendingTx:true},
   ].filter(t=>tilePrefs[t.key]!==false);
 }
 
@@ -3208,6 +3212,49 @@ function _dashInjectTileDetail(key, tiles) {
           <th class="px-3 py-2 text-right text-xs text-slate-400 uppercase">Actions</th>
         </tr></thead>
         <tbody>${rows || '<tr><td colspan="5" class="px-3 py-4 text-center text-sm text-slate-400">No transactions</td></tr>'}</tbody>
+      </table></div>`;
+  } else if (tile.pendingTx) {
+    // Pending transactions — list with row actions + total
+    const txs = query(`
+      SELECT t.id, t.trxDate, t.description, t.amount,
+             da.name AS drName, ca.name AS crName
+      FROM "Transaction" t
+      LEFT JOIN Account da ON t.drAccountId = da.id
+      LEFT JOIN Account ca ON t.crAccountId = ca.id
+      WHERE COALESCE(t.isPending, 0) = 1
+      ORDER BY t.trxDate DESC LIMIT 100`);
+    const total = txs.reduce((s, t) => s + (+t.amount || 0), 0);
+    const rows = txs.map(t => `<tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-1.5 text-sm text-slate-500 whitespace-nowrap">${fmtDate(t.trxDate)}</td>
+      <td class="px-3 py-1.5 text-sm text-slate-700">${escHtml(t.description)}</td>
+      <td class="px-3 py-1.5 text-sm font-medium text-right text-slate-800 whitespace-nowrap">${fmtCurrency(t.amount, 2)}</td>
+      <td class="px-3 py-1.5 text-xs text-slate-500">${escHtml(t.drName || '')}</td>
+      <td class="px-3 py-1.5 text-xs text-slate-500">${escHtml(t.crName || '')}</td>
+      <td class="px-3 py-1.5 text-right whitespace-nowrap">${_txRowActionsHtml(t.id)}</td>
+    </tr>`).join('');
+    det.innerHTML = `
+      <div class="flex items-center justify-between px-4 py-2.5 bg-amber-50 border-b border-amber-200">
+        <div>
+          <span class="text-sm font-semibold text-slate-800">${escHtml(heading)}</span>
+          <span class="text-xs text-slate-500 ml-2">${txs.length} tx · ${fmtCurrency(total, 2)} total</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="txOpenFiltered({pending:'yes'}, 'Pending transactions')"
+            class="text-xs px-2 py-1 bg-slate-900 text-white rounded hover:bg-slate-700">Open in Transactions</button>
+          <button onclick="_dashTileOpenKey=null;document.getElementById('dashTileDetail').style.display='none'"
+            class="text-slate-400 hover:text-slate-700 text-xl">&times;</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto"><table class="w-full min-w-[600px]">
+        <thead class="bg-slate-50 border-b border-slate-100"><tr>
+          <th class="px-3 py-2 text-left text-xs text-slate-400 uppercase">Date</th>
+          <th class="px-3 py-2 text-left text-xs text-slate-400 uppercase">Description</th>
+          <th class="px-3 py-2 text-right text-xs text-slate-400 uppercase">Amount</th>
+          <th class="px-3 py-2 text-left text-xs text-slate-400 uppercase">DR</th>
+          <th class="px-3 py-2 text-left text-xs text-slate-400 uppercase">CR</th>
+          <th class="px-3 py-2 text-right text-xs text-slate-400 uppercase">Actions</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="px-3 py-4 text-center text-sm text-slate-400">No pending transactions. Mark a row Pending from any tx list to track partially-posted charges.</td></tr>'}</tbody>
       </table></div>`;
   } else if (tile.nav) {
     // Navigate directly
