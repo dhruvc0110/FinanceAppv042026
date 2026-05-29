@@ -1,7 +1,9 @@
 # Finance App — Claude Code Hand-Off Document
 
-> **Last updated:** 2026-05-27 — end of session 2
-> **State:** Production, deployed, working. ~13,500 lines in `index.html`.
+> **Last updated:** 2026-05-28 — end of session 3
+> **State:** Production, deployed, working. ~15,500 lines in `index.html`.
+>
+> **Session 3 highlights:** Browser back-gesture restoration. PWA long-press shortcuts. Day-of-month allows 1–31 + "Last day" (sentinel 32). LLM-driven Ask FinApp built, iterated, and abandoned. Pivot to deterministic Reports (self-service drag-and-drop pivot builder) — Phase A+B shipped, then UI surface paused for a future hardening pass.
 
 ## Project Overview
 
@@ -71,7 +73,7 @@ Browser (index.html)
 
 | File | Purpose |
 |------|---------|
-| `index.html` | The entire application (~13,500 lines) |
+| `index.html` | The entire application (~15,500 lines) |
 | `manifest.webmanifest` | PWA manifest — name=FinApp, display=standalone, theme=#0f172a |
 | `sw.js` | Service worker — network-first HTML, cache-first same-origin assets |
 | `icon.svg` | App icon — slate-900 background with white `$` glyph |
@@ -115,7 +117,9 @@ Approximate line ranges. The file grows — these are guides, not contracts.
 | 11000–11500 | Credit Card page, Notes, Notification CRUD + `writeNotificationsJson()` |
 | 11500–12000 | Settings page tabs |
 | 12000–13145 | View-mode logic (`_applyViewMode` etc.), responsive helpers, global handlers |
-| 13145–13500 | Build History panel, late-mounted feature glue |
+| 13145–13780 | Build History panel, history-aware `_pushNavState` / popstate, late-mounted feature glue |
+| 13780–14660 | **Reports module** (Session 3) — semantic model (`RPT_DIMENSIONS`, `RPT_MEASURES`), `_rptBuildQuery`, `_rptPivot`, `renderReports`, drag-and-drop, drill-down modal, save/load. UI surface currently paused. |
+| 14660–15500 | **Ask FinApp module** (Session 3, paused) — `askOpen` modal, KB matcher, tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`), pattern store, confidence chip. Pill no longer routes here. |
 
 > ⚠️ **Dead-tail hazard:** Lines ~11099-11140 contain leftover code from `repPlaySave()` that calls `navigate('transactions')` **at top-level on script load**. Any `let`/`const` whose value is read by `_TX_COMBO_TABS`-related code must be declared **before** this point. See ERRORS.md ("TDZ trap") for the full story. Eventually remove the dead-tail in a dedicated cleanup pass.
 
@@ -245,6 +249,21 @@ AppSettings (key PK, value, updatedAt)
   -- known keys: anthropicApiKey, dashTiles
 Note (id PK, title, body, createdAt, updatedAt)
 User (id PK, email, name, preferences JSON, createdAt)
+```
+
+### Session 3 Tables
+
+```sql
+SavedQuery (id PK, name, question, mode='table', createdAt, updatedAt)
+  -- User-named pinned questions for the (paused) Ask FinApp modal.
+QueryPattern (id PK, signature, sqlTemplate, originalQuestion,
+              hits=1, confidence='low', lastUsedAt, createdAt, updatedAt)
+  -- Ask FinApp's KB. LLM-generalized {PARAM} templates from agent runs.
+  -- Confidence ladder: 1 hit=low / 2-4=medium / 5+ or 👍=high; 👎 deletes.
+  -- Paused alongside Ask. Code intact; matcher unreachable from UI.
+SavedReport (id PK, name, config TEXT JSON, createdAt, updatedAt)
+  -- Reports pivot builder. config is the full {filters, rows, cols, values}
+  -- shape. Loadable by id; CRUD synced via syncAfterWrite() to Drive.
 ```
 
 ---
@@ -445,6 +464,56 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 
 ---
 
+## Features Snapshot (Session 3 additions)
+
+### Browser back-gesture restoration (synthetic history)
+- Every `navigate(page)` and every composite `XSetTab(sub)` call `_pushNavState(page, sub)` which `history.pushState`-es a `{__finapp, page, sub}` entry. Single `popstate` listener restores prior state without re-pushing (guarded by `_navFromPop`).
+- URL is never changed (no GitHub Pages 404 risk).
+- `_historyReady` stays false until just before the post-login `navigate('dashboard')`, so the `repPlaySave` dead-tail's orphan `navigate('transactions')` doesn't pollute the stack on script load.
+
+### PWA long-press shortcuts + maskable icon
+- `manifest.webmanifest` has `shortcuts`: Dictate / Trxns / Future / Home. Each shortcut URL is `./?startPage=…&sub=…`. `startApp()` reads those params, deep-links via `navigate(startPage) + _switchSub(...)`, then strips the query so reloads don't re-fire.
+- New `icon-maskable.svg` (font-size 260 instead of 320) for circular-mask launchers (Pixel, Samsung). Multiple sized entries in the manifest icons array.
+- SW cache bumped `v1 → v2 → v3` over the session; users on the old SW pick up changes on next launch.
+
+### Day-of-month: 1–31 + explicit "Last day"
+- Storage: `dayOfMonth` (Repeatable), `paymentDueDay` (CreditCard). NULL = unset; 1–31 = that day clamped to month-end on short months; 32 = explicit "Last day". Schema unchanged.
+- Helpers: `DOM_LAST=32`, `_daysInMonth`, `_resolveDom`, `_domDisplay`, `_domOptions`.
+- All three form inputs (Settings → Repeatable, Settings → Credit Cards, Transactions Repeatable composite) are now `<select>` boxes populated by `_domOptions(stored)`.
+- Consumption sites updated: `migrateFutureTransactions` (auto-gen), CC tile due-date math (current + next month resolved separately), `repPlay` (manual play).
+- `FinanceNotifications.gs` rewritten from scratch (file wasn't in the repo) to mirror the same logic.
+
+### Floating Dictate + Ask pill (now Dictate + Reports)
+- One `_floatingPillHtml()` returns a two-half pill (red Dictate mic + slate Ask button + thin separator).
+- Mounted ONCE in `startApp()`, appended to `document.body`. `position:fixed` so DOM placement is irrelevant.
+- Dictate context derived at click time via `_dtCtxFromPage()` (Future Transactions → 'ft', otherwise 'tx').
+- **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → now paused (slate-400, opacity 0.7, tooltip "Reports (work in progress — design not yet hardened)"). Still clickable, navigates to `renderReports`.
+
+### Ask FinApp (paused, code intact)
+- **Architecture:** Single Chat mode. KB-first routing: HIGH → cached SQL single-shot; MEDIUM → cached SQL with visible "inferred params" assumptions; LOW → tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`) that iterates until it has enough grounding to answer.
+- **Honest empty:** `_askIsLogicallyEmpty(rows, columns)` catches single-row all-zero aggregates. Empty results never get a confident LLM narrative; SQL panel auto-shows with a yellow warning.
+- **KB:** `QueryPattern` table. Agent runs auto-populate after success (non-empty only). 👍 promotes (hits++ → low / medium / high). 👎 deletes. Modal sidebar has a "Clear all cached patterns" admin button.
+- **Token economy:** System prompt wrapped with `cache_control: {type: 'ephemeral'}` on agent calls. 90% input-token discount on iterations 2-N within 5-min TTL. Reduces rate-limit risk significantly.
+- **Why paused:** Despite many targeted fixes, NL-to-SQL against opinionated finance data kept producing partially-correct answers. User pivoted to deterministic Reports. See `ERRORS.md` → "LLM-SQL whack-a-mole."
+- **Reviving:** Pill no longer routes to `askOpen`. The function still works if called directly. Modal HTML is built lazily on first call.
+
+### Reports — self-service pivot builder (paused after Phase A+B)
+- **Surface:** Currently no sidebar entry; pill's right half (slate-400, dimmed) opens it. To revive as a primary surface, re-add the nav button in `<div id="sidebar">`.
+- **Semantic model** (hand-curated JS arrays at the top of the Reports module):
+  - `RPT_DIMENSIONS`: 15 fields in 3 categories — `When` (Date, Year, Quarter, Period YYYYMM, Month name, Day of week), `Where` (Debit/Credit account name/type/grouping), `What` (Description, Source, Reconciled). Each carries an SQL expression that drops into SELECT and GROUP BY.
+  - `RPT_MEASURES`: 5 fields — Sum / Avg / Max / Min of Amount, Transaction count.
+  - `RPT_FILTER_OPS`: eq / ne / contains / between.
+- **Query compiler** (`_rptBuildQuery`): composes `SELECT … FROM "Transaction" tx LEFT JOIN Account dra LEFT JOIN Account cra WHERE … GROUP BY … ORDER BY … LIMIT 5000`.
+- **Pivot transformer** (`_rptPivot`): flat group-by rows → `{headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal}`. Totals are only computed for additive measures (SUM, COUNT) — AVG/MIN/MAX get blank totals.
+- **UI:** Left field library (When / Where / What / How much), drop zones (Filters / Rows / Columns / Values), live result table with totals + Export CSV + Show SQL.
+- **Drag-and-drop:** HTML5 API. Click-to-add fallback routes dims → Rows, measures → Values. Mobile/touch polish deferred to Phase E.
+- **Filter editor:** `prompt()`-based for MVP. Inline editor on Phase E.
+- **Drill-down:** Click any value cell → modal lists underlying transactions for that row × col × filters intersection. Independent Export CSV.
+- **Save/Load/Delete:** `SavedReport` table. Top-bar dropdown for browsing.
+- **Roadmap:** Settings → About → "Roadmap — Reports". A+B Shipped, C (charts) / D (date presets + comparison + %) / E (mobile + inline filter editor) listed as Later.
+
+---
+
 ## State Variables Quick Reference
 
 | Variable | Type | Purpose |
@@ -536,7 +605,7 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 
 ## Known Issues / Pre-existing Tech Debt
 
-1. **Dead-tail at lines ~11099-11140.** Leftover `repPlaySave()` code that calls `navigate('transactions')` at top-level. Forces `_showDictateTab` (and possibly others) to be declared near the top of the file. **Remove in a dedicated cleanup pass.**
+1. **Dead-tail at lines ~11099-11140.** Leftover `repPlaySave()` code that calls `navigate('transactions')` at top-level on script load. Forces `_showDictateTab` (and any future `let` referenced by `_visibleTxComboTabs`) to be declared near the top of the file. Also forced the `_historyReady` gate so that synthetic-history pushes don't fire pre-login. **Remove in a dedicated cleanup pass.**
 
 2. **`buildTxWhere()` and FT `buildWhere()`** still interpolate dates/search strings into SQL. Low real-world risk (dates are typed inputs, strings are `replace(/'/g,"''")`-escaped) but should be parameterized.
 
@@ -546,9 +615,15 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 
 5. **Firebase rules** are open. See `firebase-security-rules.md` for the tightening plan (requires adding Firebase Auth or a custom JWT).
 
-6. **Single file, ~13,500 lines.** Maintainable for solo dev but module split would help future work.
+6. **Single file, ~15,500 lines.** Maintainable for solo dev but module split would help future work. Reports module (~880 lines) and Ask module (~1000 lines, paused) account for most of session 3 growth.
 
-7. **Service worker cache during dev.** When iterating on `index.html` against a browser that previously loaded the PWA, hard reload alone is not enough — unregister the SW first, test in incognito, or bump the `CACHE` constant in `sw.js`.
+7. **Service worker cache during dev.** When iterating on `index.html` against a browser that previously loaded the PWA, hard reload alone is not enough — unregister the SW first, test in incognito, or bump the `CACHE` constant in `sw.js` (currently `'finapp-shell-v3'`).
+
+8. **Ask FinApp module — dead in UI.** ~1000 lines of Ask code (state, modal, agent loop, KB matcher, KB store, narrative, render, save, feedback, Clear KB button) remain in the script. The floating pill no longer routes there. If reviving, see `ERRORS.md` → "LLM-SQL whack-a-mole" for the failure modes to design around. If not, delete in a cleanup pass.
+
+9. **Reports module — UI surface paused.** Phase A+B fully built and working when navigated to directly. Sidebar entry removed; pill's right half visually muted. Hardening pass needed before re-promoting: inline filter editor (replacing `prompt()` calls), responsive/touch layout, sub-account dimension, calculated measures, charts, date presets. See Roadmap card in Settings → About.
+
+10. **Filter editor uses `prompt()`.** OK for MVP; ugly in production. Inline popover deferred to Reports Phase E.
 
 ---
 
@@ -585,3 +660,26 @@ No build step. The file you edit IS the file that gets served.
 12. `b625df4` + `d649b75` — Recent Dividends bug + deeper fix: preserve `importSource` through FT→Transaction migration
 
 All decisions, rationale, and rejected alternatives are in `MEMORY.md`. All session-2 failure modes and how to avoid them are in `ERRORS.md`.
+
+---
+
+## Session 3 (2026-05-28) — Summary
+
+14 commits shipped (session arc: small UX wins → ambitious LLM Ask → many targeted prompt fixes → architectural pivot to deterministic Reports → paused Reports UI):
+
+1. `427bd78` — Back gesture restores previous tab/sub-tab (synthetic history)
+2. `4883d1d` — PWA: long-press shortcuts + sized icons + maskable variant
+3. `0bec5f2` — Day-of-month: allow 29-31 and explicit "Last day" for Repeatable & CC
+4. `9a35e87` — Add `FinanceNotifications.gs` with day-of-month resolver (fresh-written; user pastes into Apps Script)
+5. `ee2ce52` — Ask FinApp: conversational reporting (Phase 1+2) + Dictate/Ask floating pill
+6. `06f7d10` — Floating Dictate + Ask pill: mount once globally (visible on every page)
+7. `aebac03` — Ask FinApp v2 rebuild: KB + tool-using agent + honest empty-result UX
+8. `bf699c6` — Ask: fix date awareness + aggregate-empty detection + honest chip
+9. `39972d6` — Ask: dash normalization + broad-LIKE preference + mandatory empty-debug
+10. `4152391` — Ask: hard-mandate AND-of-substrings LIKE + sanity-check aggregate counts
+11. `8c5400e` — Ask: Clear KB cache button in modal sidebar
+12. `6a9a005` — Ask: prompt caching + 429 handling + smaller tool-result cap
+13. `324403e` — Reports: self-service pivot builder (Phase A+B). Ask pill → Reports.
+14. `e18ba1d` — Reports: pause UI surface — remove sidebar entry, grey the pill
+
+All decisions, rationale, and rejected alternatives are in `MEMORY.md` → "2026-05-28 — Session 3". All session-3 failure modes and how to avoid them are in `ERRORS.md` (the LLM-SQL whack-a-mole entry, aggregate-empty, Unicode dashes, KB poisoning, prompt caching, edit-tool anchor disappearance).

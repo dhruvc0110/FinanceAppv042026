@@ -111,3 +111,74 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **HANDOFF.md model claim** — the v1 doc said Sonnet 4 everywhere. The new HANDOFF.md (this commit) corrects it: Dictate uses Sonnet 4; screenshot import + ticker-name lookup use Haiku 4.5.
 - **Filter SQL string interpolation** in `buildTxWhere` / FT `buildWhere` / `dupRunScan` `dateFilter` — still uses string interpolation rather than parameterized queries. Low risk (inputs are `<input type="date">`) but inconsistent with the parameterized write pattern.
 - **Existing live-DB `Dividend - …` rows** with `importSource='Scheduled'` — won't retro-tag. User asked-and-deferred. One-off UPDATE would do it.
+
+---
+
+## 2026-05-28 — Session 3
+
+~25 commits shipped. Session arc: small UX wins → ambitious LLM reporting → abandoned LLM, pivoted to deterministic pivot builder → paused the pivot builder pending hardening pass.
+
+### Decided: Browser back gesture restores previous in-app tab/sub-tab via synthetic history.
+- **Why:** Back was logging the user out of the PWA because nothing in the app touched the history API — a back gesture popped past the only entry and exited the SPA.
+- **Implementation:** Every `navigate(page)` and every composite `XSetTab(sub)` calls `_pushNavState(page, sub)` which `history.pushState`-es a `{__finapp, page, sub}` entry. A `popstate` listener routes back to the prior state and re-applies it without re-pushing (guarded by `_navFromPop`). URL is never changed (no GitHub Pages 404 risk).
+- **Gating:** `_historyReady` flag stays false until just before the post-login `navigate('dashboard')`, so the orphan `navigate('transactions')` in the `repPlaySave` dead-tail (still at line ~11099) does NOT pollute the stack at script-load.
+- **Rejected:** Hash-based deep-link URLs (`#transactions/posted`). Bookmarkable but more invasive — URL-parsing on load, hashchange listener, conflicts with existing localStorage sub-tab restore.
+
+### Decided: PWA long-press shortcuts + sized icons + maskable variant.
+- **Why:** Long-press on the FinApp home-screen icon should expose Dictate / Transactions / Future / Dashboard. Default Chrome behavior was a useless context menu.
+- **Implementation:** Added `shortcuts` array to `manifest.webmanifest` with 4 entries pointing to `./?startPage=…&sub=…`. `startApp()` reads those params and deep-links via `navigate(startPage)` + `_switchSub(startPage, startSub)`, then strips the query string from the URL so reloads don't keep re-firing. Added a separate `icon-maskable.svg` (font-size 260 instead of 320, so any Pixel/Samsung circular mask can't clip the glyph). Bumped SW cache `v1 → v2` so existing PWAs install the new manifest on next launch.
+- **Rejected:** iOS-specific shortcut support. iOS Safari only renders shortcuts for select apps; not worth special handling.
+
+### Decided: Day-of-month allows 1–31 plus explicit "Last day of month" sentinel.
+- **Why:** User pays bills / receives dividends on days 29, 30, 31, and some on "last day of month" specifically. Old inputs capped at 28 to avoid Feb overflow.
+- **Storage:** `dayOfMonth` (Repeatable) and `paymentDueDay` (CreditCard) stay `INTEGER`. NULL = unset, 1–31 = that day clamped to month-end on short months, 32 = explicit "Last day". No schema migration.
+- **Implementation:** New helpers `DOM_LAST = 32`, `_daysInMonth`, `_resolveDom`, `_domDisplay`, `_domOptions`. Three form inputs (Settings → Repeatable, Settings → Credit Cards, Transactions composite Repeatable) switched from `<input type="number" max="28">` to `<select>` populated by `_domOptions(stored)`. All consumption sites use `_resolveDom(stored, year, monthIdx)`: `migrateFutureTransactions` auto-gen, CC tile due-date math (current and next month resolved separately), `repPlay`. Display sites use `_domDisplay`.
+- **External:** `FinanceNotifications.gs` rewritten from scratch (the file wasn't in the repo). User pastes into their Apps Script project. Same `resolveDom_` logic mirrors the in-app helper so 32 = month-end.
+- **Rejected:** Pragmatic clamp only (just allow 1–31, no explicit "Last day"). User wanted the *semantic* preserved in data, not just the resolved day.
+
+### Decided: Floating Dictate + Ask pill, globally mounted.
+- **Why:** Original Dictate mic was inline-rendered by three page templates (Transactions, Future Transactions, Account Tracker), so the new Ask half inherited that limitation — invisible on Dashboard, Settings, Equity, Budget.
+- **Implementation:** New `_floatingPillHtml()` returns the two-half pill (red Dictate mic + slate Ask button with a thin separator). Mounted ONCE in `startApp()` (right after login), appended to `document.body`. `position:fixed` so DOM placement is irrelevant. Removed the 3 inline mounts. `_dtCtxFromPage()` derives the Dictate target table at click time from `currentPage` + `_txComboTab`.
+- **Rejected:** Per-page mounts with click-time context-detection. The inline pattern was the bug we were fixing.
+
+### Decided: LLM-driven Ask FinApp — built, iterated, abandoned. Pivoted to Reports.
+- **What we built:** Ask FinApp went through two architectures:
+  - **Phase 1+2 (single-shot):** NL → LLM SQL → execute → optional Chat narrative. Table/Chat toggle. Schema runtime-pulled from `sqlite_master`. SQL scrub (SELECT-only, blocklist). Multi-turn chat history. SavedQuery table. CSV export. ~470 lines in one commit.
+  - **Phase 2 rebuild (KB + agent):** Dropped the Table/Chat toggle. Single Chat mode + "Show SQL" preference. New `QueryPattern` KB table. KB lookup matches user question via LLM. HIGH → single-shot cached SQL; MEDIUM → cached SQL with assumptions visible; LOW → tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`). Agent answer generalizes into a KB pattern on success. Confidence chip + 👍/👎 feedback. Honest empty-result handling (`_askIsLogicallyEmpty`). Roadmap card in Settings → About.
+- **What kept breaking:** Each fix surfaced a new failure mode of the same shape — LLM-emitted SQL was unreliable against the user's real data quirks. The user diagnosed: "every fix opens a new failure mode of the same approach." See ERRORS.md "LLM-SQL whack-a-mole."
+- **Concrete fixes applied in the iteration spiral** (each its own commit):
+  - Date awareness: `_askDateContext()` injected into agent / matcher / KB-store / narrative prompts. LLM falls back to its training cutoff and bakes the wrong year otherwise.
+  - Aggregate-empty detection: `_askIsLogicallyEmpty(rows, columns)` catches the single-row-all-zero case that `rows.length===0` misses.
+  - Matcher confidence: HIGH only when all params explicit; MEDIUM when any param inferred. Chip relabeled "Strong pattern match" / "Pattern · inferred params" / "Weak match" / "Agent · N steps".
+  - Unicode-dash normalization in `_askSqlScrub`: en-dash and em-dash become hyphen-minus before exec. LLMs Unicode-ify separators.
+  - Broad-LIKE enforcement: AND-of-substrings (`description LIKE '%X%' AND description LIKE '%Y%'`) — never exact, never prefix-only, never OR with narrow conditions.
+  - `distinct_values` made mandatory before any description-based LIKE.
+  - Aggregate count sanity-check in the prompt: 3 dividends in a year for a monthly ETF should look wrong.
+  - "Clear KB cache" button in the modal sidebar.
+  - Prompt caching (`cache_control: ephemeral`) on the agent system prompt — ~90% input-token discount on iterations 2–N within 5-min TTL.
+  - 429 rate-limit error parsed and rewritten as a user-actionable message instead of raw JSON.
+  - Tool-result row cap reduced 25 → 15.
+- **Why we stopped:** All Ask code is still in the file (`renderReports` replaced the pill's right-half navigation), but the surface is gone. The pivot decision was driven by repeated failures despite many targeted fixes.
+- **Rejected for the LLM path:** Hybrid LLM-routes-to-deterministic-reports (function-calling). User explicitly chose the deterministic-only route (Reports) instead.
+
+### Decided: Reports — self-service drag-and-drop pivot builder. Phase A+B shipped, then paused.
+- **Why:** User's itch was "flexibly gain insight from the data we have." LLM-driven didn't deliver. Fallback: Excel-pivot-style but more accessible.
+- **Architecture:**
+  - **Semantic model** (hand-curated JS arrays): 15 dimensions in 3 categories (When: Date, Year, Quarter, Period, Month name, Day of week — Where: Debit/Credit account name, type, grouping — What: Description, Source, Reconciled). 5 measures (Sum / Avg / Max / Min of Amount, Transaction count). 4 filter ops (eq / ne / contains / between). Each dimension/measure carries a SQL expression that drops into SELECT and GROUP BY.
+  - **Query compiler** (`_rptBuildQuery`): composes `SELECT … FROM "Transaction" tx LEFT JOIN Account dra LEFT JOIN Account cra WHERE … GROUP BY … ORDER BY … LIMIT 5000`. Deterministic, tested.
+  - **Pivot transformer** (`_rptPivot`): flat group-by output → rows × cols matrix with row/col/grand totals. Totals only computed for additive measures (SUM, COUNT) — AVG/MIN/MAX get blank totals.
+  - **UI:** Top bar (Save / Save as / Delete / Reset + saved dropdown). Left field library (When / Where / What / How much). Drop zones: Filters (full width), Rows / Cols / Values (3-col grid). Live result table with totals + Export CSV + Show SQL. Click any cell → drill-down modal with the underlying transactions.
+  - **Persistence:** New `SavedReport` table (id, name, config JSON, createdAt, updatedAt). Synced to Drive via `syncAfterWrite()`.
+- **Filter editor:** `prompt()`-based for MVP. Inline editor deferred to Phase E.
+- **Floating pill:** Right half rewired from `askOpen()` → `navigate('reports')`. Icon swapped from speech bubble to 2×2 grid.
+- **Pause:** Sidebar entry removed; pill's right half greyed to slate-400 + opacity 0.7. Tooltip reads "Reports (work in progress — design not yet hardened)". Still clickable; navigate('reports') still works. All Reports code intact for the hardening pass.
+- **Rejected:** Direction A — function-calling router only (no Reports page). Rejected because user wanted a browse-able catalog as well as a chat door — but neither shipped; the chat door is paused too.
+- **Rejected:** Direction B — kill the Ask modal entirely. User chose to leave Ask code in the file in case it's revived.
+- **Rejected for MVP:** Inline filter editor, charts, date presets, % of total, side-by-side period comparison. All listed as Phase C–E "Later" in the Roadmap card.
+
+### Known issues NOT fixed (carried into next session)
+- **Reports hardening pass.** The pivot builder works but needs polish: inline filter editor (replacing `prompt()` calls), date presets (YTD / MTD / This quarter), responsive/touch layout for mobile drop zones, "sub-account" dimension for both sides, calculated "Net cash flow" measure, charts. See the Roadmap card in Settings → About.
+- **Ask code dead in UI.** ~1000 lines of Ask code (state, modal, agent, KB, matcher, narrative, render, save, feedback) remain in the script. Pill no longer opens it. If we don't revive it, delete in a cleanup pass. If we do revive it, see ERRORS.md for the failure modes to design around.
+- **`repPlaySave` dead-tail at ~11099** — still there, still a TDZ trap for any new `let` referenced by `_visibleTxComboTabs`. Carried from Session 2.
+- **`Settings → Backup` XLSX importer** still doesn't set `importSource`. Carried from Session 2.
+- **Filter SQL string interpolation** in `buildTxWhere` / FT `buildWhere` / `dupRunScan`. Carried from Session 2.

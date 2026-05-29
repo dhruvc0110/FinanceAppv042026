@@ -75,3 +75,85 @@ The cause: `renderSettings(container)` contains the line `settingsTab = 'scratch
 **Note for next time:** This pattern (`settingsGoTab`-style "go to sub-tab" helpers) exists for several composite pages. Prefer them over directly mutating the sub-tab state variable. If you need to deep-link into a sub-tab from another page, the sequence is always: `navigate('X')` → `xGoTab('sub')`.
 
 ---
+
+## LLM-SQL whack-a-mole: every fix opens a new failure mode of the same shape
+
+**What didn't work:** Building reliable NL-to-SQL for finance data via prompt engineering. Across ~8 commits of targeted fixes, the same pattern surfaced repeatedly — the LLM emits SQL that is "almost right" against the user's specific data quirks, fails differently each time, and the next prompt tightening shifts the failure to a different layer:
+
+- Prefix-only LIKE → broaden the prompt → LLM adds OR clauses around narrow conditions instead
+- Unicode dash in LIKE → normalize dashes in the scrub → LLM uses exact-match
+- LLM doesn't know current year → inject date context → LLM caches a pattern with the year baked into the SQL template
+- KB caches a partial-correct answer → matcher serves the stale wrong pattern → user has to 👎 each one
+- Agent doesn't sanity-check the result → tell it to → multi-step runs blow the 30k/min rate limit
+- Aggregate returns COUNT=0 → narrative LLM happily writes "you have no X this year"
+- LLM emits exact-match `description = 'Dividend - QQQI'` → real data has format variants → 0 rows → confident wrong narrative
+
+**What worked:** Architectural pivot, not more prompt tuning. Replaced the LLM-as-analyst path with a deterministic semantic model + drag-and-drop pivot builder (`renderReports`). User picks dimensions and measures from a curated list; query compiler emits a tested SQL string; pivot transformer turns flat group-by into a matrix. No LLM in the path. Cost: zero per query, latency: instant, correctness: deterministic.
+
+**Note for next time:** If you're patching prompt rules for the 3rd time on the same underlying class of failure, the architecture is wrong. NL-to-SQL against opinionated finance schemas requires either (a) a tested semantic model with the LLM as a *router* picking among known shapes, or (b) skipping the LLM entirely and giving the user a structured builder. Free-form SQL generation is a moving target. The user's diagnosis was sharp: "every fix opens a new failure mode of the same approach."
+
+---
+
+## Aggregate-empty result is NOT `rows.length === 0`
+
+**What didn't work:** Honest empty-result handling in Ask FinApp was gated on `rows.length === 0`. An aggregate query like `SELECT SUM(amount), COUNT(*) FROM "Transaction" WHERE …` always returns exactly one row — even when nothing matches the WHERE. That single row has SUM=null, COUNT=0. The check missed this entirely, so the narrative LLM happily wrote "you've received $0 of QQQI dividends this year" as if it were the answer.
+
+**What worked:** `_askIsLogicallyEmpty(rows, columns)` — returns true if `rows.length === 0`, OR if `rows.length === 1` and every column value in that row is null, undefined, '', 0, or '0'. Wired into the narrative gate, the SQL-panel force-show, the warning chip ("Empty result · verify"), and the KB-store guard (don't cache patterns whose result was logically empty).
+
+**Note for next time:** Whenever you compute "is this answer empty/missing" for a user-facing UX flag, distinguish between *no matching rows* and *no aggregate signal*. They look the same to `length`, but the LLM (or any narrative generator) will treat them as confident zeros if you don't.
+
+---
+
+## LLMs Unicode-ify separator characters in LIKE patterns
+
+**What didn't work:** The Ask agent emitted `description LIKE 'Dividend – QQQI%'` with an en-dash (U+2013). The user's actual data has `'Dividend - QQQI'` with ASCII hyphen-minus (U+002D). SQL `LIKE` is byte-exact. 0 rows. The prompt used ASCII hyphens throughout — the LLM still chose Unicode dashes when reproducing patterns in its output. This is a known Sonnet behavior.
+
+**What worked:** Normalize in the SQL scrub. `_askSqlScrub` (and any equivalent in future LLM-touched-SQL paths) replaces en-dash (U+2013) and em-dash (U+2014) with hyphen-minus before execution. Bulletproof. Safe for finance data where these typographic dashes don't appear in legitimate descriptions.
+
+**Note for next time:** Don't trust LLMs to faithfully reproduce ASCII-only patterns. Normalize at the boundary. The same risk applies to smart quotes (`’` vs `'`), non-breaking spaces (U+00A0 vs space), and various other "helpful" Unicode substitutions. Add a `_normalizeAscii(sql)` step on the boundary if you ever revive the LLM path.
+
+---
+
+## Auto-caching LLM answers in a KB poisons future queries
+
+**What didn't work:** Ask FinApp's KB stored every successful agent answer as a `QueryPattern` with `hits=1, confidence=low`. The matcher LLM then matched future similar questions against that pattern with `confidence='medium'` (params inferred) and ran the cached SQL — even when the original agent answer was "partially correct" (e.g. found 3 of 5 monthly dividends because the LIKE missed format variants). User's only recovery was 👎 on each individual answer, which deleted the pattern but didn't prevent the agent's NEXT run from producing the same partial-correct SQL and re-caching it.
+
+**What worked:** Two layered mitigations:
+1. Don't cache logically-empty results (`_askIsLogicallyEmpty` guard) — stops the worst case of caching "found nothing" as a reusable answer.
+2. "Clear KB cache" admin button in the modal sidebar — single click `DELETE FROM QueryPattern`. Useful for nuking accumulated bad patterns after a prompt-engineering improvement lands.
+
+The deeper fix would be to quarantine new patterns (hits=1) from the matcher entirely until the user thumbs-up promotes them. Architecture change we didn't ship before pivoting away from LLM-SQL.
+
+**Note for next time:** Auto-population of an LLM-cache is only safe if you have a strong signal that the cached answer was correct. Thumbs-up promotion as a prerequisite for matchability is the right pattern. Plain "non-empty result" is not strong enough — partial-correct results poison the cache for everything similar.
+
+---
+
+## Anthropic prompt caching is the single biggest token-spend lever
+
+**What didn't work:** Multi-iteration agent runs in Ask FinApp blew Anthropic's 30k input-tokens-per-minute rate limit. Each agent iteration carried the full ~2-3k system prompt (schema + business notes + rules). 5 iterations = 15k input tokens minimum. Two back-to-back questions hit the cap.
+
+**What worked:** Wrap the system prompt with `cache_control: {type: 'ephemeral'}`. Anthropic caches the prefix for 5 minutes; subsequent reads get a ~90% discount on input tokens *and* count against the rate limit at the discounted rate. Iterations 2–N in the agent loop reuse the cache; back-to-back questions within 5 minutes hot-start.
+
+```javascript
+body.system = [{
+  type: 'text',
+  text: longSystemPrompt,
+  cache_control: { type: 'ephemeral' }
+}];
+```
+
+Only valid when the cached content is ≥ 1024 tokens. Small prompts (matcher, narrative) skip caching. Pass `cacheSystem: true` only from paths that loop with a stable system prompt.
+
+**Note for next time:** When building any multi-turn LLM flow with a stable system prompt > 1k tokens, set `cache_control` from day one. Costs nothing extra to opt in; saves 50–90% of input tokens on multi-step runs and is the difference between hitting and not hitting per-minute limits.
+
+---
+
+## Edit tool: heavy box-drawing comment headers disappear silently if you re-edit later
+
+**What didn't work:** Earlier in the session I used `// ════════════════════════════════════════════════════════════ \n // ASK FINAPP — conversational reporting (Phase 2 rebuild) \n // ════════════════════════════════════════════════════════════` as an anchor for one Edit. A later Edit that consumed it left the comment block above gone but the body text still there. A *third* Edit trying to match against that header again failed with "String to replace not found."
+
+**What worked:** Grep first when the file has been heavily edited (`grep -n "ASK FINAPP — conversational reporting"`). If the anchor's missing, anchor on a unique non-comment line instead (`function _askLlmSql`, `let _askMode = ...`). Never trust an earlier-session line number; the file changed.
+
+**Note for next time:** Box-drawing-character anchors are fragile across multi-edit sessions. Prefer anchoring on a function signature or any uniquely-named identifier. Especially in a 15k-line single file where comment headers may repeat or get partially deleted.
+
+---
