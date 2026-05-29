@@ -294,11 +294,6 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Equity</span>
       </button>
 
-      <button onclick="navigate('reports')" data-page="reports" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        <span class="nav-label">Reports</span>
-      </button>
-
       <!-- ── TRANSACT ── -->
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
 
@@ -2185,9 +2180,9 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
-    <button onclick="navigate('reports')" title="Build a report"
-      style="width:3rem;height:3rem;background:#334155;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
-      onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='#334155'">
+    <button onclick="navigate('reports')" title="Reports (work in progress — design not yet hardened)"
+      style="width:3rem;height:3rem;background:#94a3b8;color:white;opacity:0.7;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:opacity 0.15s, background 0.15s;"
+      onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.7'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="7" height="7"/>
         <rect x="14" y="3" width="7" height="7"/>
