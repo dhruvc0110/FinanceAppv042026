@@ -1881,6 +1881,13 @@ function startApp() {
     db.run(`ALTER TABLE "Transaction" ADD COLUMN isPending INTEGER NOT NULL DEFAULT 0`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
+  // Ensure linkedTxId column exists on Transaction (migration for existing DBs).
+  // Used by the Refund flow as the authoritative parent pointer (refund row →
+  // original tx) for computing "refunded so far".
+  try {
+    db.run(`ALTER TABLE "Transaction" ADD COLUMN linkedTxId TEXT`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
   // Ensure importSource column exists on FutureTransaction so origin is
   // preserved through the FT → T migration (otherwise migrateFutureTransactions
   // hardcoded 'Scheduled' and the original source — Equity, Recurring, Dictate,
