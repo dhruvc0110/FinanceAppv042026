@@ -1059,16 +1059,6 @@ function _initCoreSchema() {
       name TEXT NOT NULL,
       config TEXT NOT NULL,
       createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
-    `CREATE TABLE IF NOT EXISTS JournalEntry (
-      id TEXT PRIMARY KEY, trxDate TEXT NOT NULL, period TEXT NOT NULL,
-      description TEXT, notes TEXT, importSource TEXT,
-      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`,
-    `CREATE TABLE IF NOT EXISTS JournalLine (
-      id TEXT PRIMARY KEY, jeId TEXT NOT NULL,
-      side TEXT NOT NULL,
-      accountId TEXT, subId TEXT,
-      amount REAL NOT NULL,
-      lineNo INTEGER, createdAt TEXT NOT NULL)`,
   ];
   stmts.forEach(sql => {
     try { db.run(sql); } catch(e) { console.warn('_initCoreSchema:', e.message); }
@@ -1898,23 +1888,6 @@ function startApp() {
     db.run(`ALTER TABLE "Transaction" ADD COLUMN linkedTxId TEXT`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
-  // Ensure JournalEntry / JournalLine tables exist (migration for existing DBs).
-  // True header+lines ledger: one JournalEntry header per multi-line JE; each
-  // JournalLine carries a single side (DR/CR) + account + positive amount. The
-  // entry must balance (sum DR == sum CR) but line counts on each side are free.
-  try {
-    db.run(`CREATE TABLE IF NOT EXISTS JournalEntry (
-      id TEXT PRIMARY KEY, trxDate TEXT NOT NULL, period TEXT NOT NULL,
-      description TEXT, notes TEXT, importSource TEXT,
-      createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL)`);
-    db.run(`CREATE TABLE IF NOT EXISTS JournalLine (
-      id TEXT PRIMARY KEY, jeId TEXT NOT NULL,
-      side TEXT NOT NULL,
-      accountId TEXT, subId TEXT,
-      amount REAL NOT NULL,
-      lineNo INTEGER, createdAt TEXT NOT NULL)`);
-  } catch(e) { console.warn('JournalEntry/Line init:', e.message); }
-
   // Ensure importSource column exists on FutureTransaction so origin is
   // preserved through the FT → T migration (otherwise migrateFutureTransactions
   // hardcoded 'Scheduled' and the original source — Equity, Recurring, Dictate,
@@ -2278,22 +2251,6 @@ function buildBalanceMap(periods) {
   const drMap = {}, crMap = {};
   drRows.forEach(r => { drMap[r.aid] = (drMap[r.aid] || 0) + (+r.tot || 0); });
   crRows.forEach(r => { crMap[r.aid] = (crMap[r.aid] || 0) + (+r.tot || 0); });
-  // Fold in multi-line journal entries. Each JournalLine posts to one side
-  // (DR/CR) with a positive amount; period filter applies to the JE header.
-  let jeWhere = '';
-  if (periods != null) {
-    jeWhere = 'WHERE je.period IN (' + periods.map(p => "'" + p + "'").join(',') + ') AND ';
-  } else {
-    jeWhere = 'WHERE ';
-  }
-  const jlRows = query(
-    'SELECT jl.accountId AS aid, jl.side AS side, SUM(jl.amount) AS tot ' +
-    'FROM JournalLine jl JOIN JournalEntry je ON je.id = jl.jeId ' +
-    jeWhere + "jl.accountId IS NOT NULL GROUP BY jl.accountId, jl.side");
-  jlRows.forEach(r => {
-    if (r.side === 'DR') drMap[r.aid] = (drMap[r.aid] || 0) + (+r.tot || 0);
-    else if (r.side === 'CR') crMap[r.aid] = (crMap[r.aid] || 0) + (+r.tot || 0);
-  });
   const accounts = query("SELECT id, type, grouping, role FROM Account WHERE isActive = 1 AND (role IS NULL OR role != 'EXCLUDED')");
   const map = {};
   for (const a of accounts) {
@@ -2838,7 +2795,6 @@ let _showDictateTab = localStorage.getItem('show-dictate-tab') !== 'false'; // d
 
 const _TX_COMBO_TABS = [
   { id: 'transactions',         label: 'Transactions' },
-  { id: 'journal-entries',      label: 'Journal Entries' },
   { id: 'future-transactions',  label: 'Future Transactions' },
   { id: 'repeatable',           label: 'Repeatable' },
   { id: 'import-transactions',  label: 'Import Transactions' },
@@ -2876,7 +2832,6 @@ function _renderTxComboContent() {
   const c = document.getElementById('txComboContent');
   if (!c) return;
   if      (_txComboTab === 'transactions')        _renderTransactionsInner(c);
-  else if (_txComboTab === 'journal-entries')     renderJournalEntries(c);
   else if (_txComboTab === 'future-transactions') renderFutureTransactions(c);
   else if (_txComboTab === 'repeatable')          renderRepeatableInner(c);
   else if (_txComboTab === 'import-transactions') renderImportTransactions(c);
@@ -3872,325 +3827,6 @@ function _renderTxPage(container) {
   // Enter key on description filter
   const fDesc = document.getElementById('fDesc');
   if (fDesc) fDesc.addEventListener('keydown', e => { if (e.key === 'Enter') txApplyFilters(); });
-}
-
-// ════════════════════════════════════════════════════════════
-// JOURNAL ENTRIES (multi-line, header + lines ledger model)
-// ════════════════════════════════════════════════════════════
-// A JournalEntry header owns N JournalLines. Each line posts to ONE side
-// (DR/CR) with a positive amount. The entry must balance (ΣDR == ΣCR) but the
-// count of lines on each side is free. Balances flow into buildBalanceMap via a
-// JournalLine pass, so the Dashboard / Financial Statements / Budget all reflect
-// JEs without any extra wiring. (Phase 1: account drill-down lists do not yet
-// itemise JE lines — flagged as a follow-up.)
-let _jeLineSeq = 0;
-
-function renderJournalEntries(container) {
-  if (!container) container = document.getElementById('txComboContent');
-  if (!container) return;
-
-  // Pickers read from these globals.
-  const accounts = query("SELECT id, code, name, hasSubAccounts FROM Account WHERE isActive = 1 ORDER BY code ASC");
-  const subRows  = query("SELECT id, accountId, code, name FROM SubAccount WHERE isActive = 1 ORDER BY name ASC");
-  const subsByAcct = {};
-  subRows.forEach(s => { (subsByAcct[s.accountId] = subsByAcct[s.accountId] || []).push(s); });
-  window._txSubs = subsByAcct;
-  window._acctPickerAccounts = accounts;
-
-  const jes = query('SELECT id, trxDate, period, description, notes, createdAt FROM JournalEntry ORDER BY trxDate DESC, createdAt DESC');
-  const agg = {};
-  query('SELECT jeId, side, SUM(amount) AS tot, COUNT(*) AS cnt FROM JournalLine GROUP BY jeId, side').forEach(r => {
-    const a = agg[r.jeId] || (agg[r.jeId] = { dr: 0, cr: 0, cnt: 0 });
-    if (r.side === 'DR') a.dr += (+r.tot || 0); else a.cr += (+r.tot || 0);
-    a.cnt += (+r.cnt || 0);
-  });
-
-  const ic = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400';
-
-  let listHtml;
-  if (!jes.length) {
-    listHtml = `<div class="text-center text-slate-400 text-sm py-16">No journal entries yet. Click <span class="font-medium text-slate-600">New Journal Entry</span> to create one.</div>`;
-  } else {
-    listHtml = `<div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-200">
-            <th class="py-2 pr-4">Date</th>
-            <th class="py-2 pr-4">Description</th>
-            <th class="py-2 pr-4 text-center">Lines</th>
-            <th class="py-2 pr-4 text-right">Amount</th>
-            <th class="py-2 pr-4 text-center">Status</th>
-            <th class="py-2 pr-4 text-right">Manage</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${jes.map(j => {
-            const a = agg[j.id] || { dr: 0, cr: 0, cnt: 0 };
-            const balanced = Math.abs(a.dr - a.cr) <= 0.005;
-            const badge = balanced
-              ? `<span class="inline-block px-2 py-0.5 rounded text-xs bg-emerald-50 text-emerald-600">Balanced</span>`
-              : `<span class="inline-block px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-600">Off by ${fmtCurrency(a.dr - a.cr, 2)}</span>`;
-            return `<tr class="border-b border-slate-100 hover:bg-slate-50">
-              <td class="py-2 pr-4 whitespace-nowrap text-slate-600">${escHtml(fmtDate(j.trxDate))}</td>
-              <td class="py-2 pr-4 text-slate-800">${escHtml(j.description || '—')}</td>
-              <td class="py-2 pr-4 text-center text-slate-500">${a.cnt}</td>
-              <td class="py-2 pr-4 text-right font-medium text-slate-800">${fmtCurrency(a.dr, 2)}</td>
-              <td class="py-2 pr-4 text-center">${badge}</td>
-              <td class="py-2 pr-4 text-right whitespace-nowrap">
-                <button onclick="jeViewEntry('${j.id}')" title="View lines"
-                  class="text-slate-500 hover:text-slate-800 px-2">View</button>
-                <button onclick="jeDeleteEntry('${j.id}')" title="Delete entry"
-                  class="text-rose-500 hover:text-rose-700 px-2">Delete</button>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>`;
-  }
-
-  container.innerHTML = `
-    <div class="p-4">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h2 class="text-base font-semibold text-slate-900">Journal Entries</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Multi-line, balanced entries. Debits must equal credits.</p>
-        </div>
-        <button onclick="jeOpenModal()"
-          class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition">
-          + New Journal Entry
-        </button>
-      </div>
-      ${listHtml}
-    </div>
-
-    <!-- Journal Entry Modal -->
-    <div id="jeModal" style="display:none"
-      onclick="if(event.target===this)jeHideModal()"
-      class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
-      <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl flex flex-col" style="max-height:90vh;">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
-          <h2 id="jeModalTitle" class="text-base font-semibold text-slate-900">New Journal Entry</h2>
-          <button onclick="jeHideModal()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
-        </div>
-        <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div class="grid grid-cols-3 gap-4">
-            <div>
-              <label class="block text-xs text-slate-500 mb-1">Date</label>
-              <input id="jeDate" type="date" class="${ic}">
-            </div>
-            <div class="col-span-2">
-              <label class="block text-xs text-slate-500 mb-1">Description</label>
-              <input id="jeDesc" type="text" placeholder="What is this entry for?" class="${ic}">
-            </div>
-          </div>
-          <div>
-            <div class="flex items-center justify-between mb-1">
-              <label class="block text-xs text-slate-500">Lines</label>
-              <button onclick="jeAddLine()" class="text-xs text-slate-600 hover:text-slate-900 font-medium">+ Add line</button>
-            </div>
-            <div class="grid grid-cols-12 gap-2 text-xs text-slate-400 px-1 pb-1">
-              <div class="col-span-2">Side</div>
-              <div class="col-span-6">Account</div>
-              <div class="col-span-3 text-right">Amount</div>
-              <div class="col-span-1"></div>
-            </div>
-            <div id="jeLines" class="space-y-2"></div>
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
-            <input id="jeNotes" type="text" placeholder="Optional" class="${ic}">
-          </div>
-          <div class="flex items-center justify-end gap-6 text-sm border-t border-slate-100 pt-3">
-            <span class="text-slate-500">Debits <span id="jeBalDr" class="font-medium text-slate-800">$0.00</span></span>
-            <span class="text-slate-500">Credits <span id="jeBalCr" class="font-medium text-slate-800">$0.00</span></span>
-            <span id="jeBalState" class="font-medium"></span>
-          </div>
-          <p id="jeErr" style="display:none" class="text-xs text-red-500"></p>
-        </div>
-        <div class="flex gap-3 px-6 py-4 border-t border-slate-200 flex-shrink-0">
-          <button id="jeSaveBtn" onclick="jeSaveEntry()"
-            class="flex-1 bg-slate-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed">
-            Save Entry
-          </button>
-          <button onclick="jeHideModal()"
-            class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>`;
-}
-
-// Build one line row. lid is a unique seq; preset optionally pre-fills it.
-function _jeLineHtml(lid, preset) {
-  preset = preset || {};
-  const side = preset.side || 'DR';
-  return `<div class="je-line grid grid-cols-12 gap-2 items-start" data-line-id="${lid}">
-    <div class="col-span-2">
-      <select id="jeSide_${lid}" onchange="jeRecalc()"
-        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-1 focus:ring-slate-400">
-        <option value="DR"${side === 'DR' ? ' selected' : ''}>DR</option>
-        <option value="CR"${side === 'CR' ? ' selected' : ''}>CR</option>
-      </select>
-    </div>
-    <div class="col-span-6">
-      ${acctPickerHtml('jeAcct_' + lid, preset.accountId || '', 'Search account…', { subPickerId: 'jeSub_' + lid })}
-      ${subPickerHtml('jeSub_' + lid, preset.subId || '', 'jeAcct_' + lid, preset.accountId || '')}
-    </div>
-    <div class="col-span-3">
-      <input id="jeAmt_${lid}" type="number" step="0.01" placeholder="0.00" value="${preset.amount != null ? preset.amount : ''}"
-        oninput="jeRecalc()"
-        class="w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 text-right focus:outline-none focus:ring-1 focus:ring-slate-400">
-    </div>
-    <div class="col-span-1 flex justify-center pt-1.5">
-      <button onclick="jeRemoveLine('${lid}')" title="Remove line"
-        class="text-slate-400 hover:text-rose-600 text-lg leading-none">&times;</button>
-    </div>
-  </div>`;
-}
-
-function jeAddLine(preset) {
-  const host = document.getElementById('jeLines');
-  if (!host) return;
-  const lid = 'L' + (++_jeLineSeq);
-  host.insertAdjacentHTML('beforeend', _jeLineHtml(lid, preset));
-  jeRecalc();
-}
-
-function jeRemoveLine(lid) {
-  const el = document.querySelector(`.je-line[data-line-id="${lid}"]`);
-  if (el) el.remove();
-  jeRecalc();
-}
-
-// Sum each side from the live DOM; update the balance display + Save button.
-function jeRecalc() {
-  let dr = 0, cr = 0;
-  document.querySelectorAll('#jeLines .je-line').forEach(row => {
-    const lid  = row.dataset.lineId;
-    const side = document.getElementById('jeSide_' + lid)?.value;
-    const amt  = parseFloat(document.getElementById('jeAmt_' + lid)?.value);
-    if (isNaN(amt)) return;
-    if (side === 'DR') dr += amt; else if (side === 'CR') cr += amt;
-  });
-  const drEl = document.getElementById('jeBalDr');
-  const crEl = document.getElementById('jeBalCr');
-  const stEl = document.getElementById('jeBalState');
-  const btn  = document.getElementById('jeSaveBtn');
-  if (drEl) drEl.textContent = fmtCurrency(dr, 2);
-  if (crEl) crEl.textContent = fmtCurrency(cr, 2);
-  const balanced = Math.abs(dr - cr) <= 0.005 && dr > 0;
-  if (stEl) {
-    if (balanced) { stEl.textContent = 'Balanced'; stEl.className = 'font-medium text-emerald-600'; }
-    else { stEl.textContent = 'Off by ' + fmtCurrency(dr - cr, 2); stEl.className = 'font-medium text-amber-600'; }
-  }
-  if (btn) btn.disabled = !balanced;
-}
-
-function jeOpenModal() {
-  const m = document.getElementById('jeModal');
-  if (!m) return;
-  document.getElementById('jeModalTitle').textContent = 'New Journal Entry';
-  document.getElementById('jeDate').value  = new Date().toLocaleDateString('en-CA');
-  document.getElementById('jeDesc').value  = '';
-  document.getElementById('jeNotes').value = '';
-  const err = document.getElementById('jeErr');
-  if (err) { err.style.display = 'none'; err.textContent = ''; }
-  document.getElementById('jeLines').innerHTML = '';
-  _jeLineSeq = 0;
-  jeAddLine({ side: 'DR' });
-  jeAddLine({ side: 'CR' });
-  jeRecalc();
-  m.style.display = 'flex';
-  setTimeout(() => document.getElementById('jeDate')?.focus(), 50);
-}
-
-function jeHideModal() {
-  const m = document.getElementById('jeModal');
-  if (m) m.style.display = 'none';
-}
-
-function jeSaveEntry() {
-  const showErr = msg => { const e = document.getElementById('jeErr'); if (e) { e.textContent = msg; e.style.display = 'block'; } };
-  const date  = document.getElementById('jeDate')?.value;
-  const desc  = document.getElementById('jeDesc')?.value?.trim();
-  const notes = document.getElementById('jeNotes')?.value?.trim() || null;
-
-  if (!date) return showErr('Date is required.');
-  if (!desc) return showErr('Description is required.');
-
-  const lines = [];
-  let dr = 0, cr = 0;
-  const rows = document.querySelectorAll('#jeLines .je-line');
-  for (const row of rows) {
-    const lid  = row.dataset.lineId;
-    const side = document.getElementById('jeSide_' + lid)?.value;
-    const acct = acctPickerGetValue('jeAcct_' + lid);
-    const sub  = acctPickerGetValue('jeSub_' + lid) || null;
-    const amt  = parseFloat(document.getElementById('jeAmt_' + lid)?.value);
-    // Skip fully-empty lines silently; flag partially-filled ones.
-    if (!acct && (isNaN(amt) || !amt)) continue;
-    if (!acct) return showErr('Every line needs an account — search and select from the list.');
-    if (isNaN(amt) || amt <= 0) return showErr('Every line needs an amount greater than zero.');
-    lines.push({ side, accountId: acct, subId: sub, amount: amt });
-    if (side === 'DR') dr += amt; else cr += amt;
-  }
-
-  if (lines.length < 2) return showErr('A journal entry needs at least two lines.');
-  if (!lines.some(l => l.side === 'DR')) return showErr('At least one debit line is required.');
-  if (!lines.some(l => l.side === 'CR')) return showErr('At least one credit line is required.');
-  if (Math.abs(dr - cr) > 0.005) return showErr('Entry is not balanced — debits (' + fmtCurrency(dr, 2) + ') must equal credits (' + fmtCurrency(cr, 2) + ').');
-
-  const period  = date.slice(0, 4) + date.slice(5, 7);
-  const trxDate = date + 'T12:00:00.000Z';
-  const now     = new Date().toISOString();
-  const jeId    = genId();
-
-  try {
-    db.run(
-      `INSERT INTO JournalEntry (id, trxDate, period, description, notes, importSource, createdAt, updatedAt)
-       VALUES (?,?,?,?,?,'Journal',?,?)`,
-      [jeId, trxDate, period, desc, notes, now, now]
-    );
-    lines.forEach((l, i) => {
-      db.run(
-        `INSERT INTO JournalLine (id, jeId, side, accountId, subId, amount, lineNo, createdAt)
-         VALUES (?,?,?,?,?,?,?,?)`,
-        [genId(), jeId, l.side, l.accountId, l.subId, l.amount, i + 1, now]
-      );
-    });
-    jeHideModal();
-    syncAfterWrite();
-    renderJournalEntries(document.getElementById('txComboContent'));
-  } catch(e) { showErr('Error: ' + e.message); }
-}
-
-// Read-only summary of an entry's lines.
-function jeViewEntry(id) {
-  const je = query('SELECT * FROM JournalEntry WHERE id=?', [id])[0];
-  if (!je) return;
-  const lines = query(`
-    SELECT jl.side, jl.amount, a.code AS acctCode, a.name AS acctName, s.name AS subName
-    FROM JournalLine jl
-    LEFT JOIN Account a ON jl.accountId = a.id
-    LEFT JOIN SubAccount s ON jl.subId = s.id
-    WHERE jl.jeId=? ORDER BY jl.lineNo ASC`, [id]);
-  const body = lines.map(l => {
-    const acct = (l.acctCode ? l.acctCode + ' — ' : '') + (l.acctName || '?') + (l.subName ? ' / ' + l.subName : '');
-    return `${l.side}  ${acct}  ${fmtCurrency(l.amount, 2)}`;
-  }).join('\n');
-  alert(`${fmtDate(je.trxDate)} — ${je.description || ''}\n\n${body}${je.notes ? '\n\nNotes: ' + je.notes : ''}`);
-}
-
-function jeDeleteEntry(id) {
-  if (!confirm('Delete this journal entry and all its lines? This cannot be undone.')) return;
-  try {
-    db.run('DELETE FROM JournalLine WHERE jeId=?', [id]);
-    db.run('DELETE FROM JournalEntry WHERE id=?', [id]);
-    syncAfterWrite();
-    renderJournalEntries(document.getElementById('txComboContent'));
-  } catch(e) { alert('Delete failed: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
