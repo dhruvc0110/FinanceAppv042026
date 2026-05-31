@@ -2189,6 +2189,17 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
+    <button onclick="txOpenNewFromPill()" title="New transaction"
+      style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+    </button>
+    <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
     <button onclick="navigate('reports')" title="Reports (work in progress — design not yet hardened)"
       style="width:3rem;height:3rem;background:#94a3b8;color:white;opacity:0.7;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:opacity 0.15s, background 0.15s;"
       onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.7'">
@@ -2200,6 +2211,16 @@ function _floatingPillHtml() {
       </svg>
     </button>
   </div>`;
+}
+
+// Pill middle button: jump to the Transactions sub-tab (where the New
+// Transaction modal lives) from any page, then open the form.
+function txOpenNewFromPill() {
+  navigate('transactions');
+  if (typeof _txComboTab !== 'undefined' && _txComboTab !== 'transactions') {
+    txComboSetTab('transactions');
+  }
+  txShowNewForm();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -3301,6 +3322,7 @@ function _txSourceBadge(src) {
     'Recurring': 'bg-purple-50 text-purple-600',
     'Imported':  'bg-amber-50 text-amber-600',
     'Equity':    'bg-green-50 text-green-700',
+    'Refund':    'bg-rose-50 text-rose-600',
   };
   const cls = map[s] || map['Manual'];
   return '<span class="px-1.5 py-0.5 rounded text-xs font-medium ' + cls + '">' + escHtml(s) + '</span>';
@@ -3468,6 +3490,16 @@ function _renderTxPage(container) {
                 Link${lkCount ? ' '+lkCount : ''}
               </span>
             </button>
+            <!-- Refund -->
+            <button onclick="txOpenRefundModal('${r.id}')"
+              title="Record a refund / return for this transaction"
+              class="flex flex-col items-center gap-0.5 group/btn">
+              <svg class="text-slate-300 group-hover/btn:text-rose-500 transition" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 14 4 9 9 4"/>
+                <path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
+              </svg>
+              <span class="text-[10px] font-medium text-slate-300 group-hover/btn:text-rose-500 leading-none transition">Refund</span>
+            </button>
             <!-- Edit -->
             <button onclick="txStartEdit('${r.id}')"
               title="Edit transaction"
@@ -3582,6 +3614,7 @@ function _renderTxPage(container) {
                 <option value="Recurring" ${txF.source==='Recurring'?'selected':''}>Recurring</option>
                 <option value="Imported" ${txF.source==='Imported'?'selected':''}>Imported</option>
                 <option value="Equity" ${txF.source==='Equity'?'selected':''}>Equity</option>
+                <option value="Refund" ${txF.source==='Refund'?'selected':''}>Refund</option>
               </select>
             </div>
             <div>
@@ -3696,6 +3729,60 @@ function _renderTxPage(container) {
             Save Transaction
           </button>
           <button onclick="txHideForm()"
+            class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Refund / Return Modal -->
+    <div id="txRefundModal" style="display:none"
+      onclick="if(event.target===this)txHideRefundModal()"
+      class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold text-slate-900">Record a Refund / Return</h2>
+          <button onclick="txHideRefundModal()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+        </div>
+        <input type="hidden" id="rfOriginalId" value="">
+        <!-- Original transaction summary + refunded-so-far -->
+        <div id="rfSummary"></div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Return date</label>
+            <input id="rfDate" type="date" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Return amount</label>
+            <input id="rfAmt" type="number" step="0.01" placeholder="0.00" class="${ic}">
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Description</label>
+            <input id="rfDesc" type="text" placeholder="Description" class="${ic}">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">DR Account <span class="text-slate-400">(refund credited back)</span></label>
+            ${acctPickerHtml('rfDrAcct', '', 'Search DR account…', { subPickerId: 'rfDrSub' })}
+            ${subPickerHtml('rfDrSub', '', 'rfDrAcct', '')}
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">CR Account <span class="text-slate-400">(expense reversed)</span></label>
+            ${acctPickerHtml('rfCrAcct', '', 'Search CR account…', { subPickerId: 'rfCrSub' })}
+            ${subPickerHtml('rfCrSub', '', 'rfCrAcct', '')}
+          </div>
+          <div class="col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Notes <span class="text-slate-400">(optional)</span></label>
+            <input id="rfNotes" type="text" placeholder="Optional" class="${ic}">
+          </div>
+        </div>
+        <p id="rfErr" style="display:none" class="text-xs text-red-500"></p>
+        <div class="flex gap-3 pt-1">
+          <button onclick="rfSaveRefund()"
+            class="flex-1 bg-rose-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-rose-700 transition">
+            Save Refund
+          </button>
+          <button onclick="txHideRefundModal()"
             class="px-4 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition">
             Cancel
           </button>
@@ -3971,6 +4058,130 @@ function txDeleteRow(id) {
     syncAfterWrite();
     _renderTxPage();
   } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+// ── Refund / Return ────────────────────────────────────────
+// A refund is a normal Transaction that reverses the original (DR/CR
+// swapped), dated on the return date with createdAt = system now. It carries
+// linkedTxId = original id (authoritative parent pointer, used to sum how much
+// has already been refunded) and also gets a TransactionLink row so the
+// existing link badge + drill-down surface the pairing. Cumulative refunds are
+// hard-capped at the original amount.
+let _rfOriginalId = null;
+
+function _rfRefundedSoFar(originalId) {
+  return Number(queryVal('SELECT COALESCE(SUM(amount),0) FROM "Transaction" WHERE linkedTxId=?', [originalId])) || 0;
+}
+
+function txOpenRefundModal(id) {
+  const tx = query(`SELECT t.*, da.name AS drName, ca.name AS crName
+    FROM "Transaction" t
+    LEFT JOIN Account da ON t.drAccountId=da.id
+    LEFT JOIN Account ca ON t.crAccountId=ca.id
+    WHERE t.id=?`, [id])[0];
+  if (!tx) return;
+  const refunded  = _rfRefundedSoFar(id);
+  const remaining = (Number(tx.amount) || 0) - refunded;
+  if (remaining <= 0.005) {
+    alert('This transaction has already been fully refunded ('
+      + fmtCurrency(refunded, 2) + ' of ' + fmtCurrency(tx.amount, 2) + ').');
+    return;
+  }
+  _rfOriginalId = id;
+  document.getElementById('rfOriginalId').value = id;
+  document.getElementById('rfSummary').innerHTML = `
+    <div class="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+      <div class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Original transaction</div>
+      <div class="text-sm font-semibold text-slate-800">${escHtml(tx.description || '')}</div>
+      <div class="text-xs text-slate-500 mt-0.5">
+        ${fmtDate(tx.trxDate)} &middot; ${fmtCurrency(tx.amount, 2)}
+        &middot; DR: ${escHtml(tx.drName || '?')} &middot; CR: ${escHtml(tx.crName || '?')}
+      </div>
+      <div class="text-xs mt-1.5">
+        <span class="text-slate-500">Refunded so far:</span>
+        <span class="font-medium text-slate-700">${fmtCurrency(refunded, 2)}</span>
+        <span class="text-slate-300 mx-1">&middot;</span>
+        <span class="text-slate-500">Remaining:</span>
+        <span class="font-semibold text-rose-600">${fmtCurrency(remaining, 2)}</span>
+      </div>
+    </div>`;
+  document.getElementById('rfDate').value  = new Date().toLocaleDateString('en-CA');
+  document.getElementById('rfAmt').value   = remaining.toFixed(2);
+  document.getElementById('rfDesc').value  = 'Refund: ' + (tx.description || '');
+  document.getElementById('rfNotes').value = '';
+  // Reverse the original: refund DR = original CR, refund CR = original DR.
+  acctPickerSetValue('rfDrAcct', tx.crAccountId);
+  acctPickerRefreshSub('rfDrSub', tx.crAccountId);
+  if (tx.crSubId) acctPickerSetValue('rfDrSub', tx.crSubId);
+  acctPickerSetValue('rfCrAcct', tx.drAccountId);
+  acctPickerRefreshSub('rfCrSub', tx.drAccountId);
+  if (tx.drSubId) acctPickerSetValue('rfCrSub', tx.drSubId);
+  const e = document.getElementById('rfErr');
+  if (e) { e.style.display = 'none'; e.textContent = ''; }
+  document.getElementById('txRefundModal').style.display = 'flex';
+}
+
+function txHideRefundModal() {
+  const m = document.getElementById('txRefundModal');
+  if (m) m.style.display = 'none';
+  _rfOriginalId = null;
+}
+
+function rfSaveRefund() {
+  const showErr = msg => { const e = document.getElementById('rfErr'); if (e) { e.textContent = msg; e.style.display = 'block'; } };
+  const originalId = document.getElementById('rfOriginalId')?.value || '';
+  if (!originalId) return showErr('Missing original transaction.');
+  const orig = query('SELECT * FROM "Transaction" WHERE id=?', [originalId])[0];
+  if (!orig) return showErr('Original transaction no longer exists.');
+
+  const date  = document.getElementById('rfDate')?.value;
+  const desc  = document.getElementById('rfDesc')?.value?.trim();
+  const amt   = parseFloat(document.getElementById('rfAmt')?.value);
+  const drId  = acctPickerGetValue('rfDrAcct');
+  const crId  = acctPickerGetValue('rfCrAcct');
+  const drSub = acctPickerGetValue('rfDrSub') || null;
+  const crSub = acctPickerGetValue('rfCrSub') || null;
+  const notes = document.getElementById('rfNotes')?.value?.trim() || null;
+
+  const todayLocal = new Date().toLocaleDateString('en-CA');
+  if (!date)                  return showErr('Return date is required.');
+  if (date > todayLocal)      return showErr('Return date cannot be in the future.');
+  if (!desc)                  return showErr('Description is required.');
+  if (isNaN(amt) || amt <= 0) return showErr('Refund amount must be greater than zero.');
+  if (!drId)                  return showErr('DR Account is required — search and select from the list.');
+  if (!crId)                  return showErr('CR Account is required — search and select from the list.');
+  if (drId === crId && drSub === crSub) return showErr('DR and CR cannot be the same account and sub-account.');
+
+  // Hard block: cumulative refunds cannot exceed the original amount.
+  const refunded  = _rfRefundedSoFar(originalId);
+  const remaining = (Number(orig.amount) || 0) - refunded;
+  if (amt - remaining > 0.005) {
+    return showErr('Refund exceeds the remaining refundable amount (' + fmtCurrency(remaining, 2) + ').');
+  }
+
+  const period  = date.slice(0, 4) + date.slice(5, 7);
+  const trxDate = date + 'T12:00:00.000Z';
+  const now     = new Date().toISOString();
+  const id      = genId();
+
+  try {
+    db.run(
+      `INSERT INTO "Transaction"
+       (id,trxDate,period,description,amount,drAccountId,crAccountId,drSubId,crSubId,notes,isReconciled,importSource,linkedTxId,createdAt,updatedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,0,'Refund',?,?,?)`,
+      [id, trxDate, period, desc, amt, drId, crId, drSub, crSub, notes, originalId, now, now]
+    );
+    // Mirror into the generic link table so the existing link badge + drill-down show the pairing.
+    const [aId, bId] = originalId < id ? [originalId, id] : [id, originalId];
+    db.run(
+      'INSERT OR IGNORE INTO TransactionLink (id, txAId, txBId, note, createdAt) VALUES (?,?,?,?,?)',
+      [genId(), aId, bId, 'Refund', now]
+    );
+    txHideRefundModal();
+    syncAfterWrite();
+    txPage = 0;
+    _renderTxPage();
+  } catch(e) { showErr('Error: ' + e.message); }
 }
 
 // ── Transaction form modal (shared by New and Edit) ────────

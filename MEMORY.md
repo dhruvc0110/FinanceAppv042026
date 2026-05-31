@@ -4,6 +4,26 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 
 ---
 
+## 2026-05-31 — Session 4
+
+### Decided: Floating pill gets a 3rd (middle) button → New Transaction.
+- **Why:** Fast "add a transaction" from any page without first navigating to the Transactions tab.
+- **Implementation:** `_floatingPillHtml()` now has 3 buttons — red Dictate mic | slate-900 file-plus (New) | greyed Reports. New handler `txOpenNewFromPill()`: `navigate('transactions')` → force `_txComboTab='transactions'` via `txComboSetTab` if needed (the `txFormModal` only exists on that sub-tab) → `txShowNewForm()`. Synchronous render, no timing risk.
+
+### Decided: Refund / Return functionality on Transactions.
+- **Why:** User buys $100 on May 12, returns part/all on May 14, records it May 15. Needs a transaction with createdAt=system date, trxDate=return date, reversing the original, auto-linked, supporting multiple partial returns.
+- **Model:** A refund is a normal `"Transaction"` row that **reverses** the original (refund DR = original CR, refund CR = original DR). `importSource='Refund'`. `linkedTxId` = original id is the **authoritative parent pointer** — `SUM(amount) WHERE linkedTxId=?` gives "refunded so far". Also inserts a `TransactionLink` row (note `'Refund'`, ordered aId<bId like `txLinkPair`) so the existing link badge + cross-app drill-down surface the pairing. No schema change — both columns already existed (`linkedTxId` was unused on Transaction; `TransactionLink` is the generic manual-link table from Session's universal drill-down).
+- **UI:** New "Refund" row-action (rose return-arrow icon, between Link and Edit) → `txOpenRefundModal(id)`. Dedicated `#txRefundModal`: original summary + "Refunded so far / Remaining", return date (default today), amount (default = remaining), description (default "Refund: <orig>"), reversed DR/CR pickers, notes. Save = `rfSaveRefund()`.
+- **User decisions (MCQ this session):**
+  - **Over-refund → HARD BLOCK.** Cumulative refunds cannot exceed original amount. Enforced in both open (skip if remaining≤0) and save (`amt - remaining > 0.005`). Re-checked server-side at save, not just on open.
+  - **Distinct 'Refund' source badge + filter.** Added `'Refund':'bg-rose-50 text-rose-600'` to `_txSourceBadge` and a `<option value="Refund">` to the Source filter (flows through `buildTxWhere` unchanged since it maps `importSource = f.source`).
+  - **Accounts editable, pre-filled reversed.** Pickers default to the reversed accounts but the user can change them.
+- **Deliberate limitation:** Return date in the future is **blocked** (refunds always post to `"Transaction"`, never routed to `FutureTransaction`) — keeps `linkedTxId` semantics single-table and matches the "recording something that happened" flow.
+- **Rejected:** `note='Refund'` on TransactionLink as the *only* link (free-text, fragile for summing). Parent pointer on `linkedTxId` is authoritative; TransactionLink is just for display.
+- **NOT done / follow-up:** Deleting an original that has refunds doesn't warn or cascade — refund rows keep a dangling `linkedTxId` and the TransactionLink row points at a missing tx (drill-down already tolerates missing target by rendering ''). Refunding a refund row is technically allowed (odd but harmless). Not verified end-to-end (sandbox has no Drive-backed DB; verified parse + wiring only).
+
+---
+
 ## 2026-05-26 — Session 1
 
 ### Decided: All date pre-fills use browser-local time, never UTC.
