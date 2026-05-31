@@ -2035,20 +2035,6 @@ function startApp() {
     if (needsSync) syncAfterWrite();
   } catch(e) { console.warn('createdAt backfill (non-fatal):', e.message); }
 
-  // TEMPORARY one-time cleanup — remove this block after it has run once
-  // against the live DB. The multi-line Journal Entries feature was reverted
-  // (deemed overkill); DBs that loaded that build may still carry the
-  // JournalEntry/JournalLine tables. Drop them so no orphan data lingers, and
-  // sync the cleaned DB to Drive. No-op once the tables are gone.
-  try {
-    const _jeLeft = query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('JournalEntry','JournalLine')");
-    if (_jeLeft.length) {
-      db.run('DROP TABLE IF EXISTS JournalLine');
-      db.run('DROP TABLE IF EXISTS JournalEntry');
-      syncAfterWrite();
-    }
-  } catch(e) { console.warn('JE cleanup (non-fatal):', e.message); }
-
   _updateSidebarTxCount();
   _startInactivityTimer();
   _initBudgetNoteDrag();
