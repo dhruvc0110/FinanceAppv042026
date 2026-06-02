@@ -1860,6 +1860,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F29' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id IN ('F12','F14') AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -6006,6 +6008,8 @@ function bsMoveAbove(accountId) {
 const BUDGET_COLS = 6;
 let budgetOffset  = 0; // months from current month for the first visible column
 
+let _bgtView = 'plan';      // 'plan' (grid) | 'actual' (Actual vs Budget, F12/F14)
+let _bgtAvbMonth = '';
 function renderBudget(container) {
   budgetOffset = 0;
   _renderBudgetPage(container);
@@ -6013,6 +6017,7 @@ function renderBudget(container) {
 
 function _renderBudgetPage(container) {
   if (!container) container = _getActiveContent();
+  if (_bgtView === 'actual') return _renderBudgetActual(container);
 
   // Build the 6-period window
   const now = new Date();
@@ -6121,6 +6126,10 @@ const _bnSet = new Set(query(`SELECT accountId||'_'||period AS k FROM BudgetNote
           <p class="text-sm text-slate-500">Click any cell to edit &mdash; saves immediately.</p>
         </div>
         <div class="flex items-center gap-2">
+          <div class="flex rounded border border-slate-300 overflow-hidden mr-2">
+            <button onclick="bgtSetView('plan')" class="px-3 py-1.5 text-sm bg-slate-900 text-white">Plan</button>
+            <button onclick="bgtSetView('actual')" class="px-3 py-1.5 text-sm bg-white text-slate-600 hover:bg-slate-50">Actual vs Budget</button>
+          </div>
           <button onclick="budgetNav(-1)" class="border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">&larr; Prev</button>
           <button onclick="budgetNav(0)"  class="border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">Today</button>
           <button onclick="budgetNav(1)"  class="border border-slate-300 rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">Next &rarr;</button>
@@ -6159,6 +6168,128 @@ const _bnSet = new Set(query(`SELECT accountId||'_'||period AS k FROM BudgetNote
           </table>
         </div>
       </div>
+    </div>`;
+}
+
+// ── F12/F14 — Actual vs Budget (rollover + overspend coverage overlay) ──
+function bgtSetView(v) { _bgtView = v; _renderBudgetPage(_getActiveContent()); }
+function bgtAvbSetMonth(m) { _bgtAvbMonth = m; _renderBudgetActual(_getActiveContent()); }
+function _bgtAdjustBudget(aid, period, delta) {
+  const row = query(`SELECT id, amount FROM BudgetPlan WHERE accountId='${aid}' AND period='${period}'`)[0];
+  if (row) db.run('UPDATE BudgetPlan SET amount=? WHERE id=?', [(+row.amount || 0) + delta, row.id]);
+  else db.run('INSERT INTO BudgetPlan (id,accountId,period,amount) VALUES (?,?,?,?)', [genId(), aid, period, delta]);
+}
+function bgtMoveBudget() {
+  const from = (document.getElementById('bgtMoveFrom') || {}).value || '';
+  const to = (document.getElementById('bgtMoveTo') || {}).value || '';
+  const amt = parseFloat((document.getElementById('bgtMoveAmt') || {}).value);
+  const m = _bgtAvbMonth;
+  if (!from || !to || from === to) { alert('Pick two different categories.'); return; }
+  if (isNaN(amt) || amt <= 0) { alert('Enter a positive amount to move.'); return; }
+  try {
+    db.run('BEGIN');
+    _bgtAdjustBudget(from, m, -amt);
+    _bgtAdjustBudget(to, m, amt);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _renderBudgetActual(_getActiveContent());
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Move error: ' + e.message); }
+}
+function _renderBudgetActual(container) {
+  if (!container) container = _getActiveContent();
+  const allPeriods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction" UNION SELECT DISTINCT period FROM BudgetPlan) ORDER BY period DESC`).map(r => r.period);
+  const cp = currentPeriod();
+  if (!_bgtAvbMonth || !allPeriods.includes(_bgtAvbMonth)) _bgtAvbMonth = allPeriods.includes(cp) ? cp : (allPeriods[0] || cp);
+  const m = _bgtAvbMonth;
+  const expAccts = query(`SELECT id,code,name FROM Account WHERE isActive=1 AND type='EXPENSE' AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL')) ORDER BY code`);
+
+  const cumB = {}, thisB = {}, cumDr = {}, cumCr = {}, thDr = {}, thCr = {};
+  query(`SELECT accountId aid, SUM(amount) tot FROM BudgetPlan WHERE period<='${m}' GROUP BY accountId`).forEach(r => cumB[r.aid] = +r.tot || 0);
+  query(`SELECT accountId aid, SUM(amount) tot FROM BudgetPlan WHERE period='${m}' GROUP BY accountId`).forEach(r => thisB[r.aid] = +r.tot || 0);
+  query(`SELECT drAccountId aid, SUM(amount) tot FROM "Transaction" WHERE period<='${m}' GROUP BY drAccountId`).forEach(r => cumDr[r.aid] = +r.tot || 0);
+  query(`SELECT crAccountId aid, SUM(amount) tot FROM "Transaction" WHERE period<='${m}' GROUP BY crAccountId`).forEach(r => cumCr[r.aid] = +r.tot || 0);
+  query(`SELECT drAccountId aid, SUM(amount) tot FROM "Transaction" WHERE period='${m}' GROUP BY drAccountId`).forEach(r => thDr[r.aid] = +r.tot || 0);
+  query(`SELECT crAccountId aid, SUM(amount) tot FROM "Transaction" WHERE period='${m}' GROUP BY crAccountId`).forEach(r => thCr[r.aid] = +r.tot || 0);
+
+  const items = expAccts.map(a => {
+    const tb = thisB[a.id] || 0;
+    const ta = (thDr[a.id] || 0) - (thCr[a.id] || 0);
+    const cb = cumB[a.id] || 0;
+    const ca = (cumDr[a.id] || 0) - (cumCr[a.id] || 0);
+    const remaining = tb - ta;
+    const available = cb - ca;
+    const rolloverIn = available - remaining;
+    return { a, tb, ta, remaining, rolloverIn, available };
+  }).filter(r => r.tb || r.ta || Math.abs(r.rolloverIn) > 0.005);
+
+  const tot = items.reduce((s, r) => ({ tb: s.tb + r.tb, ta: s.ta + r.ta, remaining: s.remaining + r.remaining, rolloverIn: s.rolloverIn + r.rolloverIn, available: s.available + r.available }), { tb: 0, ta: 0, remaining: 0, rolloverIn: 0, available: 0 });
+  const money = v => fmtCurrency(v, 0);
+  const cls = v => v < -0.005 ? 'text-red-600' : 'text-slate-700';
+  const rowHtml = r => `<tr class="border-t border-slate-100 hover:bg-slate-50">
+      <td class="px-3 py-1.5 text-sm text-slate-700">${_cs(r.a.code,'text-xs text-slate-400 font-mono mr-1.5')}${escHtml(r.a.name)}</td>
+      <td class="px-3 py-1.5 text-sm text-right text-slate-600 whitespace-nowrap">${money(r.tb)}</td>
+      <td class="px-3 py-1.5 text-sm text-right text-slate-600 whitespace-nowrap">${money(r.ta)}</td>
+      <td class="px-3 py-1.5 text-sm text-right whitespace-nowrap ${cls(r.remaining)}">${money(r.remaining)}</td>
+      <td class="px-3 py-1.5 text-sm text-right text-slate-500 whitespace-nowrap" title="Cumulative unspent budget carried in from prior months">${money(r.rolloverIn)}</td>
+      <td class="px-3 py-1.5 text-sm text-right font-semibold whitespace-nowrap ${cls(r.available)}">${money(r.available)}</td>
+    </tr>`;
+  const monthOpts = allPeriods.map(p => `<option value="${p}"${p === m ? ' selected' : ''}>${periodLabel(p)}</option>`).join('');
+  const catOpts = expAccts.map(a => `<option value="${a.id}">${escHtml((a.code ? a.code + ' · ' : '') + a.name)}</option>`).join('');
+
+  container.innerHTML = `
+    <div class="space-y-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 class="text-xl font-bold text-slate-900">Budget</h1>
+          <p class="text-sm text-slate-500">Actual vs budget for ${escHtml(periodLabel(m))} — rollover carries prior unspent budget forward.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex rounded border border-slate-300 overflow-hidden mr-2">
+            <button onclick="bgtSetView('plan')" class="px-3 py-1.5 text-sm bg-white text-slate-600 hover:bg-slate-50">Plan</button>
+            <button onclick="bgtSetView('actual')" class="px-3 py-1.5 text-sm bg-slate-900 text-white">Actual vs Budget</button>
+          </div>
+          <select onchange="bgtAvbSetMonth(this.value)" class="border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-700 bg-white">${monthOpts}</select>
+        </div>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg px-4 py-3 flex items-center gap-2 flex-wrap">
+        <span class="text-sm font-medium text-slate-600">Cover overspend — move budget:</span>
+        <span class="text-sm text-slate-500">from</span>
+        <select id="bgtMoveFrom" class="border border-slate-300 rounded px-2 py-1.5 text-sm bg-white">${catOpts}</select>
+        <span class="text-sm text-slate-500">to</span>
+        <select id="bgtMoveTo" class="border border-slate-300 rounded px-2 py-1.5 text-sm bg-white">${catOpts}</select>
+        <input id="bgtMoveAmt" type="number" step="0.01" min="0" placeholder="amount" class="border border-slate-300 rounded px-2 py-1.5 text-sm w-28">
+        <button onclick="bgtMoveBudget()" class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-slate-700">Move</button>
+      </div>
+
+      <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div class="overflow-x-auto" style="max-height:65vh;overflow-y:auto;">
+          <table class="w-full">
+            <thead class="bg-slate-50 border-b border-slate-200" style="position:sticky;top:0;z-index:10;">
+              <tr>
+                <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Category</th>
+                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Budget</th>
+                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Actual</th>
+                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Remaining</th>
+                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase" title="Cumulative prior unspent budget">Rollover&nbsp;in</th>
+                <th class="px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase">Available</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.length ? items.map(rowHtml).join('') : '<tr><td colspan="6" class="px-3 py-10 text-center text-sm text-slate-400">No budgeted or spent expense categories for this month.</td></tr>'}
+              ${items.length ? `<tr class="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+                <td class="px-3 py-2 text-sm text-slate-700">Total</td>
+                <td class="px-3 py-2 text-sm text-right text-slate-800">${money(tot.tb)}</td>
+                <td class="px-3 py-2 text-sm text-right text-slate-800">${money(tot.ta)}</td>
+                <td class="px-3 py-2 text-sm text-right ${cls(tot.remaining)}">${money(tot.remaining)}</td>
+                <td class="px-3 py-2 text-sm text-right text-slate-500">${money(tot.rolloverIn)}</td>
+                <td class="px-3 py-2 text-sm text-right ${cls(tot.available)}">${money(tot.available)}</td>
+              </tr>` : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400">Remaining = this month&rsquo;s budget − actual. Available = budget + rollover − actual (cumulative). Negative (red) means overspent — use Move budget to cover it from another category.</p>
     </div>`;
 }
 
