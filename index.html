@@ -1832,6 +1832,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F2' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F3' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
   } catch(e) { console.warn('RoadmapItem init:', e.message); }
 
   // Ensure ScratchPad table exists
@@ -2353,6 +2355,7 @@ function _currentSub(page) {
   if (page === 'account-tracker')      return _atTab;
   if (page === 'review-equity')        return _teTab;
   if (page === 'financial-statements') return _fsTab;
+  if (page === 'manual-assets')        return _asTab;
   if (page === 'settings')             return settingsTab;
   return null;
 }
@@ -2363,6 +2366,7 @@ function _switchSub(page, sub) {
   else if (page === 'account-tracker')      atSetTab(sub);
   else if (page === 'review-equity')        teSetTab(sub);
   else if (page === 'financial-statements') fsSetTab(sub);
+  else if (page === 'manual-assets')        asSetTab(sub);
   else if (page === 'settings')             settingsGoTab(sub);
 }
 
@@ -4422,8 +4426,9 @@ let plLayouts  = { income: [], expense: [] };
 // through every balance surface (Balance Sheet, net worth, Account Inquiry)
 // with no per-screen patching. Value entry is "new total" — the delta is
 // computed and posted.
-const _MA_CLASSES = ['Real estate','Vehicle','Crypto','Precious metals','Collectible','Cash equivalent','Other'];
-const _MA_CLASS_COLOR = { 'Real estate':'#0d9488','Vehicle':'#2563eb','Crypto':'#9333ea','Precious metals':'#ca8a04','Collectible':'#db2777','Cash equivalent':'#059669','Other':'#64748b' };
+// Shared asset-class taxonomy (Manual Assets F2 + Allocation F3).
+const _ASSET_CLASSES = ['Cash','Equities','Bonds','Real estate','Crypto','Precious metals','Collectible','Vehicle','Other'];
+const _ASSET_CLASS_COLOR = { 'Cash':'#059669','Equities':'#2563eb','Bonds':'#0891b2','Real estate':'#0d9488','Crypto':'#9333ea','Precious metals':'#ca8a04','Collectible':'#db2777','Vehicle':'#f97316','Other':'#64748b','Unclassified':'#cbd5e1' };
 let maView = 'list', maEditId = null;
 
 function _maOffsetAccountId() {
@@ -4459,8 +4464,32 @@ function _maPostTx(drId, crId, amount, desc, date) {
     [genId(), date, period, desc, amount, drId, crId, now, now]);
 }
 
+let _asTab = 'holdings';
+const _AS_TABS = [{ id: 'holdings', label: 'Holdings' }, { id: 'allocation', label: 'Allocation' }];
 function renderManualAssets(container) {
   if (!container) container = document.getElementById('pageContent');
+  const wrap = document.createElement('div'); wrap.className = 'flex flex-col h-full';
+  const bar = document.createElement('div'); bar.className = 'flex-shrink-0'; bar.innerHTML = _pageTabBar(_AS_TABS, _asTab, 'asSetTab');
+  const content = document.createElement('div'); content.id = 'asContent'; content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(bar); wrap.appendChild(content);
+  container.innerHTML = ''; container.appendChild(wrap);
+  _renderAssetsContent();
+}
+function asSetTab(tab) {
+  _asTab = tab;
+  const c = document.getElementById('asContent');
+  if (c && c.previousElementSibling) c.previousElementSibling.innerHTML = _pageTabBar(_AS_TABS, _asTab, 'asSetTab');
+  _renderAssetsContent();
+  _pushNavState('manual-assets', tab);
+}
+function _renderAssetsContent() {
+  const c = document.getElementById('asContent');
+  if (!c) return;
+  if (_asTab === 'allocation') _renderAllocationTab(c);
+  else _renderHoldingsTab(c);
+}
+function _renderHoldingsTab(container) {
+  if (!container) container = document.getElementById('asContent') || document.getElementById('pageContent');
   if (maView === 'add') return _maRenderForm(container, null);
   if (maView === 'update' && maEditId) return _maRenderForm(container, maEditId);
   const assets = _maAssets();
@@ -4468,7 +4497,7 @@ function renderManualAssets(container) {
   const today = new Date().toLocaleDateString('en-CA');
 
   const rows = assets.length ? assets.map(a => {
-    const c = _MA_CLASS_COLOR[a.assetClass] || '#64748b';
+    const c = _ASSET_CLASS_COLOR[a.assetClass] || '#64748b';
     return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.65rem 0.85rem;display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
       <div style="min-width:12rem;">
         <div style="display:flex;align-items:center;gap:0.45rem;">
@@ -4508,7 +4537,7 @@ function _maRenderForm(container, editId) {
   const asset = editing ? query("SELECT id,name,assetClass FROM Account WHERE id=?", [editId])[0] : null;
   const cur = editing ? _maCurrentValue(editId) : 0;
   const today = new Date().toLocaleDateString('en-CA');
-  const classOpts = _MA_CLASSES.map(c => `<option value="${c}"${asset && asset.assetClass === c ? ' selected' : ''}>${c}</option>`).join('');
+  const classOpts = _ASSET_CLASSES.map(c => `<option value="${c}"${asset && asset.assetClass === c ? ' selected' : ''}>${c}</option>`).join('');
   container.innerHTML = `
     <div style="max-width:30rem;display:flex;flex-direction:column;gap:0.75rem;">
       <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">${editing ? 'Update value — ' + escHtml(asset.name) : 'Add asset'}</h2>
@@ -4534,9 +4563,9 @@ function _maRenderForm(container, editId) {
 }
 
 function _maErr(msg) { const e = document.getElementById('maErr'); if (e) { e.textContent = msg; e.style.display = 'block'; } }
-function maShowAdd() { maView = 'add'; maEditId = null; renderManualAssets(); }
-function maShowUpdate(id) { maView = 'update'; maEditId = id; renderManualAssets(); }
-function maCancel() { maView = 'list'; maEditId = null; renderManualAssets(); }
+function maShowAdd() { maView = 'add'; maEditId = null; _asTab = 'holdings'; renderManualAssets(); }
+function maShowUpdate(id) { maView = 'update'; maEditId = id; _asTab = 'holdings'; renderManualAssets(); }
+function maCancel() { maView = 'list'; maEditId = null; _asTab = 'holdings'; renderManualAssets(); }
 
 function maSaveAsset() {
   const name = (document.getElementById('maName').value || '').trim();
@@ -4605,6 +4634,90 @@ function maShowHistory(id) {
       <button onclick="document.getElementById('maHistory').innerHTML=''" style="background:none;border:none;color:#94a3b8;font-size:0.9rem;cursor:pointer;">✕</button>
     </div>${lines}</div>`;
   el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Asset Allocation (F3) — donut of ASSET balances by assetClass ──
+let _asAllocChart = null;
+function _renderAllocationTab(container) {
+  const bm = buildBalanceMap(null);
+  const meta = {};
+  query("SELECT id,name,assetClass FROM Account WHERE type='ASSET' AND isActive=1").forEach(a => { meta[a.id] = a; });
+  const byClass = {}; let total = 0; const accountsList = [];
+  Object.values(bm).forEach(m => {
+    if (m.type !== 'ASSET') return;
+    const bal = m.balance || 0;
+    if (bal <= 0.005) return;
+    const a = meta[m.id];
+    const cls = (a && a.assetClass) ? a.assetClass : 'Unclassified';
+    byClass[cls] = (byClass[cls] || 0) + bal;
+    total += bal;
+    accountsList.push({ id: m.id, name: a ? a.name : m.id, assetClass: a ? a.assetClass : null, bal });
+  });
+  accountsList.sort((x, y) => y.bal - x.bal);
+
+  if (_asAllocChart) { try { _asAllocChart.destroy(); } catch(e) {} _asAllocChart = null; }
+
+  if (total <= 0) {
+    container.innerHTML = `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:2.5rem 1rem;">No asset balances to allocate yet. Add assets or record balances first.</div>`;
+    return;
+  }
+
+  const order = _ASSET_CLASSES.concat(['Unclassified']);
+  const classes = order.filter(c => byClass[c] > 0.005);
+  const colors = classes.map(c => _ASSET_CLASS_COLOR[c] || '#64748b');
+
+  const breakdown = classes.map(c => {
+    const amt = byClass[c]; const pct = total ? (amt / total * 100) : 0;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.3rem 0;border-top:1px solid #f1f5f9;font-size:0.8rem;">
+      <span style="display:flex;align-items:center;gap:0.45rem;color:#334155;"><span style="width:0.7rem;height:0.7rem;border-radius:2px;background:${_ASSET_CLASS_COLOR[c] || '#64748b'};display:inline-block;"></span>${escHtml(c)}</span>
+      <span style="color:#64748b;">${escHtml(fmtCurrency(amt, 0))} <span style="color:#94a3b8;">· ${pct.toFixed(1)}%</span></span>
+    </div>`;
+  }).join('');
+
+  const clsOpts = (sel) => `<option value="">— Unclassified —</option>` + _ASSET_CLASSES.map(c => `<option value="${c}"${sel === c ? ' selected' : ''}>${c}</option>`).join('');
+  const classifier = accountsList.map(a => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.3rem 0;border-top:1px solid #f1f5f9;font-size:0.8rem;">
+      <span style="color:#334155;flex:1;min-width:8rem;">${escHtml(a.name)}</span>
+      <span style="color:#64748b;width:7rem;text-align:right;">${escHtml(fmtCurrency(a.bal, 0))}</span>
+      <select onchange="asSetClass('${a.id}',this.value)" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.18rem 0.35rem;font-size:0.72rem;background:#fff;color:#475569;">${clsOpts(a.assetClass || '')}</select>
+    </div>`).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;padding:0.25rem;">
+      <div>
+        <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Asset allocation</h2>
+        <p style="font-size:0.75rem;color:#64748b;margin:0.1rem 0 0;">Where your ${escHtml(fmtCurrency(total, 0))} of assets sits, by class.</p>
+      </div>
+      <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;">
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.85rem;width:18rem;max-width:100%;">
+          <div style="height:14rem;"><canvas id="asAllocChart"></canvas></div>
+        </div>
+        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.85rem;flex:1;min-width:14rem;">
+          <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;">Breakdown</div>
+          ${breakdown}
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.85rem;">
+        <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;">Classify accounts</div>
+        ${classifier}
+      </div>
+    </div>`;
+
+  const canvas = document.getElementById('asAllocChart');
+  if (canvas && typeof Chart !== 'undefined') {
+    _asAllocChart = new Chart(canvas, {
+      type: 'doughnut',
+      data: { labels: classes, datasets: [{ data: classes.map(c => byClass[c]), backgroundColor: colors, borderWidth: 1, borderColor: '#fff' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } } }
+    });
+    activeCharts.push(_asAllocChart);
+  }
+}
+
+function asSetClass(id, val) {
+  db.run('UPDATE Account SET assetClass=?, updatedAt=? WHERE id=?', [val || null, new Date().toISOString(), id]);
+  syncAfterWrite();
+  _renderAllocationTab(document.getElementById('asContent'));
 }
 
 // ════════════════════════════════════════════════════════════

@@ -34,6 +34,12 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Bug fixed during build:** code `'MA-'+genId().slice(0,6)` collided (genId is time-prefixed) → switched to sequential collision-checked `MA-001…`.
 - **Follow-up:** no delete/dispose of a manual asset yet; revaluation dated in the past doesn't rewrite intermediate-period running balances (only the cumulative current value is correct — fine for net worth).
 
+### Built: F3 Asset allocation (verified, deploying).
+- **IA change:** the Assets page is now a composite — tabs **Holdings** | **Allocation** (`_asTab`, `asSetTab`, `_renderAssetsContent`, `_pageTabBar`). Sets up F5 as a future "Projection" tab. Added manual-assets to `_currentSub`/`_switchSub` for back-gesture support.
+- **Taxonomy unified** into shared `_ASSET_CLASSES`/`_ASSET_CLASS_COLOR` (Cash, Equities, Bonds, Real estate, Crypto, Precious metals, Collectible, Vehicle, Other; + Unclassified). F2 now uses the shared list too.
+- **Allocation tab:** Chart.js doughnut (reused existing lib, registered in activeCharts + destroyed on re-render) of current ASSET balances grouped by assetClass, a % breakdown, and an inline per-account classifier (`asSetClass` → UPDATE Account.assetClass). Accounts with no class show as "Unclassified" (never hidden). Reads via `buildBalanceMap(null)`.
+- **MCQ-equivalent defaults (stated, not asked — momentum):** preset taxonomy, manual per-account classification, doughnut chart, tabbed Assets page.
+
 ---
 
 ## 2026-05-31 — Session 4
