@@ -157,3 +157,17 @@ Only valid when the cached content is ≥ 1024 tokens. Small prompts (matcher, n
 **Note for next time:** Box-drawing-character anchors are fragile across multi-edit sessions. Prefer anchoring on a function signature or any uniquely-named identifier. Especially in a 15k-line single file where comment headers may repeat or get partially deleted.
 
 ---
+
+## Live DB schema ≠ `_initCoreSchema` — the real finance.sqlite has constraints/columns the fresh schema doesn't
+
+**What didn't work (twice now):**
+1. The Refund flow inserted `linkedTxId` — a column present in `_initCoreSchema` but **missing** from the user's existing DB (CREATE TABLE IF NOT EXISTS never alters an existing table). Save failed with "no column named linkedTxId."
+2. F2 Manual Assets set `role='MANUAL_ASSET'` on a new account. The user's real `Account` table has a **CHECK constraint** `role IN ('ACCRUED_EXPENSE','ACCRUED_LIABILITY','BELOW_THE_LINE','EXCLUDED','FLUX_PL')` that `_initCoreSchema`'s `Account` does NOT have. Insert failed: "CHECK constraint failed: role". Passed in the sandbox (fresh schema, no CHECK), failed on first real use.
+
+**What worked:**
+1. Add an idempotent `ALTER TABLE … ADD COLUMN` in the startApp migration region for any new column.
+2. Don't overload `role` (or any column with a CHECK) for new markers. Added a dedicated `isManualAsset` column (via ALTER) and identified the equity offset by its unique `code='MA-EQ'` instead of a custom role value. Set `role=NULL` on both new accounts.
+
+**Note for next time:** The fresh `_initCoreSchema` is NOT a faithful model of the user's real DB — the live finance.sqlite was created from an older/stricter schema with **extra CHECK constraints and columns**. Before writing to an existing table: (a) never assume a column exists — add a migration ALTER; (b) never write a novel value into a constrained column (`role`, possibly `type`, `importSource`) — add a new column instead; (c) the sandbox won't catch these because it builds tables from `_initCoreSchema`. To reproduce, recreate the specific table WITH its real constraints in the sandbox before testing. Known constrained column: `Account.role` (allow-list above).
+
+---

@@ -1938,6 +1938,12 @@ function startApp() {
     db.run(`ALTER TABLE Account ADD COLUMN assetClass TEXT`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
+  // Manual-asset marker (F2). NOT stored in `role` — existing DBs have a CHECK
+  // constraint that only allows a fixed set of role values.
+  try {
+    db.run(`ALTER TABLE Account ADD COLUMN isManualAsset INTEGER DEFAULT 0`);
+  } catch(e) { /* column already exists — safe to ignore */ }
+
   // Ensure importSource column exists on FutureTransaction so origin is
   // preserved through the FT → T migration (otherwise migrateFutureTransactions
   // hardcoded 'Scheduled' and the original source — Equity, Recurring, Dictate,
@@ -4436,25 +4442,26 @@ let plLayouts  = { income: [], expense: [] };
 // ════════════════════════════════════════════════════════════
 // MANUAL ASSETS (F2) — alternative assets as native ASSET accounts
 // ════════════════════════════════════════════════════════════
-// A manual asset is a real ASSET account (role='MANUAL_ASSET', tagged with
+// A manual asset is a real ASSET account (isManualAsset=1, tagged with
 // assetClass). Its value is set/changed via ordinary transactions against a
-// single auto-created EQUITY offset (role='MANUAL_ASSET_EQUITY'), so it flows
-// through every balance surface (Balance Sheet, net worth, Account Inquiry)
-// with no per-screen patching. Value entry is "new total" — the delta is
-// computed and posted.
+// single auto-created EQUITY offset (code 'MA-EQ'), so it flows through every
+// balance surface (Balance Sheet, net worth, Account Inquiry) with no per-screen
+// patching. Value entry is "new total" — the delta is computed and posted.
+// NOTE: the marker lives in `isManualAsset`, NOT `role` — existing DBs have a
+// CHECK constraint restricting role to a fixed allow-list.
 // Shared asset-class taxonomy (Manual Assets F2 + Allocation F3).
 const _ASSET_CLASSES = ['Cash','Equities','Bonds','Real estate','Crypto','Precious metals','Collectible','Vehicle','Other'];
 const _ASSET_CLASS_COLOR = { 'Cash':'#059669','Equities':'#2563eb','Bonds':'#0891b2','Real estate':'#0d9488','Crypto':'#9333ea','Precious metals':'#ca8a04','Collectible':'#db2777','Vehicle':'#f97316','Other':'#64748b','Unclassified':'#cbd5e1' };
 let maView = 'list', maEditId = null;
 
 function _maOffsetAccountId() {
-  let id = queryVal("SELECT id FROM Account WHERE role='MANUAL_ASSET_EQUITY' LIMIT 1");
+  let id = queryVal("SELECT id FROM Account WHERE code='MA-EQ' LIMIT 1");
   if (id) return id;
   const now = new Date().toISOString();
   id = genId();
   db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,assetClass,createdAt,updatedAt)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, 'MA-EQ', 'Manual Assets — Equity / Revaluation Reserve', 'EQUITY', 'MANUAL_ASSET_EQUITY', null, 0, 0, 1, null, now, now]);
+    [id, 'MA-EQ', 'Manual Assets — Equity / Revaluation Reserve', 'EQUITY', null, null, 0, 0, 1, null, now, now]);
   return id;
 }
 
@@ -4465,7 +4472,7 @@ function _maCurrentValue(acctId) {
 }
 
 function _maAssets() {
-  const accts = query("SELECT id,code,name,assetClass FROM Account WHERE role='MANUAL_ASSET' AND isActive=1 ORDER BY name");
+  const accts = query("SELECT id,code,name,assetClass FROM Account WHERE isManualAsset=1 AND isActive=1 ORDER BY name");
   return accts.map(a => {
     const lastDate = queryVal('SELECT MAX(trxDate) FROM "Transaction" WHERE drAccountId=? OR crAccountId=?', [a.id, a.id]);
     return { ...a, value: _maCurrentValue(a.id), lastDate: lastDate || '' };
@@ -4603,9 +4610,9 @@ function maSaveAsset() {
     let n = (+queryVal("SELECT COUNT(*) FROM Account WHERE code LIKE 'MA-%' AND code != 'MA-EQ'") || 0) + 1;
     let code = 'MA-' + String(n).padStart(3, '0');
     while (queryVal('SELECT 1 FROM Account WHERE code=?', [code])) code = 'MA-' + String(++n).padStart(3, '0');
-    db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,assetClass,createdAt,updatedAt)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, code, name, 'ASSET', 'MANUAL_ASSET', null, 0, 1, 1, cls, now, now]);
+    db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,assetClass,isManualAsset,createdAt,updatedAt)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, code, name, 'ASSET', null, null, 0, 1, 1, cls, 1, now, now]);
     if (value > 0.005) _maPostTx(id, _maOffsetAccountId(), value, 'Opening value: ' + name, date);
     syncAfterWrite();
     maCancel();

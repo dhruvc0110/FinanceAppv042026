@@ -32,6 +32,7 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 ### Built: F2 Manual Assets (verified, deploying).
 - New "Assets" sidebar page (Review group). Manual asset = native ASSET account, `role='MANUAL_ASSET'`, tagged `assetClass` (new nullable Account column, also seeds F3). Value via ordinary transactions against one auto-created EQUITY offset (`role='MANUAL_ASSET_EQUITY'`, code MA-EQ) — flows through all balance surfaces, no chokepoint. "New total" value entry → posts signed delta. importSource='Manual Asset'. Add / Update value / History; future-date blocked.
 - **Bug fixed during build:** code `'MA-'+genId().slice(0,6)` collided (genId is time-prefixed) → switched to sequential collision-checked `MA-001…`.
+- **Hotfix (post-deploy, user hit it):** the real `Account` table has a CHECK constraint on `role` (allow-list only) — `role='MANUAL_ASSET'`/`'MANUAL_ASSET_EQUITY'` failed on the live DB though it passed in the sandbox. Switched to a dedicated `isManualAsset` column (migration ALTER) + offset identified by `code='MA-EQ'`, both with `role=NULL`. See ERRORS.md "Live DB schema ≠ _initCoreSchema".
 - **Follow-up:** no delete/dispose of a manual asset yet; revaluation dated in the past doesn't rewrite intermediate-period running balances (only the cumulative current value is correct — fine for net worth).
 
 ### Built: F3 Asset allocation (verified, deploying).
