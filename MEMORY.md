@@ -19,6 +19,21 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **MCQ decisions:** Deliverable = Build into FinApp (not standalone HTML); Source = web-verify first; Page scope = bucketing + progress (not bucketing-only, not +custom-items).
 - **NOT done / follow-up:** No add-your-own / hide-feature in-app (the "+custom" option was not chosen). Buckets/status are the user's to set — none pre-assigned.
 
+### Decided: Must-have build sequence + Done-marking + deploy cadence.
+- **Must-haves (user-bucketed):** F2 Alt/manual assets, F3 Asset allocation, F5 Future net-worth projection, F7 Sankey, F26 Document vault.
+- **Sequence:** F7 → F2 → F3 → F5 → F26. F7 first as a low-risk loop-validation; F2 is the foundation F3/F5 consume; F26 last (storage design fork).
+- **Done-marking mechanism:** each shipped feature's deploy carries a one-time guarded `UPDATE RoadmapItem SET status='Done' WHERE id='Fx' AND status<>'Done'` in the startApp init block. Can't write to the user's live Drive DB from the agent side; this self-propagates on next load. Trade-off: a shipped feature re-asserts Done on load (user accepted).
+- **Deploy cadence (user MCQ):** "Deploy as each is ready" — build+verify in preview, then deploy each phase and report (no per-push re-ask).
+- **Reading buckets:** the agent CANNOT read the user's bucket choices — finance.sqlite is under Google's private `drive.file` scope, invisible to the Drive MCP. User shares via screenshot.
+
+### Built: F7 Sankey (DONE, deployed 36331b2).
+- New "Cash Flow" tab in the Financial Statements composite. Hand-rolled SVG Sankey (income sources → hub → expense uses + Net savings/Drawdown), period-range selector. Reads income(CR-DR)/expense(DR-CR) per account, same path as P&L. No charting dependency (keeps offline-PWA single-file nature). Edge cases verified: deficit→Drawdown, surplus→Net savings, empty→message.
+
+### Built: F2 Manual Assets (verified, deploying).
+- New "Assets" sidebar page (Review group). Manual asset = native ASSET account, `role='MANUAL_ASSET'`, tagged `assetClass` (new nullable Account column, also seeds F3). Value via ordinary transactions against one auto-created EQUITY offset (`role='MANUAL_ASSET_EQUITY'`, code MA-EQ) — flows through all balance surfaces, no chokepoint. "New total" value entry → posts signed delta. importSource='Manual Asset'. Add / Update value / History; future-date blocked.
+- **Bug fixed during build:** code `'MA-'+genId().slice(0,6)` collided (genId is time-prefixed) → switched to sequential collision-checked `MA-001…`.
+- **Follow-up:** no delete/dispose of a manual asset yet; revaluation dated in the past doesn't rewrite intermediate-period running balances (only the cumulative current value is correct — fine for net worth).
+
 ---
 
 ## 2026-05-31 — Session 4
