@@ -54,6 +54,11 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Storage model (user MCQ): links/references, NOT embedded files** — because whole-DB-file Drive sync would re-upload every embedded file on each save. New `Document` table (id,title,url,category,accountId,docDate,notes,...). New "Documents" sidebar page. Add/Edit/Delete; category (Statement/Insurance/Deed/Tax/Other); optional link to any account/asset; URL auto-normalized (prepends https://); "no link" state; Open opens in new tab. Delete removes only the catalog entry.
 - **Status:** Must-haves complete — F7 (36331b2), F2 (8f81a0c), F3 (9aad354), F5 (f967cb7), F26 (this deploy). All carry one-time `status='Done'` marks → Roadmap auto-updates on load. Remaining: 10 Should + 17 Nice, unstarted.
 
+### Should-haves wave (10): F1,F6,F8,F9,F12,F14,F18,F20,F24,F29.
+- **Sequence:** F1 → F6 → F8 → F18 → F9 → F24 → F20 → F29 → F12+F14. Low-risk viz first; budgeting envelope pair (F12/F14) last (touches budget engine). Same cadence: build → verify vs real constraints → deploy each → auto-mark Done.
+- **Note:** Dashboard already has small net-worth + income/expense lines — F1/F6 are richer dedicated views, not duplicates.
+- **Built: F1 Net worth over time** — new **Net worth** tab on the Assets composite (`_renderNetWorthTab`, `_nwMonths` 12/24/36/All). Cumulative assets−liabilities per period via `buildBalanceMap(periods<=P)`, excluding BELOW_THE_LINE (matches dashboard logic + manual-asset BS settings). Chart.js line (net worth/assets/liabilities) + stat cards. Verified.
+
 ---
 
 ## 2026-05-31 — Session 4
