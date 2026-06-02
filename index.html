@@ -1854,6 +1854,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F9' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F24' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -3388,6 +3390,8 @@ let txF      = { dateFrom:'', dateTo:'', drId:'', crId:'', desc:'', source:'', c
 let txPage   = 0;
 let txEditId = null;
 let txFiltersOpen = false;
+let _txBulkSel = new Set();   // F24 — selected transaction ids for bulk edit
+let _txPageIds = [];          // ids on the current page (for select-all)
 let txSortCol     = 'trxDate';
 let txSortDir     = 'desc';
 const TX_PAGE_SIZE = 50;
@@ -3529,6 +3533,27 @@ function _renderTxPage(container) {
   // ── Shared input class ─────────────────────────────────────
   const ic = 'w-full border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-400';
 
+  // ── F24 bulk-edit selection ────────────────────────────────
+  _txPageIds = rows.map(r => r.id);
+  const _txAllSel = rows.length > 0 && rows.every(r => _txBulkSel.has(r.id));
+  const _txBulkAcctOpts = query("SELECT id,code,name FROM Account WHERE isActive=1 AND (role IS NULL OR role!='EXCLUDED') ORDER BY code")
+    .map(a => `<option value="${a.id}">${escHtml((a.code ? a.code + ' · ' : '') + a.name)}</option>`).join('');
+  const bulkBar = _txBulkSel.size ? `
+      <div class="bg-slate-900 text-white rounded-lg px-3 py-2 flex items-center gap-2 flex-wrap text-sm">
+        <span class="font-medium">${_txBulkSel.size} selected</span>
+        <span class="text-slate-500">·</span>
+        <span class="text-slate-300 text-xs">Set</span>
+        <select id="txBulkSide" class="text-slate-800 rounded px-1.5 py-1 text-xs">
+          <option value="dr">Debit account</option>
+          <option value="cr">Credit account</option>
+        </select>
+        <select id="txBulkAcct" class="text-slate-800 rounded px-1.5 py-1 text-xs" style="max-width:220px;">${_txBulkAcctOpts}</select>
+        <button onclick="txBulkRecategorize()" class="bg-white text-slate-900 rounded px-2.5 py-1 text-xs font-medium hover:bg-slate-200">Apply</button>
+        <span class="text-slate-600">|</span>
+        <button onclick="txBulkDelete()" class="bg-red-600 text-white rounded px-2.5 py-1 text-xs hover:bg-red-700">Delete</button>
+        <button onclick="txBulkClear()" class="border border-slate-500 text-slate-200 rounded px-2.5 py-1 text-xs hover:bg-slate-800">Clear</button>
+      </div>` : '';
+
   // ── Pre-load link counts for visible rows ──────────────────
   const linkCounts = {};
   if (rows.length) {
@@ -3550,6 +3575,7 @@ function _renderTxPage(container) {
 
     return `
       <tr class="border-t border-slate-100 hover:bg-slate-50 group">
+        <td data-label="Select" class="px-3 py-2 text-center"><input type="checkbox" ${_txBulkSel.has(r.id) ? 'checked' : ''} onchange="txBulkToggle('${r.id}', this.checked)" class="w-4 h-4 cursor-pointer accent-slate-700"></td>
         <td data-label="Date" class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
         <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
         <td data-label="Description" class="px-3 py-2 text-sm text-slate-800 max-w-xs">
@@ -3731,12 +3757,15 @@ function _renderTxPage(container) {
         </div>
       </div>
 
+      ${bulkBar}
+
       <!-- Table -->
       <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div class="overflow-x-auto" style="max-height:60vh;overflow-y:auto;">
           <table class="w-full md:min-w-[760px] table-mobile-cards">
             <thead class="bg-slate-50 border-b border-slate-200" style="position:sticky;top:0;z-index:10;">
               <tr>
+                <th class="px-3 py-2.5 text-center"><input type="checkbox" ${_txAllSel ? 'checked' : ''} onchange="txBulkToggleAll(this.checked)" title="Select all on this page" class="w-4 h-4 cursor-pointer accent-slate-700"></th>
                 ${_txSortTh('trxDate',     'Date')}
                 ${_txSortTh('createdAt',   'Created', 'left', 'tablet-hide')}
                 ${_txSortTh('description', 'Description')}
@@ -3752,7 +3781,7 @@ function _renderTxPage(container) {
             <tbody>
               ${rows.length
                 ? rowsHtml
-                : '<tr><td colspan="9" class="px-3 py-10 text-center text-sm text-slate-400">No transactions match your filters</td></tr>'}
+                : '<tr><td colspan="11" class="px-3 py-10 text-center text-sm text-slate-400">No transactions match your filters</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -4121,6 +4150,43 @@ function txTogglePending(id, checked) {
     db.run('UPDATE "Transaction" SET isPending=?, updatedAt=? WHERE id=?', [checked?1:0, new Date().toISOString(), id]);
     syncAfterWrite();
   } catch(e) { console.error('Pending toggle error:', e.message); }
+}
+
+// ── F24 — bulk edit ──────────────────────────────────────────
+function txBulkToggle(id, checked) { if (checked) _txBulkSel.add(id); else _txBulkSel.delete(id); _renderTxPage(); }
+function txBulkToggleAll(checked) { (_txPageIds || []).forEach(id => { if (checked) _txBulkSel.add(id); else _txBulkSel.delete(id); }); _renderTxPage(); }
+function txBulkClear() { _txBulkSel.clear(); _renderTxPage(); }
+function txBulkRecategorize() {
+  const side = (document.getElementById('txBulkSide') || {}).value || 'dr';
+  const acct = (document.getElementById('txBulkAcct') || {}).value || '';
+  const ids = [..._txBulkSel];
+  if (!acct || !ids.length) return;
+  if (!confirm('Set the ' + (side === 'cr' ? 'credit' : 'debit') + ' account on ' + ids.length + ' transaction(s)?')) return;
+  const col = side === 'cr' ? 'crAccountId' : 'drAccountId';
+  const subcol = side === 'cr' ? 'crSubId' : 'drSubId';
+  const ph = ids.map(() => '?').join(',');
+  try {
+    db.run('BEGIN');
+    db.run(`UPDATE "Transaction" SET ${col}=?, ${subcol}=NULL, updatedAt=? WHERE id IN (${ph})`, [acct, new Date().toISOString(), ...ids]);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _txBulkSel.clear();
+    _renderTxPage();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Bulk update error: ' + e.message); }
+}
+function txBulkDelete() {
+  const ids = [..._txBulkSel];
+  if (!ids.length) return;
+  if (!confirm('Delete ' + ids.length + ' transaction(s)? This cannot be undone.')) return;
+  const ph = ids.map(() => '?').join(',');
+  try {
+    db.run('BEGIN');
+    db.run(`DELETE FROM "Transaction" WHERE id IN (${ph})`, ids);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _txBulkSel.clear();
+    _renderTxPage();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Bulk delete error: ' + e.message); }
 }
 
 
