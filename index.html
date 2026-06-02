@@ -1944,6 +1944,17 @@ function startApp() {
     db.run(`ALTER TABLE Account ADD COLUMN isManualAsset INTEGER DEFAULT 0`);
   } catch(e) { /* column already exists — safe to ignore */ }
 
+  // Clean up orphaned manual-asset accounts left by the earlier add-asset bug
+  // (account created, then offset insert failed → a $0 asset with no entries).
+  // Post-fix every real manual asset has an opening transaction, so a manual
+  // asset with zero transactions is always an orphan.
+  try {
+    db.run(`DELETE FROM Account WHERE isManualAsset=1 AND id NOT IN (
+              SELECT drAccountId FROM "Transaction" WHERE drAccountId IS NOT NULL
+              UNION SELECT crAccountId FROM "Transaction" WHERE crAccountId IS NOT NULL)`);
+    if (db.getRowsModified() > 0) syncAfterWrite();
+  } catch(e) { /* table may not exist yet on a brand-new DB — safe to ignore */ }
+
   // Ensure importSource column exists on FutureTransaction so origin is
   // preserved through the FT → T migration (otherwise migrateFutureTransactions
   // hardcoded 'Scheduled' and the original source — Equity, Recurring, Dictate,
@@ -4459,9 +4470,13 @@ function _maOffsetAccountId() {
   if (id) return id;
   const now = new Date().toISOString();
   id = genId();
+  // Offset is an INCOME account flagged EXCLUDED: this DB's Account.type CHECK
+  // forbids EQUITY, and net worth is derived as assets−liabilities (no equity
+  // accounts). EXCLUDED keeps the offset out of P&L, Cash Flow, dashboard and
+  // buildBalanceMap, while the ASSET side still lifts net worth.
   db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,assetClass,createdAt,updatedAt)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, 'MA-EQ', 'Manual Assets — Equity / Revaluation Reserve', 'EQUITY', null, null, 0, 0, 1, null, now, now]);
+    [id, 'MA-EQ', 'Manual Assets — Opening / Revaluation Offset', 'INCOME', 'EXCLUDED', null, 0, 0, 1, null, now, now]);
   return id;
 }
 
@@ -4599,11 +4614,15 @@ function maSaveAsset() {
   const today = new Date().toLocaleDateString('en-CA');
   if (!name) return _maErr('Name is required.');
   if (!cls) return _maErr('Pick an asset class.');
-  if (isNaN(value) || value < 0) return _maErr('Enter a value of 0 or more.');
+  if (isNaN(value) || value <= 0) return _maErr('Enter a value greater than 0.');
   if (!date) return _maErr('Pick an as-of date.');
   if (date > today) return _maErr('As-of date cannot be in the future.');
   try {
     const now = new Date().toISOString();
+    // Atomic: create the offset first, then the asset account, then the opening
+    // entry — so a mid-way failure can't leave an orphaned $0 asset account.
+    db.run('BEGIN');
+    const offset = _maOffsetAccountId();
     const id = genId();
     // Sequential, collision-checked code (genId's first chars are time-based and
     // would collide for assets added in quick succession).
@@ -4613,10 +4632,11 @@ function maSaveAsset() {
     db.run(`INSERT INTO Account (id,code,name,type,role,grouping,hasSubAccounts,showOnInquiry,isActive,assetClass,isManualAsset,createdAt,updatedAt)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, code, name, 'ASSET', null, null, 0, 1, 1, cls, 1, now, now]);
-    if (value > 0.005) _maPostTx(id, _maOffsetAccountId(), value, 'Opening value: ' + name, date);
+    _maPostTx(id, offset, value, 'Opening value: ' + name, date);
+    db.run('COMMIT');
     syncAfterWrite();
     maCancel();
-  } catch(e) { _maErr('Error: ' + e.message); }
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} _maErr('Error: ' + e.message); }
 }
 
 function maSaveUpdate(id) {
@@ -4631,12 +4651,14 @@ function maSaveUpdate(id) {
   const delta = newVal - cur;
   if (Math.abs(delta) < 0.005) { maCancel(); return; }
   try {
+    db.run('BEGIN');
     const offset = _maOffsetAccountId();
     if (delta > 0) _maPostTx(id, offset, delta, 'Revaluation +: ' + name, date);
     else _maPostTx(offset, id, -delta, 'Revaluation -: ' + name, date);
+    db.run('COMMIT');
     syncAfterWrite();
     maCancel();
-  } catch(e) { _maErr('Error: ' + e.message); }
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} _maErr('Error: ' + e.message); }
 }
 
 function maShowHistory(id) {
