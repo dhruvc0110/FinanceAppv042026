@@ -312,6 +312,11 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Buy-Vest-Sell</span>
       </button>
 
+      <button onclick="navigate('roadmap')" data-page="roadmap" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 11 3 3 11 3"/><path d="M3 3l8 8"/><path d="M21 13v8h-8"/><path d="M13 21l8-8"/><line x1="11" y1="13" x2="13" y2="11"/></svg>
+        <span class="nav-label">Roadmap</span>
+      </button>
+
       <!-- Settings — thin lines above and below provided by border-t here and border-t on clock section -->
       <div class="mt-2 border-t border-slate-700 border-b border-slate-700 py-1">
         <button onclick="navigate('settings')" data-page="settings"
@@ -1000,6 +1005,10 @@ function _initCoreSchema() {
     `CREATE TABLE IF NOT EXISTS TransactionLink (
       id TEXT PRIMARY KEY, txAId TEXT NOT NULL, txBId TEXT NOT NULL,
       note TEXT, createdAt TEXT NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS RoadmapItem (
+      id TEXT PRIMARY KEY, theme TEXT, title TEXT, detail TEXT, apps TEXT,
+      enhances INTEGER DEFAULT 0, bucket TEXT DEFAULT '', status TEXT DEFAULT 'Idea',
+      sortOrder INTEGER, notes TEXT DEFAULT '', updatedAt TEXT)`,
     `CREATE TABLE IF NOT EXISTS ScratchPad (
       id TEXT PRIMARY KEY, title TEXT NOT NULL,
       data TEXT NOT NULL DEFAULT '[]',
@@ -1806,6 +1815,15 @@ function startApp() {
     )`);
   } catch(e) { console.warn('TransactionLink init:', e.message); }
 
+  // Ensure RoadmapItem table exists (feature-adoption roadmap) and seed it.
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS RoadmapItem (
+      id TEXT PRIMARY KEY, theme TEXT, title TEXT, detail TEXT, apps TEXT,
+      enhances INTEGER DEFAULT 0, bucket TEXT DEFAULT '', status TEXT DEFAULT 'Idea',
+      sortOrder INTEGER, notes TEXT DEFAULT '', updatedAt TEXT)`);
+    _seedRoadmap();
+  } catch(e) { console.warn('RoadmapItem init:', e.message); }
+
   // Ensure ScratchPad table exists
   try {
     db.run(`CREATE TABLE IF NOT EXISTS ScratchPad (
@@ -2284,6 +2302,7 @@ function navigate(page) {
   else if (page === 'budget')               renderBudget(container);
   else if (page === 'transact-equity')      renderTransactEquity(container);
   // ── Settings ─────────────────────────────────────────────
+  else if (page === 'roadmap')              renderRoadmap(container);
   else if (page === 'settings')             renderSettings(container);
   // ── Legacy direct routes (deep links / existing code) ────
   else if (page === 'future-transactions')  renderFutureTransactions(container);
@@ -14099,8 +14118,186 @@ const PAGE_NAMES = {
   'credit-cards':'Credit Card Tracker','transactions':'Transactions',
   'future-transactions':'Future Transactions','budget':'Budget',
   'duplicates':'Duplicates','equity':'US Equity','pl':'P&L',
-  'balance-sheet':'Balance Sheet','accruals':'Accruals','settings':'Settings'
+  'balance-sheet':'Balance Sheet','accruals':'Accruals','settings':'Settings',
+  'roadmap':'Roadmap'
 };
+
+// ════════════════════════════════════════════════════════════
+// PRODUCT ROADMAP — feature-adoption bucketing + build progress
+// ════════════════════════════════════════════════════════════
+// Curated from a review of Monarch, Origin, Empower, YNAB and Kubera
+// (banking-integration / bill-pay / subscription-cancel features were
+// excluded by design). Seeded once via INSERT OR IGNORE on stable ids,
+// so re-seeding never clobbers the user's bucket / status / notes and new
+// features can simply be appended to _ROADMAP_SEED later.
+const _ROADMAP_SEED = [
+  ['F1','A · Net Worth & Wealth','Net worth over time','Trend of assets minus liabilities, by period.','Monarch, Empower, Kubera',1],
+  ['F2','A · Net Worth & Wealth','Alternative / manual assets','Track property, vehicles, crypto, collectibles as valued accounts.','Kubera, Monarch, Origin',1],
+  ['F3','A · Net Worth & Wealth','Asset allocation view','Portfolio split by asset class / type, as a percentage.','Empower, Kubera',0],
+  ['F4','A · Net Worth & Wealth','Multi-currency accounts','Hold and convert balances across currencies.','Kubera',0],
+  ['F5','A · Net Worth & Wealth','Future net-worth projection','Project net worth forward over the coming years.','Kubera, Origin, Empower',1],
+  ['F6','B · Cash Flow & Insight','Cash-flow view','Income vs expense plotted over time.','Monarch, Empower, YNAB',0],
+  ['F7','B · Cash Flow & Insight','Sankey flow diagram','Visual of income flowing into spending categories.','Monarch',0],
+  ['F8','B · Cash Flow & Insight','Spending-by-category trends','Month-over-month category trends and top categories.','All five',0],
+  ['F9','B · Cash Flow & Insight','Custom date-range reports','Run reports over any chosen date range.','Monarch, YNAB',1],
+  ['F10','B · Cash Flow & Insight','Transaction tags','Cross-category labels (e.g. vacation, reimbursable).','Monarch, YNAB',0],
+  ['F30','B · Cash Flow & Insight','Cash-balance forecast','Project account balance ahead from scheduled income + recurring bills.','Monarch',1],
+  ['F11','C · Budgeting','Zero-based / envelope budgeting','Give every dollar a job; fund categories from income.','YNAB',1],
+  ['F11b','C · Budgeting','Flex budgeting (3-bucket)','Fixed / non-monthly recurring / flexible spending buckets.','Monarch',1],
+  ['F12','C · Budgeting','Category rollover','Unspent category balance rolls into next month.','YNAB, Monarch',1],
+  ['F13','C · Budgeting','Targets + sinking funds','Per-category monthly targets; save toward irregular annual bills.','YNAB',1],
+  ['F14','C · Budgeting','Overspend coverage','Move money between categories to cover overspending.','YNAB',1],
+  ['F15','C · Budgeting','Age of money / runway','Average days between earning a dollar and spending it.','YNAB',0],
+  ['F16','D · Goals & Planning','Savings goals','Track progress toward multiple savings goals.','Monarch, Origin',0],
+  ['F17','D · Goals & Planning','Debt-payoff planner','Plan and track paying down debts (snowball / avalanche).','Monarch',1],
+  ['F18','D · Goals & Planning','Retirement projection','Simple or Monte-Carlo projection of retirement readiness.','Empower, Origin',0],
+  ['F19','D · Goals & Planning','Investment fee analyzer','Surface fees / expense ratios and their long-term drag.','Empower',0],
+  ['F20','D · Goals & Planning','Performance vs benchmark','Compare portfolio returns against an index.','Empower',1],
+  ['F31','D · Goals & Planning','What-if scenario modeling','Model life events (home, job change) and see the impact.','Monarch, Origin',0],
+  ['F21','E · Transaction Productivity','Transaction rules','Auto-categorize by payee / keyword; speeds Dictate & imports.','Monarch',1],
+  ['F22','E · Transaction Productivity','Bills / upcoming calendar','Calendar of upcoming bills and scheduled items.','Monarch, YNAB',1],
+  ['F23','E · Transaction Productivity','Attachments / receipts','Attach receipts or documents to a transaction.','Monarch',1],
+  ['F24','E · Transaction Productivity','Bulk edit','Select and re-categorize many transactions at once.','All five',0],
+  ['F25','E · Transaction Productivity','Reconcile to statement','Reconcile an account to its statement balance.','YNAB',1],
+  ['F26','F · Organization & Trust','Document / asset vault','Store statements, insurance, deeds against accounts / assets.','Kubera, Origin',0],
+  ['F27','F · Organization & Trust','Beneficiary handover','Read-only access for a beneficiary after inactivity ("Life Beat").','Kubera',0],
+  ['F28','F · Organization & Trust','Multi-user / household sharing','Shared access for a partner / household.','Monarch',0],
+  ['F29','F · Organization & Trust','Customizable dashboard','Rearrange dashboard widgets / tiles.','Monarch',0]
+];
+
+function _seedRoadmap() {
+  if (!db) return;
+  const now = new Date().toISOString();
+  let added = 0;
+  _ROADMAP_SEED.forEach((r, i) => {
+    db.run(
+      `INSERT OR IGNORE INTO RoadmapItem (id,theme,title,detail,apps,enhances,bucket,status,sortOrder,notes,updatedAt)
+       VALUES (?,?,?,?,?,?,'','Idea',?,'',?)`,
+      [r[0], r[1], r[2], r[3], r[4], r[5], i + 1, now]);
+    if (db.getRowsModified() > 0) added++;
+  });
+  if (added > 0) syncAfterWrite();
+}
+
+let _rmBucketFilter = 'all';
+let _rmStatusFilter = 'all';
+const _RM_BUCKET_COLOR = { Must: '#059669', Should: '#d97706', Nice: '#64748b' };
+
+function renderRoadmap(container) {
+  if (!container) container = document.getElementById('pageContent');
+  if (!db) { container.innerHTML = ''; return; }
+  try { _seedRoadmap(); } catch(e) {}
+  const rows = query('SELECT * FROM RoadmapItem ORDER BY sortOrder');
+
+  const counts = { Must: 0, Should: 0, Nice: 0, Unassigned: 0 };
+  rows.forEach(r => { const b = r.bucket || 'Unassigned'; if (counts[b] !== undefined) counts[b]++; });
+
+  const filtered = rows.filter(r => {
+    const bOk = _rmBucketFilter === 'all'
+      || (_rmBucketFilter === 'Unassigned' ? !r.bucket : r.bucket === _rmBucketFilter);
+    const sOk = _rmStatusFilter === 'all' || r.status === _rmStatusFilter;
+    return bOk && sOk;
+  });
+
+  const summaryChip = (label, n, color) =>
+    `<span style="display:inline-flex;align-items:center;gap:0.3rem;font-size:0.72rem;color:#475569;">
+       <span style="width:0.6rem;height:0.6rem;border-radius:50%;background:${color};display:inline-block;"></span>
+       ${label} <strong style="color:#0f172a;">${n}</strong></span>`;
+
+  const filterChip = (label, val) => {
+    const active = _rmBucketFilter === val;
+    return `<button onclick="_rmBucketFilter='${val}';renderRoadmap()" style="border:1px solid ${active ? '#0f172a' : '#cbd5e1'};background:${active ? '#0f172a' : '#fff'};color:${active ? '#fff' : '#475569'};border-radius:0.375rem;padding:0.2rem 0.55rem;font-size:0.72rem;cursor:pointer;">${label}</button>`;
+  };
+
+  const bucketBtn = (r, b) => {
+    const active = r.bucket === b;
+    const c = _RM_BUCKET_COLOR[b];
+    return `<button onclick="rmSetBucket('${r.id}','${b}')" title="${active ? 'Click to clear' : 'Set ' + b}" style="border:1px solid ${active ? c : '#cbd5e1'};background:${active ? c : '#fff'};color:${active ? '#fff' : '#475569'};border-radius:0.375rem;padding:0.2rem 0.55rem;font-size:0.72rem;font-weight:600;cursor:pointer;">${b}</button>`;
+  };
+
+  const statusSel = (r) =>
+    `<select onchange="rmSetStatus('${r.id}',this.value)" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.72rem;background:#fff;color:#475569;cursor:pointer;">
+       ${['Idea', 'Planned', 'Building', 'Done'].map(s => `<option ${r.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+     </select>`;
+
+  const rowHtml = (r) =>
+    `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.75rem;display:flex;gap:0.75rem;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;">
+       <div style="min-width:14rem;flex:1;">
+         <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
+           <span style="font-size:0.6rem;font-weight:700;color:#94a3b8;">${r.id}</span>
+           <span style="font-size:0.85rem;font-weight:600;color:#0f172a;">${escHtml(r.title)}</span>
+           ${r.enhances ? `<span style="font-size:0.6rem;color:#0369a1;background:#e0f2fe;padding:0.05rem 0.3rem;border-radius:0.25rem;">&#8635; enhances</span>` : ''}
+         </div>
+         <div style="font-size:0.75rem;color:#64748b;margin-top:0.15rem;">${escHtml(r.detail)}</div>
+         <div style="font-size:0.65rem;color:#94a3b8;margin-top:0.15rem;">${escHtml(r.apps)}</div>
+       </div>
+       <div style="display:flex;flex-direction:column;gap:0.35rem;align-items:flex-end;">
+         <div style="display:flex;gap:0.25rem;">${bucketBtn(r, 'Must')}${bucketBtn(r, 'Should')}${bucketBtn(r, 'Nice')}</div>
+         <div style="display:flex;gap:0.35rem;align-items:center;">
+           ${statusSel(r)}
+           <input value="${escHtml(r.notes || '')}" onchange="rmSetNotes('${r.id}',this.value)" placeholder="notes…" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.45rem;font-size:0.72rem;width:11rem;">
+         </div>
+       </div>
+     </div>`;
+
+  const themes = [];
+  filtered.forEach(r => { if (!themes.includes(r.theme)) themes.push(r.theme); });
+  const body = themes.length
+    ? themes.map(t => `
+        <div style="margin-top:0.5rem;">
+          <div style="font-size:0.7rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;">${escHtml(t)}</div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;">
+            ${filtered.filter(r => r.theme === t).map(rowHtml).join('')}
+          </div>
+        </div>`).join('')
+    : `<div style="color:#94a3b8;font-size:0.8rem;padding:1.5rem;text-align:center;">No features match this filter.</div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">
+      <div>
+        <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Product Roadmap</h2>
+        <div style="font-size:0.75rem;color:#64748b;margin-top:0.15rem;">Features reviewed from Monarch, Origin, Empower, YNAB and Kubera. Bucket each into <strong>Must</strong> / <strong>Should</strong> / <strong>Nice</strong>, and track build status. Saved to your synced database.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.75rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;">
+        <div style="display:flex;gap:0.9rem;flex-wrap:wrap;">
+          ${summaryChip('Must', counts.Must, _RM_BUCKET_COLOR.Must)}
+          ${summaryChip('Should', counts.Should, _RM_BUCKET_COLOR.Should)}
+          ${summaryChip('Nice', counts.Nice, _RM_BUCKET_COLOR.Nice)}
+          ${summaryChip('Unassigned', counts.Unassigned, '#cbd5e1')}
+          <span style="font-size:0.72rem;color:#94a3b8;">· ${rows.length} total</span>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;gap:0.25rem;">
+            ${filterChip('All', 'all')}${filterChip('Must', 'Must')}${filterChip('Should', 'Should')}${filterChip('Nice', 'Nice')}${filterChip('Unassigned', 'Unassigned')}
+          </div>
+          <select onchange="_rmStatusFilter=this.value;renderRoadmap()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.72rem;background:#fff;color:#475569;cursor:pointer;">
+            ${['all', 'Idea', 'Planned', 'Building', 'Done'].map(s => `<option value="${s}" ${_rmStatusFilter === s ? 'selected' : ''}>${s === 'all' ? 'All statuses' : s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${body}
+    </div>`;
+}
+
+function rmSetBucket(id, bucket) {
+  const cur = queryVal('SELECT bucket FROM RoadmapItem WHERE id=?', [id]) || '';
+  const next = cur === bucket ? '' : bucket;
+  db.run('UPDATE RoadmapItem SET bucket=?, updatedAt=? WHERE id=?', [next, new Date().toISOString(), id]);
+  syncAfterWrite();
+  renderRoadmap();
+}
+
+function rmSetStatus(id, status) {
+  db.run('UPDATE RoadmapItem SET status=?, updatedAt=? WHERE id=?', [status, new Date().toISOString(), id]);
+  syncAfterWrite();
+  renderRoadmap();
+}
+
+function rmSetNotes(id, val) {
+  db.run('UPDATE RoadmapItem SET notes=?, updatedAt=? WHERE id=?', [val, new Date().toISOString(), id]);
+  syncAfterWrite();
+}
+
 function renderPlaceholder(container, page) {
   container.innerHTML = `
     <div class="flex items-center justify-center" style="height:60vh">

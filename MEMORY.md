@@ -4,6 +4,23 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 
 ---
 
+## 2026-06-01 — Session 5
+
+### Decided: Multi-line Journal Entries — BUILT then REVERTED.
+- **What:** Built a true header+lines JE ledger (JournalEntry/JournalLine tables, a Journal Entries sub-tab + balanced multi-line modal, and a `buildBalanceMap` JE pass). Then reverted the whole thing.
+- **Why reverted:** Balances did not propagate. Root cause — `buildBalanceMap` is **NOT** the single balance chokepoint I assumed. Many surfaces compute balances by querying the `"Transaction"` table directly and never saw JournalLine rows: `_renderPLPage`, `_renderBSPage`, `_renderAIPage`, `_renderCCPage`, `_renderBAPage`, `_renderPBSPage`, and the XLSX export (`xlDoExport`). Only the Dashboard + a couple of callers go through `buildBalanceMap`. User judged the full fix (unify all surfaces) overkill for the need.
+- **How reverted:** `git revert` of the JE commit (clean — JE commit was purely additive and the immediate child of tag `stable-pre-je` = 0552eb6). Then a TEMPORARY one-time cleanup block in `startApp` dropped the orphan JournalEntry/JournalLine tables from the live Drive DB (they persisted because the user had loaded the JE build and saved one entry), synced, and the cleanup block was then removed in a follow-up deploy. Final `index.html` is byte-identical to `stable-pre-je`.
+- **KEY LESSON (logged for future balance work):** There is **no single balance chokepoint**. Any feature that must affect balances has to be reflected in every direct-`"Transaction"`-query surface listed above, OR those surfaces must first be refactored onto one shared ledger source. Don't trust "buildBalanceMap drives everything."
+
+### Decided: Product Roadmap page (feature-adoption bucketing + build progress).
+- **Why:** Reviewed Monarch / Origin / Empower / YNAB / Kubera (banking-integration, bill-pay, subscription-cancel features excluded by user constraint; web-verified June 2026). Needed a place to triage 32 candidate features into Must / Should / Nice and track build status — and per deep-design, a multi-session build gets a living roadmap *in the app*.
+- **Model:** New `RoadmapItem` table (id, theme, title, detail, apps, enhances, bucket, status, sortOrder, notes, updatedAt). Seeded once via `INSERT OR IGNORE` on stable ids (`_ROADMAP_SEED`, F1–F31 + F11b = 32 rows) so re-seeding never clobbers user edits and new features can be appended. Schema added to both `_initCoreSchema` (fresh DBs) and the `startApp` migration region (existing DBs); `_seedRoadmap()` runs in startApp and defensively in `renderRoadmap`.
+- **UI:** New sidebar nav item "Roadmap" → `navigate('roadmap')` → `renderRoadmap()`. Summary counts, bucket filter chips + status filter, theme-grouped rows; each row has Must/Should/Nice toggle (click active = clear), Idea/Planned/Building/Done status select, and a notes field. Writes go straight to DB + `syncAfterWrite()`. Isolated blast radius — new table + new page + one nav entry; touches no balance/transaction code.
+- **MCQ decisions:** Deliverable = Build into FinApp (not standalone HTML); Source = web-verify first; Page scope = bucketing + progress (not bucketing-only, not +custom-items).
+- **NOT done / follow-up:** No add-your-own / hide-feature in-app (the "+custom" option was not chosen). Buckets/status are the user's to set — none pre-assigned.
+
+---
+
 ## 2026-05-31 — Session 4
 
 ### Decided: Floating pill gets a 3rd (middle) button → New Transaction.
