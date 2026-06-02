@@ -1858,6 +1858,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F20' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F29' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -3060,7 +3062,7 @@ function _renderDashboard(container) {
   ].filter(t => tilePrefs[t.key] !== false);
 
   const isOpen = k => _dashTileOpenKey === k;
-  const tilesHtml = tiles.map(t => `
+  const tilesHtml = _dashOrderTiles(tiles).map(t => `
     <div class="bg-white border-2 ${isOpen(t.key)?'border-blue-400':'border-slate-200'} rounded-lg p-4 min-w-0 cursor-pointer hover:shadow-md transition-shadow select-none"
       onclick="dashTileClick('${t.key}')">
       <div class="text-xs text-slate-500 font-medium truncate mb-1">${t.label}</div>
@@ -7042,9 +7044,20 @@ function _renderSettingsPage(container) {
       'MTD Income','MTD Expenses','MTD Net','YTD Net','Upcoming'
     ];
 
-    const rows = ALL_TILES.map(key => {
+    let order = [];
+    try { const u = query('SELECT preferences FROM User LIMIT 1')[0]; if (u && u.preferences) { const p = typeof u.preferences==='string'?JSON.parse(u.preferences):u.preferences; if (Array.isArray(p.dashboardTileOrder)) order = p.dashboardTileOrder; } } catch(e) {}
+    const orderedTiles = order.length
+      ? ALL_TILES.slice().sort((a,b) => { const ia=order.indexOf(a), ib=order.indexOf(b); return (ia<0?1e9:ia)-(ib<0?1e9:ib); })
+      : ALL_TILES;
+
+    const rows = orderedTiles.map((key, i) => {
       const checked = tilePrefs[key] !== false;
+      const upDis = i === 0, downDis = i === orderedTiles.length - 1;
       return `<tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-3 py-2 text-center whitespace-nowrap">
+          <button onclick="dashMoveTile('${key}','up')" ${upDis?'disabled':''} class="px-1 ${upDis?'text-slate-200':'text-slate-500 hover:text-slate-800'}" title="Move up">▲</button>
+          <button onclick="dashMoveTile('${key}','down')" ${downDis?'disabled':''} class="px-1 ${downDis?'text-slate-200':'text-slate-500 hover:text-slate-800'}" title="Move down">▼</button>
+        </td>
         <td class="px-3 py-2 text-sm text-slate-700">${key}</td>
         <td class="px-3 py-2 text-center">
           <input type="checkbox" ${checked?'checked':''} class="w-4 h-4 accent-slate-700 cursor-pointer"
@@ -7053,11 +7066,12 @@ function _renderSettingsPage(container) {
       </tr>`;
     }).join('');
 
-    return `<div class="space-y-3 max-w-sm">
-      <p class="text-sm text-slate-500">Choose which tiles to show on the Dashboard.</p>
+    return `<div class="space-y-3 max-w-md">
+      <p class="text-sm text-slate-500">Choose which tiles to show on the Dashboard, and reorder them with the arrows.</p>
       <div class="rounded-lg border border-slate-200 overflow-hidden">
         <table class="w-full">
           <thead class="bg-slate-50 border-b border-slate-200"><tr>
+            <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Order</th>
             <th class="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase">Tile</th>
             <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase">Show</th>
           </tr></thead>
@@ -9576,6 +9590,44 @@ function dashToggleTile(key, checked) {
     db.run('UPDATE User SET preferences=? WHERE id=?', [JSON.stringify(prefs), u.id]);
     syncAfterWrite();
   } catch(e) { console.error('dashToggleTile:', e.message); }
+}
+
+// F29 — dashboard tile ordering (persisted in User.preferences.dashboardTileOrder)
+function _dashTileOrderPref() {
+  try {
+    const u = query('SELECT preferences FROM User LIMIT 1')[0];
+    if (u && u.preferences) {
+      const p = typeof u.preferences === 'string' ? JSON.parse(u.preferences) : u.preferences;
+      if (Array.isArray(p.dashboardTileOrder)) return p.dashboardTileOrder;
+    }
+  } catch(e) {}
+  return [];
+}
+function _dashOrderTiles(tiles) {
+  const order = _dashTileOrderPref();
+  if (!order.length) return tiles;
+  const idx = k => { const i = order.indexOf(k); return i < 0 ? 1e9 : i; };
+  return tiles.slice().sort((a, b) => idx(a.key) - idx(b.key));
+}
+function dashMoveTile(key, dir) {
+  try {
+    const u = query('SELECT id, preferences FROM User LIMIT 1')[0];
+    if (!u) return;
+    let prefs = {};
+    try { prefs = typeof u.preferences === 'string' ? JSON.parse(u.preferences) : (u.preferences || {}); } catch(_) {}
+    const ALL = ['Net Worth','Total Assets','Total Liabilities','Liquid Cash','Credit Card','Other Debt','Investments','Mortgage','MTD Income','MTD Expenses','MTD Net','YTD Net','Upcoming'];
+    let order = (Array.isArray(prefs.dashboardTileOrder) && prefs.dashboardTileOrder.length) ? prefs.dashboardTileOrder.slice() : ALL.slice();
+    ALL.forEach(k => { if (!order.includes(k)) order.push(k); });
+    const i = order.indexOf(key);
+    if (i < 0) return;
+    const j = dir === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    prefs.dashboardTileOrder = order;
+    db.run('UPDATE User SET preferences=? WHERE id=?', [JSON.stringify(prefs), u.id]);
+    syncAfterWrite();
+    _renderSettingsPage();
+  } catch(e) { console.error('dashMoveTile:', e.message); }
 }
 
 function backupDownload() {
