@@ -2460,6 +2460,7 @@ function _currentSub(page) {
   if (page === 'review-equity')        return _teTab;
   if (page === 'financial-statements') return _fsTab;
   if (page === 'manual-assets')        return _asTab;
+  if (page === 'roadmap')              return _rmMainTab;
   if (page === 'settings')             return settingsTab;
   return null;
 }
@@ -2471,6 +2472,7 @@ function _switchSub(page, sub) {
   else if (page === 'review-equity')        teSetTab(sub);
   else if (page === 'financial-statements') fsSetTab(sub);
   else if (page === 'manual-assets')        asSetTab(sub);
+  else if (page === 'roadmap')              rmSetMainTab(sub);
   else if (page === 'settings')             settingsGoTab(sub);
 }
 
@@ -15449,8 +15451,33 @@ let _rmBucketFilter = 'all';
 let _rmStatusFilter = 'all';
 const _RM_BUCKET_COLOR = { Must: '#059669', Should: '#d97706', Nice: '#64748b' };
 
+let _rmMainTab = 'roadmap';
+const _RM_TABS = [{ id: 'roadmap', label: 'Roadmap' }, { id: 'validation', label: 'Validation' }];
 function renderRoadmap(container) {
   if (!container) container = document.getElementById('pageContent');
+  if (!db) { container.innerHTML = ''; return; }
+  const wrap = document.createElement('div'); wrap.className = 'flex flex-col h-full';
+  const bar = document.createElement('div'); bar.className = 'flex-shrink-0'; bar.innerHTML = _pageTabBar(_RM_TABS, _rmMainTab, 'rmSetMainTab');
+  const content = document.createElement('div'); content.id = 'rmContent'; content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(bar); wrap.appendChild(content);
+  container.innerHTML = ''; container.appendChild(wrap);
+  _renderRoadmapContent();
+}
+function rmSetMainTab(tab) {
+  _rmMainTab = tab;
+  const c = document.getElementById('rmContent');
+  if (c && c.previousElementSibling) c.previousElementSibling.innerHTML = _pageTabBar(_RM_TABS, _rmMainTab, 'rmSetMainTab');
+  _renderRoadmapContent();
+  _pushNavState('roadmap', tab);
+}
+function _renderRoadmapContent() {
+  const c = document.getElementById('rmContent');
+  if (!c) return;
+  if (_rmMainTab === 'validation') _renderValidationTab(c);
+  else _renderRoadmapTab(c);
+}
+function _renderRoadmapTab(container) {
+  if (!container) container = document.getElementById('rmContent') || document.getElementById('pageContent');
   if (!db) { container.innerHTML = ''; return; }
   try { _seedRoadmap(); } catch(e) {}
   const rows = query('SELECT * FROM RoadmapItem ORDER BY sortOrder');
@@ -15562,6 +15589,149 @@ function rmSetStatus(id, status) {
 function rmSetNotes(id, val) {
   db.run('UPDATE RoadmapItem SET notes=?, updatedAt=? WHERE id=?', [val, new Date().toISOString(), id]);
   syncAfterWrite();
+}
+
+// ── Validation tab (Roadmap → Validation) ────────────────────
+// Manual test script for the Must + Should features. Results persist in
+// AppSettings (key 'validationResults') so progress syncs across devices.
+const _VAL_SECTIONS = [
+  { h: '§0 — Pre-flight', t: [
+    { id: '0', ttl: 'Roadmap shows everything Done', where: 'Roadmap', steps: ['Hard-reload; wait for "Synced to Drive".', 'Open Roadmap; click Must, then Should.'], ex: 'All 5 Must (F2,F3,F5,F7,F26) and 10 Should (F1,F6,F8,F9,F12,F14,F18,F20,F24,F29) show <b>Done</b>. Sidebar has <b>Assets</b> &amp; <b>Documents</b>; Financial Statements has a <b>Cash Flow</b> tab.' },
+  ]},
+  { h: '§A — F2 Manual / alternative assets', t: [
+    { id: 'A1', ttl: 'Add an asset', where: 'Assets → Holdings', steps: ['+ Add asset → Name "TEST House", Class Real estate, value 500000, today.', 'Add asset.'], ex: 'Row appears with Real estate badge, <b>$500,000</b>, "as of today"; total includes it.' },
+    { id: 'A2', ttl: 'Validation guards', where: 'Assets → Holdings', steps: ['Blank name → error.', 'Value 0 → error.', 'Future as-of date → error.'], ex: 'Each guard blocks the save with a message; nothing created.' },
+    { id: 'A3', ttl: 'Update value posts the delta', where: 'Assets → Holdings', steps: ['Update value → 520000 today.', 'History.', 'Update again → 505000.'], ex: 'Value 520k then 505k; History shows opening +500,000, +20,000, −15,000.' },
+    { id: 'A4', ttl: 'Add a second asset', where: 'Assets → Holdings', steps: ['Add "TEST Car", Vehicle, 30000, today.'], ex: 'Two TEST assets listed.' },
+  ]},
+  { h: '§B — Delete + Balance Sheet treatment', t: [
+    { id: 'B1', ttl: 'Balance Sheet treatment', where: 'Assets → Holdings', steps: ['TEST House → Below the line (amber pill).', 'Check Financial Statements → Balance Sheet.', 'Set Excluded (grey pill, value dims).', 'Set back to On balance sheet.'], ex: 'Below-the-line shows in the BS below-line section (not the main total); Excluded hides it from the BS; On balance sheet returns it.' },
+    { id: 'B2', ttl: 'Delete', where: 'Assets → Holdings', steps: ['TEST Car → Delete → confirm.'], ex: 'TEST Car gone; total drops $30,000; others unaffected. Keep TEST House.' },
+  ]},
+  { h: '§C — F3 Asset allocation', t: [
+    { id: 'C1', ttl: 'Donut + classify', where: 'Assets → Allocation', steps: ['View donut + Breakdown.', 'Set a class on an Unclassified account.', 'Set TEST House Excluded, return, then set back.'], ex: 'Balances grouped by class with %; classifying updates the donut live; an Excluded asset drops out of the allocation.' },
+  ]},
+  { h: '§D — F1 Net worth over time', t: [
+    { id: 'D1', ttl: 'Net worth chart + ranges', where: 'Assets → Net worth', steps: ['View stat cards + chart.', 'Toggle 12m/24m/36m/All.'], ex: 'Three lines (Net worth/Assets/Liabilities); "Net worth now" = Assets − Liabilities and matches the Balance Sheet net; "Change over window" = last − first.' },
+  ]},
+  { h: '§E — F5 Projection + F18 Retirement', t: [
+    { id: 'E1', ttl: 'Projection (F5)', where: 'Assets → Projection', steps: ['Set Horizon 10, return 6, contribution.', 'Change return to 8, tab out.'], ex: 'Line + Projected/Contributions/Growth stats recompute; projected &gt; today with positive inputs.' },
+    { id: 'E2', ttl: 'Retirement readiness (F18)', where: 'Assets → Projection', steps: ['Age 40, retire 65, spending.', 'Set spending very high, tab out.'], ex: 'Needed = spend÷0.04; Nest egg at 65 projected; Surplus/Shortfall + Sustainable spend (4%); On track green when nest ≥ needed; flips red Shortfall when spending too high.' },
+  ]},
+  { h: '§F — F7 Sankey + F6 trend + F8 categories', t: [
+    { id: 'F1', ttl: 'Sankey (F7)', where: 'Financial Statements → Cash Flow', steps: ['Set From/To to recent months with activity.', 'Set From/To to an empty period.'], ex: 'Income → total → expense flow; Net savings (blue) or Drawdown (red) node; totals match. Empty period shows a friendly message, no broken chart.' },
+    { id: 'F2', ttl: 'Income vs expense by month (F6)', where: 'Financial Statements → Cash Flow', steps: ['Scroll to the bar chart.'], ex: 'Green Income bars, red Expense bars, blue Net line, one group per month.' },
+    { id: 'F3', ttl: 'Top spending categories over time (F8)', where: 'Financial Statements → Cash Flow', steps: ['Scroll to stacked bars.'], ex: 'Stacked bars per month; up to 6 named categories + "Other (n)".' },
+  ]},
+  { h: '§G — F9 Custom date-range reports', t: [
+    { id: 'G1', ttl: 'Date range filter + persistence', where: 'Reports', steps: ['Add a Measure (Values) + a dimension (Rows).', 'Set Date range From/To narrow.', 'Clear.', 'Save as…, reload, load it.'], ex: 'A "Date between …" chip appears; the table limits to the window; Clear restores the full result; the range persists with the saved report.' },
+  ]},
+  { h: '§H — F24 Bulk edit (edits real data)', t: [
+    { id: 'H1', ttl: 'Bulk re-categorize / delete / clear', where: 'Transactions', steps: ['Tick 2–3 rows (or header select-all).', 'Set Debit account + target → Apply → confirm (set back to undo).', '(Optional) Delete a disposable row → confirm.', 'Clear with rows selected.'], ex: 'Dark bulk bar appears; Apply changes the DR account on selected rows and clears the selection; Delete removes rows; Clear empties the selection.' },
+  ]},
+  { h: '§I — F20 Performance vs benchmark', t: [
+    { id: 'I1', ttl: 'Return vs benchmark + persistence', where: 'Equity (US Equity summary)', steps: ['Enter benchmark name (e.g. S&P 500) + return % (e.g. 12).', 'Reload, return to Equity.'], ex: 'Portfolio simple return (unrealised ÷ cost) vs benchmark %, with over/under-performance in pp; the name + % persist. Zeros if no open lots — expected.' },
+  ]},
+  { h: '§J — F29 Customizable dashboard', t: [
+    { id: 'J1', ttl: 'Reorder + hide tiles', where: 'Settings → Dashboard Tiles, then Dashboard', steps: ['Use ▲/▼ to move a tile; toggle one off.', 'Open Dashboard.', 'Reload, revisit.'], ex: 'Tiles appear in the new order; the toggled-off tile is hidden; order + visibility persist (synced).' },
+  ]},
+  { h: '§K — F12 Rollover + F14 Move budget', t: [
+    { id: 'K0', ttl: 'Actual vs Budget view', where: 'Budget → Actual vs Budget', steps: ['Switch the Budget view to Actual vs Budget; pick a month.'], ex: 'Per category: Budget, Actual, Remaining, Rollover-in, Available.' },
+    { id: 'K1', ttl: 'Rollover (F12)', where: 'Budget → Actual vs Budget', steps: ['Find a category under-spent in a prior month with activity this month.'], ex: 'Positive Rollover-in; Available exceeds this month’s Remaining; prior overspend carries a negative rollover.' },
+    { id: 'K2', ttl: 'Move budget (F14)', where: 'Budget → Actual vs Budget', steps: ['Move budget (e.g. 200) from a spare category to an over one.'], ex: 'Source Budget −200, destination +200; Remaining/Available recompute; an overspent destination can become covered.' },
+  ]},
+  { h: '§L — Draggable pill', t: [
+    { id: 'L1', ttl: 'Drag, buttons, persistence', where: 'Floating pill', steps: ['Drag the dotted grip elsewhere.', 'Tap mic / file / grid buttons.', 'Reload.'], ex: 'Pill moves and stays on-screen; buttons still trigger Dictate/New/Reports; position remembered (per device).' },
+  ]},
+  { h: '§M — Cross-feature integrity', t: [
+    { id: 'M1', ttl: 'Manual asset flows everywhere', where: 'Multiple pages', steps: ['TEST House = On balance sheet; note value.', 'Check Balance Sheet, Assets→Net worth, Assets→Allocation, Assets→Projection, Dashboard net-worth tile.'], ex: 'The same asset is reflected consistently on every surface — no screen ignores it.' },
+  ]},
+  { h: '§Z — Cleanup', t: [
+    { id: 'Z1', ttl: 'Remove test data', where: 'Multiple', steps: ['Delete TEST House; delete any TEST documents.', 'Reset any open test report.', 'Revert §H re-categorizations.'], ex: 'No TEST data remains; balances normal.' },
+  ]},
+];
+const _VAL_LIMITS = [
+  'Past-dated asset revaluations correct only the current total, not historical running balances.',
+  'F5/F18 pre-filled contribution/spending count setup-only months in the average — editable starting point.',
+  'F20 is a since-inception return vs a benchmark % you enter (no market-data time series). Benchmark + pill position are per-device.',
+  'F24 bulk re-categorize doesn’t block setting dr == cr (power-user action).',
+  'F12 rollover is computed (cumulative budget − actual), not a stored envelope balance.',
+  "The 'Pending' dashboard tile isn’t in the reorder list, so it sorts to the end.",
+];
+const _VAL_COLORS = { pass: '#059669', fail: '#dc2626', skip: '#94a3b8' };
+function _valLoad() { try { const r = query("SELECT value FROM AppSettings WHERE key='validationResults'")[0]; return r && r.value ? JSON.parse(r.value) : {}; } catch(e) { return {}; } }
+function _valSave(obj) {
+  try {
+    db.run("INSERT INTO AppSettings (key,value,updatedAt) VALUES ('validationResults',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updatedAt=excluded.updatedAt", [JSON.stringify(obj), new Date().toISOString()]);
+    syncAfterWrite();
+  } catch(e) { console.warn('valSave:', e.message); }
+}
+function valSetStatus(id, st) { const r = _valLoad(); const c = r[id] || {}; c.status = c.status === st ? '' : st; r[id] = c; _valSave(r); _renderValidationTab(document.getElementById('rmContent')); }
+function valSetNote(id, v) { const r = _valLoad(); const c = r[id] || {}; c.note = v; r[id] = c; _valSave(r); }
+function valReset() { if (confirm('Clear all validation results?')) { _valSave({}); _renderValidationTab(document.getElementById('rmContent')); } }
+function valCopy() {
+  const r = _valLoad(); let out = 'FinApp validation results\n';
+  _VAL_SECTIONS.forEach(s => { out += '\n' + s.h + '\n'; s.t.forEach(t => { const x = r[t.id] || {}; out += '  [' + (x.status ? x.status.toUpperCase() : '—') + '] ' + t.id + ' ' + t.ttl + (x.note ? '  — ' + x.note : '') + '\n'; }); });
+  if (navigator.clipboard) navigator.clipboard.writeText(out).then(() => showToast && showToast('Results copied'), () => prompt('Copy:', out));
+  else prompt('Copy:', out);
+}
+function _renderValidationTab(container) {
+  if (!container) container = document.getElementById('rmContent');
+  if (!container) return;
+  const res = _valLoad();
+  const all = []; _VAL_SECTIONS.forEach(s => s.t.forEach(t => all.push(t.id)));
+  let p = 0, f = 0, k = 0;
+  all.forEach(id => { const st = (res[id] || {}).status; if (st === 'pass') p++; else if (st === 'fail') f++; else if (st === 'skip') k++; });
+  const done = p + f + k, tot = all.length, pct = tot ? Math.round(done / tot * 100) : 0;
+
+  const sbtn = (tid, st, label, stcur) =>
+    `<button onclick="valSetStatus('${tid}','${st}')" style="border:1px solid ${stcur === st ? _VAL_COLORS[st] : '#cbd5e1'};background:${stcur === st ? _VAL_COLORS[st] : '#fff'};color:${stcur === st ? '#fff' : '#475569'};border-radius:0.375rem;padding:0.2rem 0.6rem;font-size:0.74rem;cursor:pointer;">${label}</button>`;
+
+  const testHtml = (t) => {
+    const st = (res[t.id] || {}).status || '';
+    const note = (res[t.id] || {}).note || '';
+    const edge = st ? _VAL_COLORS[st] : '#e2e8f0';
+    return `<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid ${edge};border-radius:0.5rem;padding:0.6rem 0.85rem;margin-bottom:0.5rem;">
+      <div style="font-size:0.62rem;font-weight:700;color:#94a3b8;">${escHtml(t.id)}</div>
+      <div style="font-size:0.9rem;font-weight:600;color:#0f172a;">${escHtml(t.ttl)}</div>
+      <div style="font-size:0.72rem;color:#2563eb;margin:0.1rem 0 0.35rem;">${escHtml(t.where)}</div>
+      <ol style="margin:0.2rem 0 0.4rem 1.1rem;padding:0;">${t.steps.map(s => `<li style="font-size:0.8rem;margin:0.1rem 0;">${escHtml(s)}</li>`).join('')}</ol>
+      <div style="font-size:0.79rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.375rem;padding:0.4rem 0.55rem;color:#334155;"><b>Expect:</b> ${t.ex}</div>
+      <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;margin-top:0.5rem;">
+        ${sbtn(t.id, 'pass', 'Pass', st)}${sbtn(t.id, 'fail', 'Fail', st)}${sbtn(t.id, 'skip', 'Skip', st)}
+        <input placeholder="notes…" value="${escHtml(note)}" onchange="valSetNote('${t.id}',this.value)" style="flex:1;min-width:10rem;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.22rem 0.45rem;font-size:0.74rem;">
+      </div>
+    </div>`;
+  };
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.6rem;padding:0.75rem;">
+      <div>
+        <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Validation</h2>
+        <p style="font-size:0.75rem;color:#64748b;margin:0.1rem 0 0;">Manual tests for the shipped features. Hard-reload the app first. Progress saves to your synced database.</p>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.85rem;">
+        <div style="height:8px;background:#e2e8f0;border-radius:9999px;overflow:hidden;"><div style="height:100%;background:#059669;width:${pct}%;transition:width .25s;"></div></div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;font-size:0.74rem;color:#64748b;margin-top:0.5rem;">
+          <span><span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;background:#059669;margin-right:0.3rem;"></span><strong style="color:#0f172a;">${p}</strong> pass</span>
+          <span><span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;background:#dc2626;margin-right:0.3rem;"></span><strong style="color:#0f172a;">${f}</strong> fail</span>
+          <span><span style="display:inline-block;width:0.6rem;height:0.6rem;border-radius:50%;background:#94a3b8;margin-right:0.3rem;"></span><strong style="color:#0f172a;">${k}</strong> skip</span>
+          <span><strong style="color:#0f172a;">${done}</strong> / ${tot} done</span>
+          <span style="display:flex;gap:0.35rem;margin-left:auto;">
+            <button onclick="valCopy()" style="border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:0.375rem;padding:0.2rem 0.55rem;font-size:0.72rem;cursor:pointer;">Copy results</button>
+            <button onclick="valReset()" style="border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:0.375rem;padding:0.2rem 0.55rem;font-size:0.72rem;cursor:pointer;">Reset all</button>
+          </span>
+        </div>
+      </div>
+      ${_VAL_SECTIONS.map(s => `<div style="margin-top:0.5rem;">
+        <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;">${escHtml(s.h)}</div>
+        ${s.t.map(testHtml).join('')}
+      </div>`).join('')}
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:0.5rem;padding:0.6rem 0.85rem;font-size:0.78rem;color:#92400e;margin-top:0.5rem;">
+        <strong>Known limitations (not bugs)</strong>
+        <ul style="margin:0.3rem 0 0 1.1rem;padding:0;">${_VAL_LIMITS.map(l => `<li style="margin:0.15rem 0;">${escHtml(l)}</li>`).join('')}</ul>
+      </div>
+    </div>`;
 }
 
 function renderPlaceholder(container, page) {

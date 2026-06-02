@@ -70,6 +70,10 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Why:** Anchored at a fixed spot (bottom, left:15rem) it sometimes obstructed background text.
 - **Implementation:** Added a grip handle (`#pillHandle`, 6 dots) as the pill's left segment. `_pillInitDrag()` (called once at mount) wires pointer events on the handle only — so the 3 buttons stay click-only, no click/drag ambiguity. Drag sets left/top (clears bottom/right), clamps into the viewport, and persists `{left,top}` to `localStorage.pillPos`; restored (re-clamped) on load. Verified wiring + visual; note the preview eval reports 0×0 viewport so the clamp pins to a corner there (harness artifact, fine in a real window).
 
+### Decided: Validation tracker moved into the app as a Roadmap sub-tab.
+- **Why:** User wanted it in-app rather than a standalone /TESTING.html.
+- **Implementation:** Roadmap is now a composite (`_pageTabBar`, `_rmMainTab`, `rmSetMainTab`, `_renderRoadmapContent`) with tabs **Roadmap** (existing bucketing, body renamed `_renderRoadmapTab`) and **Validation** (`_renderValidationTab`). 24 tests (`_VAL_SECTIONS`) with Pass/Fail/Skip + notes + progress bar + Copy results/Reset. Results persist in **AppSettings key 'validationResults'** (JSON) via `_valLoad`/`_valSave` → synced across devices (unlike the standalone localStorage version). Added roadmap to `_currentSub`/`_switchSub` for back-gesture. Standalone TESTING.html now redundant (TESTING.md kept as markdown reference).
+
 - **STATUS: ALL 10 SHOULD-HAVES SHIPPED.** F1 (2eaa6e0), F6 (41fed60), F8 (7eac4f5), F18 (4bde483), F9 (d88e52e), F24 (53e9624), F20 (7843d7a), F29 (7af1c45), F12+F14 (this deploy). Remaining backlog: 17 Nice-to-haves, unstarted.
 
 ---
