@@ -1822,6 +1822,9 @@ function startApp() {
       enhances INTEGER DEFAULT 0, bucket TEXT DEFAULT '', status TEXT DEFAULT 'Idea',
       sortOrder INTEGER, notes TEXT DEFAULT '', updatedAt TEXT)`);
     _seedRoadmap();
+    // Shipped-feature status marks (one-time; fire only while not already Done).
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F7' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
   } catch(e) { console.warn('RoadmapItem init:', e.message); }
 
   // Ensure ScratchPad table exists
@@ -2414,6 +2417,7 @@ function _renderFSPage(container) {
   wrap.className = 'flex flex-col h-full';
   const tabs = [
     { id: 'pl',           label: 'P&L' },
+    { id: 'cash-flow',    label: 'Cash Flow' },
     { id: 'balance-sheet',label: 'Balance Sheet' },
     { id: 'projected-bs', label: 'Projected Balance Sheet' },
   ];
@@ -2433,6 +2437,7 @@ function _renderFSContent() {
   const c = document.getElementById('fsContent');
   if (!c) return;
   if      (_fsTab === 'pl')           renderPL(c);
+  else if (_fsTab === 'cash-flow')     renderCashFlowSankey(c);
   else if (_fsTab === 'balance-sheet') renderBS(c);
   else if (_fsTab === 'projected-bs')  renderProjectedBS(c);
 }
@@ -2441,6 +2446,7 @@ function fsSetTab(tab) {
   localStorage.setItem('_fsTab', tab);
   const tabs = [
     { id: 'pl', label: 'P&L' },
+    { id: 'cash-flow', label: 'Cash Flow' },
     { id: 'balance-sheet', label: 'Balance Sheet' },
     { id: 'projected-bs', label: 'Projected Balance Sheet' },
   ];
@@ -4393,6 +4399,159 @@ let plTo       = '';
 let plPeriod   = '';  // active single period for projected-close edits (= plFrom when plFrom===plTo)
 let plEditMode = false;
 let plLayouts  = { income: [], expense: [] };
+
+// ════════════════════════════════════════════════════════════
+// CASH FLOW — Sankey diagram (income sources → hub → expense uses)
+// ════════════════════════════════════════════════════════════
+// Hand-rolled SVG (no charting dependency, keeps the single-file /
+// offline-PWA nature intact). Reads income (CR-DR) and expense (DR-CR)
+// per account over a period range — same data path as P&L.
+let cfFrom = '', cfTo = '';
+const _CF_INC_COLORS = ['#059669','#0d9488','#15803d','#16a34a','#65a30d','#0e7490'];
+const _CF_EXP_COLORS = ['#dc2626','#ea580c','#d97706','#ca8a04','#9333ea','#c026d3','#db2777','#e11d48','#0891b2','#2563eb','#7c3aed','#b45309','#be123c','#475569'];
+
+function _cfPrep(list, cap) {
+  list = list.filter(n => n.amount > 0.005).sort((a, b) => b.amount - a.amount);
+  if (list.length > cap) {
+    const head = list.slice(0, cap - 1);
+    const rest = list.slice(cap - 1);
+    head.push({ name: 'Other (' + rest.length + ')', amount: rest.reduce((s, n) => s + n.amount, 0) });
+    return head;
+  }
+  return list;
+}
+
+function _cfTrunc(s) { s = String(s); return s.length > 22 ? s.slice(0, 21) + '…' : s; }
+
+function _cfSankeySVG(income, expense) {
+  const inc = _cfPrep(income, 12);
+  const exp = _cfPrep(expense, 14);
+  const totalIncome = inc.reduce((s, n) => s + n.amount, 0);
+  const totalExpense = exp.reduce((s, n) => s + n.amount, 0);
+  if (totalIncome <= 0 && totalExpense <= 0) return null;
+
+  const surplus = totalIncome - totalExpense;
+  const leftNodes = inc.map((n, i) => ({ ...n, color: _CF_INC_COLORS[i % _CF_INC_COLORS.length] }));
+  const rightNodes = exp.map((n, i) => ({ ...n, color: _CF_EXP_COLORS[i % _CF_EXP_COLORS.length] }));
+  if (surplus > 0.005) rightNodes.push({ name: 'Net savings', amount: surplus, color: '#2563eb' });
+  else if (surplus < -0.005) leftNodes.push({ name: 'Drawdown', amount: -surplus, color: '#dc2626' });
+
+  const leftSum = leftNodes.reduce((s, n) => s + n.amount, 0);
+  const rightSum = rightNodes.reduce((s, n) => s + n.amount, 0);
+  const maxTotal = Math.max(leftSum, rightSum) || 1;
+
+  const W = 940, pad = 28, nodeW = 14, gap = 8;
+  const leftX = 190, rightX = W - 190 - nodeW, hubX = W / 2 - nodeW / 2;
+  const H = Math.min(760, Math.max(420, Math.max(leftNodes.length, rightNodes.length) * 36 + 2 * pad));
+  const unitL = (H - 2 * pad - (leftNodes.length - 1) * gap) / maxTotal;
+  const unitR = (H - 2 * pad - (rightNodes.length - 1) * gap) / maxTotal;
+  const unit = Math.max(0.0001, Math.min(unitL, unitR));
+
+  const leftColH = leftSum * unit + (leftNodes.length - 1) * gap;
+  const rightColH = rightSum * unit + (rightNodes.length - 1) * gap;
+  const hubH = maxTotal * unit;
+  let yL = (H - leftColH) / 2, yR = (H - rightColH) / 2;
+  const hubY = (H - hubH) / 2;
+  leftNodes.forEach(n => { n.y = yL; n.h = n.amount * unit; yL += n.h + gap; });
+  rightNodes.forEach(n => { n.y = yR; n.h = n.amount * unit; yR += n.h + gap; });
+
+  const ribbon = (x1, yt1, yb1, x2, yt2, yb2, color) => {
+    const xc = (x1 + x2) / 2;
+    return '<path d="M' + x1 + ' ' + yt1 + ' C' + xc + ' ' + yt1 + ',' + xc + ' ' + yt2 + ',' + x2 + ' ' + yt2 +
+      ' L' + x2 + ' ' + yb2 + ' C' + xc + ' ' + yb2 + ',' + xc + ' ' + yb1 + ',' + x1 + ' ' + yb1 +
+      ' Z" fill="' + color + '" fill-opacity="0.30"/>';
+  };
+
+  let ribbons = '', cursorL = hubY, cursorR = hubY;
+  leftNodes.forEach(n => {
+    ribbons += ribbon(leftX + nodeW, n.y, n.y + n.h, hubX, cursorL, cursorL + n.h, n.color);
+    cursorL += n.h;
+  });
+  rightNodes.forEach(n => {
+    ribbons += ribbon(hubX + nodeW, cursorR, cursorR + n.h, rightX, n.y, n.y + n.h, n.color);
+    cursorR += n.h;
+  });
+
+  let rects = '', labels = '';
+  const nodeRect = (x, n) => '<rect x="' + x + '" y="' + n.y + '" width="' + nodeW + '" height="' + Math.max(1, n.h) + '" rx="2" fill="' + n.color + '"/>';
+  leftNodes.forEach(n => {
+    rects += nodeRect(leftX, n);
+    labels += '<text x="' + (leftX - 10) + '" y="' + (n.y + n.h / 2 + 4) + '" text-anchor="end" font-size="11.5" fill="#334155">' +
+      escHtml(_cfTrunc(n.name)) + ' <tspan fill="#94a3b8">' + escHtml(fmtCurrency(n.amount, 0)) + '</tspan></text>';
+  });
+  rightNodes.forEach(n => {
+    rects += nodeRect(rightX, n);
+    labels += '<text x="' + (rightX + nodeW + 10) + '" y="' + (n.y + n.h / 2 + 4) + '" text-anchor="start" font-size="11.5" fill="#334155">' +
+      escHtml(_cfTrunc(n.name)) + ' <tspan fill="#94a3b8">' + escHtml(fmtCurrency(n.amount, 0)) + '</tspan></text>';
+  });
+  rects += '<rect x="' + hubX + '" y="' + hubY + '" width="' + nodeW + '" height="' + Math.max(1, hubH) + '" rx="2" fill="#0f172a"/>';
+  labels += '<text x="' + (W / 2) + '" y="' + (hubY - 9) + '" text-anchor="middle" font-size="12" font-weight="600" fill="#0f172a">' +
+    escHtml(fmtCurrency(maxTotal, 0)) + '</text>';
+
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;min-width:640px;font-family:inherit;">' +
+    ribbons + rects + labels + '</svg>';
+}
+
+function renderCashFlowSankey(container) {
+  if (!container) container = document.getElementById('fsContent') || _getActiveContent();
+  const periods = query(`SELECT period FROM (SELECT period FROM Period UNION SELECT DISTINCT period FROM "Transaction") ORDER BY period DESC`).map(r => r.period);
+  if (!periods.length) {
+    container.innerHTML = `<div class="flex items-center justify-center" style="height:50vh"><p class="text-slate-400 text-sm">No periods found. Open a year in Settings &rarr; Periods first.</p></div>`;
+    return;
+  }
+  const cp = currentPeriod();
+  const def = periods.includes(cp) ? cp : periods[0];
+  if (!cfFrom || !periods.includes(cfFrom)) cfFrom = def;
+  if (!cfTo || !periods.includes(cfTo)) cfTo = def;
+  if (cfFrom > cfTo) { const t = cfFrom; cfFrom = cfTo; cfTo = t; }
+
+  const incAccts = query(`SELECT id,name FROM Account WHERE type='INCOME'  AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL'))`);
+  const expAccts = query(`SELECT id,name FROM Account WHERE type='EXPENSE' AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL'))`);
+  const drMap = {}, crMap = {};
+  query(`SELECT drAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period BETWEEN '${cfFrom}' AND '${cfTo}' GROUP BY drAccountId`).forEach(r => { drMap[r.aid] = +r.tot || 0; });
+  query(`SELECT crAccountId AS aid,SUM(amount) AS tot FROM "Transaction" WHERE period BETWEEN '${cfFrom}' AND '${cfTo}' GROUP BY crAccountId`).forEach(r => { crMap[r.aid] = +r.tot || 0; });
+  const income = incAccts.map(a => ({ name: a.name, amount: (crMap[a.id] || 0) - (drMap[a.id] || 0) }));
+  const expense = expAccts.map(a => ({ name: a.name, amount: (drMap[a.id] || 0) - (crMap[a.id] || 0) }));
+  const totalIncome = income.reduce((s, n) => s + Math.max(0, n.amount), 0);
+  const totalExpense = expense.reduce((s, n) => s + Math.max(0, n.amount), 0);
+  const net = totalIncome - totalExpense;
+
+  const fromOpts = periods.map(p => `<option value="${p}"${p === cfFrom ? ' selected' : ''}>${periodLabel(p)}</option>`).join('');
+  const toOpts = periods.map(p => `<option value="${p}"${p === cfTo ? ' selected' : ''}>${periodLabel(p)}</option>`).join('');
+  const rangeLabel = cfFrom === cfTo ? periodLabel(cfFrom) : `${periodLabel(cfFrom)} – ${periodLabel(cfTo)}`;
+  const svg = _cfSankeySVG(income, expense);
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;padding:0.25rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+        <div>
+          <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Cash Flow</h2>
+          <p style="font-size:0.75rem;color:#64748b;margin:0.1rem 0 0;">Where income flows — ${escHtml(rangeLabel)}</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.375rem;flex-wrap:wrap;">
+          <span style="font-size:0.72rem;color:#64748b;">From</span>
+          <select id="cfFrom" onchange="cfSetRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;background:#fff;">${fromOpts}</select>
+          <span style="font-size:0.72rem;color:#64748b;">To</span>
+          <select id="cfTo" onchange="cfSetRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;background:#fff;">${toOpts}</select>
+        </div>
+      </div>
+      <div style="display:flex;gap:1.25rem;flex-wrap:wrap;font-size:0.8rem;">
+        <span style="color:#64748b;">Income <strong style="color:#059669;">${escHtml(fmtCurrency(totalIncome, 0))}</strong></span>
+        <span style="color:#64748b;">Expenses <strong style="color:#dc2626;">${escHtml(fmtCurrency(totalExpense, 0))}</strong></span>
+        <span style="color:#64748b;">Net <strong style="color:${net >= 0 ? '#2563eb' : '#dc2626'};">${escHtml(fmtCurrency(net, 0))}</strong></span>
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem;overflow-x:auto;">
+        ${svg || `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:3rem 1rem;">No income or expense recorded in ${escHtml(rangeLabel)}.</div>`}
+      </div>
+    </div>`;
+}
+
+function cfSetRange() {
+  const f = document.getElementById('cfFrom'), t = document.getElementById('cfTo');
+  if (f) cfFrom = f.value;
+  if (t) cfTo = t.value;
+  renderCashFlowSankey();
+}
 
 function renderPL(container) {
   // plEditMode intentionally preserved across navigation so sub-tab switches
