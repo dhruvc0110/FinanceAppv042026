@@ -4487,7 +4487,7 @@ function _maCurrentValue(acctId) {
 }
 
 function _maAssets() {
-  const accts = query("SELECT id,code,name,assetClass FROM Account WHERE isManualAsset=1 AND isActive=1 ORDER BY name");
+  const accts = query("SELECT id,code,name,assetClass,role FROM Account WHERE isManualAsset=1 AND isActive=1 ORDER BY name");
   return accts.map(a => {
     const lastDate = queryVal('SELECT MAX(trxDate) FROM "Transaction" WHERE drAccountId=? OR crAccountId=?', [a.id, a.id]);
     return { ...a, value: _maCurrentValue(a.id), lastDate: lastDate || '' };
@@ -4537,18 +4537,30 @@ function _renderHoldingsTab(container) {
 
   const rows = assets.length ? assets.map(a => {
     const c = _ASSET_CLASS_COLOR[a.assetClass] || '#64748b';
+    const statePill = a.role === 'BELOW_THE_LINE'
+      ? `<span style="font-size:0.6rem;color:#92400e;background:#fef3c7;padding:0.05rem 0.35rem;border-radius:0.25rem;">below the line</span>`
+      : a.role === 'EXCLUDED'
+        ? `<span style="font-size:0.6rem;color:#475569;background:#e2e8f0;padding:0.05rem 0.35rem;border-radius:0.25rem;">excluded</span>`
+        : '';
     return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.65rem 0.85rem;display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
       <div style="min-width:12rem;">
-        <div style="display:flex;align-items:center;gap:0.45rem;">
+        <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
           <span style="font-size:0.9rem;font-weight:600;color:#0f172a;">${escHtml(a.name)}</span>
           <span style="font-size:0.62rem;color:#fff;background:${c};padding:0.08rem 0.4rem;border-radius:0.25rem;">${escHtml(a.assetClass || 'Other')}</span>
+          ${statePill}
         </div>
         <div style="font-size:0.68rem;color:#94a3b8;margin-top:0.1rem;">${a.lastDate ? 'as of ' + escHtml(a.lastDate) : 'no valuation yet'}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:0.85rem;">
-        <span style="font-size:0.95rem;font-weight:600;color:#0f172a;">${escHtml(fmtCurrency(a.value, 0))}</span>
+      <div style="display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap;justify-content:flex-end;">
+        <span style="font-size:0.95rem;font-weight:600;color:${a.role === 'EXCLUDED' ? '#94a3b8' : '#0f172a'};">${escHtml(fmtCurrency(a.value, 0))}</span>
+        <select onchange="maSetBsRole('${a.id}',this.value)" title="Balance Sheet treatment" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.22rem 0.35rem;font-size:0.7rem;background:#fff;color:#475569;cursor:pointer;">
+          <option value=""${!a.role ? ' selected' : ''}>On balance sheet</option>
+          <option value="BELOW_THE_LINE"${a.role === 'BELOW_THE_LINE' ? ' selected' : ''}>Below the line</option>
+          <option value="EXCLUDED"${a.role === 'EXCLUDED' ? ' selected' : ''}>Excluded</option>
+        </select>
         <button onclick="maShowUpdate('${a.id}')" style="background:#0f172a;color:#fff;border:none;border-radius:0.375rem;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;">Update value</button>
         <button onclick="maShowHistory('${a.id}')" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;">History</button>
+        <button onclick="maDelete('${a.id}')" title="Delete asset" style="background:#fff;border:1px solid #fecaca;color:#b91c1c;border-radius:0.375rem;padding:0.25rem 0.5rem;font-size:0.72rem;cursor:pointer;">Delete</button>
       </div>
     </div>`;
   }).join('') : `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:2.5rem 1rem;">No manual assets yet. Add a property, vehicle, crypto holding, or collectible to include it in your net worth.</div>`;
@@ -4605,6 +4617,27 @@ function _maErr(msg) { const e = document.getElementById('maErr'); if (e) { e.te
 function maShowAdd() { maView = 'add'; maEditId = null; _asTab = 'holdings'; renderManualAssets(); }
 function maShowUpdate(id) { maView = 'update'; maEditId = id; _asTab = 'holdings'; renderManualAssets(); }
 function maCancel() { maView = 'list'; maEditId = null; _asTab = 'holdings'; renderManualAssets(); }
+
+function maSetBsRole(id, val) {
+  // '' → Include (role NULL), 'BELOW_THE_LINE', 'EXCLUDED' — all permitted by the
+  // Account.role CHECK and already handled by renderBS / buildBalanceMap.
+  db.run('UPDATE Account SET role=?, updatedAt=? WHERE id=?', [val || null, new Date().toISOString(), id]);
+  syncAfterWrite();
+  renderManualAssets();
+}
+
+function maDelete(id) {
+  const name = queryVal('SELECT name FROM Account WHERE id=?', [id]) || 'this asset';
+  if (!confirm('Delete "' + name + '"? This removes the asset and its entire valuation history from your books. Your other accounts are unaffected.')) return;
+  try {
+    db.run('BEGIN');
+    db.run('DELETE FROM "Transaction" WHERE drAccountId=? OR crAccountId=?', [id, id]);
+    db.run('DELETE FROM Account WHERE id=?', [id]);
+    db.run('COMMIT');
+    syncAfterWrite();
+    maCancel();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Error deleting: ' + e.message); }
+}
 
 function maSaveAsset() {
   const name = (document.getElementById('maName').value || '').trim();
