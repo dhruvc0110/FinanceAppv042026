@@ -2128,6 +2128,7 @@ function startApp() {
     const _pillWrap = document.createElement('div');
     _pillWrap.innerHTML = _floatingPillHtml();
     document.body.appendChild(_pillWrap.firstElementChild);
+    _pillInitDrag();
   }
   _historyReady = true;
   // PWA shortcut deep-link: ?startPage=...&sub=... lets long-press
@@ -2270,6 +2271,9 @@ function _dtCtxFromPage() {
 }
 function _floatingPillHtml() {
   return `<div id="floatingPill" style="position:fixed;bottom:1.5rem;left:15rem;z-index:200;display:flex;border-radius:9999px;box-shadow:0 4px 12px rgba(0,0,0,0.25);overflow:hidden;border:1px solid rgba(0,0,0,0.1);">
+    <div id="pillHandle" title="Drag to move" style="width:1.4rem;background:#1e293b;color:rgba(255,255,255,0.6);display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none;user-select:none;">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor"><circle cx="4" cy="4" r="1.2"/><circle cx="8" cy="4" r="1.2"/><circle cx="4" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="4" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>
+    </div>
     <button onclick="dtOpenFloatingModal(_dtCtxFromPage())" title="Dictate a transaction"
       style="width:3rem;height:3rem;background:#dc2626;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">
@@ -2303,6 +2307,55 @@ function _floatingPillHtml() {
       </svg>
     </button>
   </div>`;
+}
+
+// Make the floating pill draggable via its grip handle, persisting position to
+// localStorage. Buttons stay click-only (drag only initiates from the handle),
+// so there's no click/drag ambiguity.
+function _pillInitDrag() {
+  const pill = document.getElementById('floatingPill');
+  const handle = document.getElementById('pillHandle');
+  if (!pill || !handle) return;
+  const clamp = (l, t) => {
+    const w = pill.offsetWidth, h = pill.offsetHeight;
+    return [
+      Math.max(4, Math.min(window.innerWidth - w - 4, l)),
+      Math.max(4, Math.min(window.innerHeight - h - 4, t))
+    ];
+  };
+  // Apply saved position (clamped into the current viewport).
+  try {
+    const s = JSON.parse(localStorage.getItem('pillPos') || 'null');
+    if (s && typeof s.left === 'number' && typeof s.top === 'number') {
+      const [l, t] = clamp(s.left, s.top);
+      pill.style.left = l + 'px'; pill.style.top = t + 'px';
+      pill.style.bottom = 'auto'; pill.style.right = 'auto';
+    }
+  } catch(e) {}
+  let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const r = pill.getBoundingClientRect();
+    sl = r.left; st = r.top; sx = e.clientX; sy = e.clientY; dragging = true;
+    pill.style.left = sl + 'px'; pill.style.top = st + 'px';
+    pill.style.bottom = 'auto'; pill.style.right = 'auto';
+    handle.style.cursor = 'grabbing';
+    try { handle.setPointerCapture(e.pointerId); } catch(_) {}
+  });
+  handle.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const [l, t] = clamp(sl + (e.clientX - sx), st + (e.clientY - sy));
+    pill.style.left = l + 'px'; pill.style.top = t + 'px';
+  });
+  const end = e => {
+    if (!dragging) return;
+    dragging = false; handle.style.cursor = 'grab';
+    try { handle.releasePointerCapture(e.pointerId); } catch(_) {}
+    const r = pill.getBoundingClientRect();
+    try { localStorage.setItem('pillPos', JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) })); } catch(_) {}
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
 }
 
 // Pill middle button: jump to the Transactions sub-tab (where the New
