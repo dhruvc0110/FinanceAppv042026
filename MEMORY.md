@@ -44,6 +44,10 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - Third Assets tab **Projection**. Compound-growth model: net worth today (Σ ASSET balances − Σ LIABILITY balances via buildBalanceMap) projected forward with monthly compounding. Inputs: horizon (yrs), expected annual return %, monthly net contribution — contribution pre-filled from trailing-12-month avg monthly net (income−expense), editable. Chart.js line + summary stats (projected, total contributions, growth). `fpSet` re-renders on change (onchange, not oninput, to keep input focus).
 - **Limitation/note:** trailing-avg denominator counts all DISTINCT recent periods incl. setup-only months, so it can understate the suggested contribution — it's an editable starting point. Does not auto-pull individual scheduled/future transactions (uses the avg instead). Not Monte Carlo (deliberate — simple & controllable).
 
+### Built: F26 Document vault (verified, deploying). → ALL 5 MUST-HAVES SHIPPED.
+- **Storage model (user MCQ): links/references, NOT embedded files** — because whole-DB-file Drive sync would re-upload every embedded file on each save. New `Document` table (id,title,url,category,accountId,docDate,notes,...). New "Documents" sidebar page. Add/Edit/Delete; category (Statement/Insurance/Deed/Tax/Other); optional link to any account/asset; URL auto-normalized (prepends https://); "no link" state; Open opens in new tab. Delete removes only the catalog entry.
+- **Status:** Must-haves complete — F7 (36331b2), F2 (8f81a0c), F3 (9aad354), F5 (f967cb7), F26 (this deploy). All carry one-time `status='Done'` marks → Roadmap auto-updates on load. Remaining: 10 Should + 17 Nice, unstarted.
+
 ---
 
 ## 2026-05-31 — Session 4

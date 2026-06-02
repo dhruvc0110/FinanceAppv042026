@@ -299,6 +299,11 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Assets</span>
       </button>
 
+      <button onclick="navigate('documents')" data-page="documents" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <span class="nav-label">Documents</span>
+      </button>
+
       <!-- ── TRANSACT ── -->
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
 
@@ -1014,6 +1019,9 @@ function _initCoreSchema() {
       id TEXT PRIMARY KEY, theme TEXT, title TEXT, detail TEXT, apps TEXT,
       enhances INTEGER DEFAULT 0, bucket TEXT DEFAULT '', status TEXT DEFAULT 'Idea',
       sortOrder INTEGER, notes TEXT DEFAULT '', updatedAt TEXT)`,
+    `CREATE TABLE IF NOT EXISTS Document (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
+      accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`,
     `CREATE TABLE IF NOT EXISTS ScratchPad (
       id TEXT PRIMARY KEY, title TEXT NOT NULL,
       data TEXT NOT NULL DEFAULT '[]',
@@ -1836,6 +1844,11 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F5' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run(`CREATE TABLE IF NOT EXISTS Document (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
+      accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F26' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
   } catch(e) { console.warn('RoadmapItem init:', e.message); }
 
   // Ensure ScratchPad table exists
@@ -2316,6 +2329,7 @@ function navigate(page) {
   else if (page === 'account-tracker')      renderAccountTracker(container);
   else if (page === 'review-equity')        renderReviewEquity(container);
   else if (page === 'manual-assets')        renderManualAssets(container);
+  else if (page === 'documents')            renderDocuments(container);
   else if (page === 'reports')              renderReports(container);
   // ── Transact pages ───────────────────────────────────────
   else if (page === 'transactions')         renderTransactions(container);
@@ -4807,6 +4821,125 @@ function fpSet(id, val) {
   else if (id === 'fpReturn') fpReturn = isNaN(n) ? 0 : n;
   else if (id === 'fpContrib') fpContrib = isNaN(n) ? 0 : n;
   _renderProjectionTab(document.getElementById('asContent'));
+}
+
+// ════════════════════════════════════════════════════════════
+// DOCUMENTS (F26) — link-based document / asset vault
+// ════════════════════════════════════════════════════════════
+// Stores LINKS to documents (not the files) so the synced DB stays small.
+// Each doc has a title, category, optional URL, optional account/asset link,
+// date and notes.
+const _DOC_CATEGORIES = ['Statement','Insurance','Deed','Tax','Other'];
+const _DOC_CAT_COLOR = { 'Statement':'#2563eb','Insurance':'#0d9488','Deed':'#9333ea','Tax':'#ca8a04','Other':'#64748b' };
+let _docView = 'list', _docEditId = null;
+
+function _docNormalizeUrl(u) {
+  u = (u || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) return 'https://' + u;
+  return u;
+}
+function _docAccounts() {
+  return query("SELECT id,code,name,type FROM Account WHERE isActive=1 AND (role IS NULL OR role!='EXCLUDED') ORDER BY type,code");
+}
+
+function renderDocuments(container) {
+  if (!container) container = document.getElementById('pageContent');
+  if (_docView === 'form') return _docRenderForm(container, _docEditId);
+
+  const docs = query(`SELECT d.*, a.name AS acctName, a.code AS acctCode FROM Document d LEFT JOIN Account a ON a.id=d.accountId ORDER BY d.category, d.title`);
+  const rows = docs.length ? docs.map(d => {
+    const c = _DOC_CAT_COLOR[d.category] || '#64748b';
+    const acct = d.acctName ? `${escHtml((d.acctCode ? d.acctCode + ' · ' : '') + d.acctName)}` : '';
+    return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.6rem 0.85rem;display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;">
+      <div style="min-width:12rem;flex:1;">
+        <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+          <span style="font-size:0.62rem;color:#fff;background:${c};padding:0.08rem 0.4rem;border-radius:0.25rem;">${escHtml(d.category || 'Other')}</span>
+          <span style="font-size:0.88rem;font-weight:600;color:#0f172a;">${escHtml(d.title)}</span>
+        </div>
+        <div style="font-size:0.68rem;color:#94a3b8;margin-top:0.12rem;">${[d.docDate ? escHtml(d.docDate) : '', acct].filter(Boolean).join(' · ') || '—'}</div>
+        ${d.notes ? `<div style="font-size:0.7rem;color:#64748b;margin-top:0.1rem;">${escHtml(d.notes)}</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:0.4rem;">
+        ${d.url ? `<button onclick="docOpen('${d.id}')" style="background:#0f172a;color:#fff;border:none;border-radius:0.375rem;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;">Open</button>` : `<span style="font-size:0.68rem;color:#cbd5e1;">no link</span>`}
+        <button onclick="docShowEdit('${d.id}')" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;">Edit</button>
+        <button onclick="docDelete('${d.id}')" style="background:#fff;border:1px solid #fecaca;color:#b91c1c;border-radius:0.375rem;padding:0.25rem 0.6rem;font-size:0.72rem;cursor:pointer;">Delete</button>
+      </div>
+    </div>`;
+  }).join('') : `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:2.5rem 1rem;">No documents yet. Add a link to a statement, insurance policy, deed, or tax record — stored in your own cloud, catalogued here.</div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+        <div>
+          <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Documents</h2>
+          <p style="font-size:0.75rem;color:#64748b;margin:0.1rem 0 0;">A vault of links to your statements, policies, deeds and tax records. Files stay in your own cloud; FinApp catalogs them.</p>
+        </div>
+        <button onclick="docShowAdd()" style="background:#0f172a;color:#fff;border:none;border-radius:0.375rem;padding:0.4rem 0.8rem;font-size:0.8rem;cursor:pointer;">+ Add document</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.4rem;">${rows}</div>
+    </div>`;
+}
+
+function _docRenderForm(container, editId) {
+  const editing = !!editId;
+  const d = editing ? query("SELECT * FROM Document WHERE id=?", [editId])[0] : {};
+  const today = new Date().toLocaleDateString('en-CA');
+  const catOpts = _DOC_CATEGORIES.map(c => `<option value="${c}"${d.category === c ? ' selected' : ''}>${c}</option>`).join('');
+  const acctOpts = `<option value="">— None —</option>` + _docAccounts().map(a => `<option value="${a.id}"${d.accountId === a.id ? ' selected' : ''}>${escHtml((a.code ? a.code + ' · ' : '') + a.name)}</option>`).join('');
+  const fld = 'width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.4rem 0.55rem;font-size:0.85rem;margin-top:0.2rem;';
+  container.innerHTML = `
+    <div style="max-width:32rem;display:flex;flex-direction:column;gap:0.7rem;">
+      <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">${editing ? 'Edit document' : 'Add document'}</h2>
+      <div id="docErr" style="display:none;font-size:0.78rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:0.375rem;padding:0.4rem 0.6rem;"></div>
+      <label style="font-size:0.75rem;color:#475569;">Title<input id="docTitle" type="text" value="${escHtml(d.title || '')}" placeholder="e.g. 2025 mortgage statement" style="${fld}"></label>
+      <label style="font-size:0.75rem;color:#475569;">Category<select id="docCat" style="${fld}background:#fff;">${catOpts}</select></label>
+      <label style="font-size:0.75rem;color:#475569;">Link (URL)<input id="docUrl" type="text" value="${escHtml(d.url || '')}" placeholder="https://drive.google.com/..." style="${fld}"></label>
+      <label style="font-size:0.75rem;color:#475569;">Linked account / asset (optional)<select id="docAcct" style="${fld}background:#fff;">${acctOpts}</select></label>
+      <label style="font-size:0.75rem;color:#475569;">Document date (optional)<input id="docDate" type="date" value="${escHtml(d.docDate || '')}" max="${today}" style="${fld}"></label>
+      <label style="font-size:0.75rem;color:#475569;">Notes<input id="docNotes" type="text" value="${escHtml(d.notes || '')}" placeholder="optional" style="${fld}"></label>
+      <div style="display:flex;gap:0.5rem;margin-top:0.25rem;">
+        <button onclick="docSave()" style="background:#0f172a;color:#fff;border:none;border-radius:0.375rem;padding:0.45rem 0.9rem;font-size:0.82rem;cursor:pointer;">${editing ? 'Save' : 'Add document'}</button>
+        <button onclick="docCancel()" style="background:#fff;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.45rem 0.9rem;font-size:0.82rem;cursor:pointer;">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function _docErr(msg) { const e = document.getElementById('docErr'); if (e) { e.textContent = msg; e.style.display = 'block'; } }
+function docShowAdd() { _docView = 'form'; _docEditId = null; renderDocuments(); }
+function docShowEdit(id) { _docView = 'form'; _docEditId = id; renderDocuments(); }
+function docCancel() { _docView = 'list'; _docEditId = null; renderDocuments(); }
+function docOpen(id) {
+  const u = queryVal('SELECT url FROM Document WHERE id=?', [id]);
+  if (u) window.open(_docNormalizeUrl(u), '_blank', 'noopener');
+}
+function docDelete(id) {
+  const t = queryVal('SELECT title FROM Document WHERE id=?', [id]) || 'this document';
+  if (!confirm('Delete "' + t + '"? This only removes the catalog entry — your actual file is untouched.')) return;
+  db.run('DELETE FROM Document WHERE id=?', [id]);
+  syncAfterWrite();
+  renderDocuments();
+}
+function docSave() {
+  const title = (document.getElementById('docTitle').value || '').trim();
+  const category = document.getElementById('docCat').value || 'Other';
+  const url = _docNormalizeUrl(document.getElementById('docUrl').value);
+  const accountId = document.getElementById('docAcct').value || null;
+  const docDate = document.getElementById('docDate').value || null;
+  const notes = (document.getElementById('docNotes').value || '').trim() || null;
+  if (!title) return _docErr('Title is required.');
+  try {
+    const now = new Date().toISOString();
+    if (_docEditId) {
+      db.run('UPDATE Document SET title=?, url=?, category=?, accountId=?, docDate=?, notes=?, updatedAt=? WHERE id=?',
+        [title, url, category, accountId, docDate, notes, now, _docEditId]);
+    } else {
+      db.run('INSERT INTO Document (id,title,url,category,accountId,docDate,notes,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?)',
+        [genId(), title, url, category, accountId, docDate, notes, now, now]);
+    }
+    syncAfterWrite();
+    docCancel();
+  } catch(e) { _docErr('Error: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -14687,7 +14820,7 @@ const PAGE_NAMES = {
   'future-transactions':'Future Transactions','budget':'Budget',
   'duplicates':'Duplicates','equity':'US Equity','pl':'P&L',
   'balance-sheet':'Balance Sheet','accruals':'Accruals','settings':'Settings',
-  'roadmap':'Roadmap','manual-assets':'Assets'
+  'roadmap':'Roadmap','manual-assets':'Assets','documents':'Documents'
 };
 
 // ════════════════════════════════════════════════════════════
