@@ -1850,6 +1850,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F8' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F18' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -4876,7 +4878,7 @@ function _renderNetWorthTab(container) {
 function nwSetMonths(m) { _nwMonths = m; _renderNetWorthTab(document.getElementById('asContent')); }
 
 // ── Future net-worth projection (F5) — compound-growth model ──
-let fpYears = 10, fpReturn = 6, fpContrib = null, _fpChart = null;
+let fpYears = 10, fpReturn = 6, fpContrib = null, _fpChart = null, fpAge = 40, fpRetAge = 65, fpSpend = null;
 function _fpCurrentNetWorth() {
   const bm = buildBalanceMap(null);
   let assets = 0, liab = 0;
@@ -4891,6 +4893,13 @@ function _fpTrailingMonthlyNet() {
   const inc = sum('INCOME', 'cr') - sum('INCOME', 'dr');
   const exp = sum('EXPENSE', 'dr') - sum('EXPENSE', 'cr');
   return (inc - exp) / periods.length;
+}
+function _fpTrailingMonthlyExpense() {
+  const periods = query(`SELECT DISTINCT period FROM "Transaction" ORDER BY period DESC LIMIT 12`).map(r => r.period);
+  if (!periods.length) return 0;
+  const pIn = periods.map(p => "'" + p + "'").join(',');
+  const sum = (side) => +queryVal(`SELECT COALESCE(SUM(amount),0) FROM "Transaction" t JOIN Account a ON a.id=t.${side}AccountId WHERE a.type='EXPENSE' AND t.period IN (${pIn})`) || 0;
+  return (sum('dr') - sum('cr')) / periods.length;
 }
 function _renderProjectionTab(container) {
   const nw0 = _fpCurrentNetWorth();
@@ -4907,6 +4916,18 @@ function _renderProjectionTab(container) {
   const finalNw = pts[pts.length - 1];
   const totalContrib = c * 12 * years;
   const growth = finalNw - nw0 - totalContrib;
+
+  // F18 — retirement readiness (4% rule), reusing the same compound engine
+  if (fpSpend === null) fpSpend = Math.round(_fpTrailingMonthlyExpense() * 12);
+  const curAge = Math.max(0, fpAge || 0);
+  const retAge = Math.max(1, fpRetAge || 65);
+  const yrsToRet = Math.max(0, retAge - curAge);
+  let nest = nw0;
+  for (let m = 0; m < yrsToRet * 12; m++) nest = nest * (1 + rm) + c;
+  const needed = fpSpend > 0 ? fpSpend / 0.04 : 0;
+  const surplus = nest - needed;
+  const sustainable = nest * 0.04;
+  const readyPct = needed > 0 ? Math.round(nest / needed * 100) : null;
 
   if (_fpChart) { try { _fpChart.destroy(); } catch(e) {} _fpChart = null; }
 
@@ -4941,6 +4962,23 @@ function _renderProjectionTab(container) {
         ${stat('Total contributions', totalContrib, '#2563eb')}
         ${stat('Growth', growth, growth >= 0 ? '#059669' : '#dc2626')}
       </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.7rem 0.85rem;">
+        <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Retirement readiness (4% rule)</div>
+        <div style="display:flex;gap:1.25rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:0.65rem;">
+          ${inputBox('Current age', 'fpAge', curAge, '')}
+          ${inputBox('Retirement age', 'fpRetAge', retAge, '')}
+          ${inputBox('Spending in retirement', 'fpSpend', fpSpend, '/yr')}
+          <div style="font-size:0.68rem;color:#94a3b8;padding-bottom:0.3rem;">spending pre-filled from your<br>trailing-12-month expenses</div>
+        </div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-start;">
+          ${stat('Nest egg at ' + retAge, nest, '#7c3aed')}
+          ${stat('Needed (25× spend)', needed, '#2563eb')}
+          ${stat(surplus >= 0 ? 'Surplus' : 'Shortfall', Math.abs(surplus), surplus >= 0 ? '#059669' : '#dc2626')}
+          ${stat('Sustainable spend/yr', sustainable, '#0f172a')}
+          <div style="flex:1;min-width:8rem;"><div style="font-size:0.68rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">On track?</div><div style="font-size:1rem;font-weight:700;color:${surplus >= 0 ? '#059669' : '#dc2626'};">${readyPct === null ? '—' : (surplus >= 0 ? 'On track' : readyPct + '% of goal')}</div></div>
+        </div>
+        ${yrsToRet === 0 ? `<div style="font-size:0.68rem;color:#94a3b8;margin-top:0.45rem;">Already at/over retirement age — nest egg shown is today's net worth.</div>` : ''}
+      </div>
     </div>`;
 
   const canvas = document.getElementById('fpChart');
@@ -4958,6 +4996,9 @@ function fpSet(id, val) {
   if (id === 'fpYears') fpYears = isNaN(n) ? 10 : n;
   else if (id === 'fpReturn') fpReturn = isNaN(n) ? 0 : n;
   else if (id === 'fpContrib') fpContrib = isNaN(n) ? 0 : n;
+  else if (id === 'fpAge') fpAge = isNaN(n) ? 0 : n;
+  else if (id === 'fpRetAge') fpRetAge = isNaN(n) ? 65 : n;
+  else if (id === 'fpSpend') fpSpend = isNaN(n) ? 0 : n;
   _renderProjectionTab(document.getElementById('asContent'));
 }
 
