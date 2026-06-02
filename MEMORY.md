@@ -40,6 +40,10 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Allocation tab:** Chart.js doughnut (reused existing lib, registered in activeCharts + destroyed on re-render) of current ASSET balances grouped by assetClass, a % breakdown, and an inline per-account classifier (`asSetClass` → UPDATE Account.assetClass). Accounts with no class show as "Unclassified" (never hidden). Reads via `buildBalanceMap(null)`.
 - **MCQ-equivalent defaults (stated, not asked — momentum):** preset taxonomy, manual per-account classification, doughnut chart, tabbed Assets page.
 
+### Built: F5 Net-worth projection (verified, deploying).
+- Third Assets tab **Projection**. Compound-growth model: net worth today (Σ ASSET balances − Σ LIABILITY balances via buildBalanceMap) projected forward with monthly compounding. Inputs: horizon (yrs), expected annual return %, monthly net contribution — contribution pre-filled from trailing-12-month avg monthly net (income−expense), editable. Chart.js line + summary stats (projected, total contributions, growth). `fpSet` re-renders on change (onchange, not oninput, to keep input focus).
+- **Limitation/note:** trailing-avg denominator counts all DISTINCT recent periods incl. setup-only months, so it can understate the suggested contribution — it's an editable starting point. Does not auto-pull individual scheduled/future transactions (uses the avg instead). Not Monte Carlo (deliberate — simple & controllable).
+
 ---
 
 ## 2026-05-31 — Session 4
