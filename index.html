@@ -1846,6 +1846,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F1' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F6' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -5082,7 +5084,7 @@ function docSave() {
 // Hand-rolled SVG (no charting dependency, keeps the single-file /
 // offline-PWA nature intact). Reads income (CR-DR) and expense (DR-CR)
 // per account over a period range — same data path as P&L.
-let cfFrom = '', cfTo = '';
+let cfFrom = '', cfTo = '', _cfChart = null;
 const _CF_INC_COLORS = ['#059669','#0d9488','#15803d','#16a34a','#65a30d','#0e7490'];
 const _CF_EXP_COLORS = ['#dc2626','#ea580c','#d97706','#ca8a04','#9333ea','#c026d3','#db2777','#e11d48','#0891b2','#2563eb','#7c3aed','#b45309','#be123c','#475569'];
 
@@ -5219,7 +5221,32 @@ function renderCashFlowSankey(container) {
       <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem;overflow-x:auto;">
         ${svg || `<div style="color:#94a3b8;font-size:0.85rem;text-align:center;padding:3rem 1rem;">No income or expense recorded in ${escHtml(rangeLabel)}.</div>`}
       </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.85rem;">
+        <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;">Income vs expense by month</div>
+        <div style="height:14rem;"><canvas id="cfTrendChart"></canvas></div>
+      </div>
     </div>`;
+
+  if (_cfChart) { try { _cfChart.destroy(); } catch(e) {} _cfChart = null; }
+  const _cfSeries = periods.filter(p => p >= cfFrom && p <= cfTo).sort().map(p => {
+    const m = buildBalanceMap([p]);
+    let inc = 0, exp = 0;
+    for (const a of Object.values(m)) { if (a.type === 'INCOME') inc += a.balance; if (a.type === 'EXPENSE') exp += a.balance; }
+    return { p, inc, exp, net: inc - exp };
+  });
+  const _cfTc = document.getElementById('cfTrendChart');
+  if (_cfTc && _cfSeries.length && typeof Chart !== 'undefined') {
+    _cfChart = new Chart(_cfTc, {
+      type: 'bar',
+      data: { labels: _cfSeries.map(s => periodLabel(s.p)), datasets: [
+        { type: 'bar', label: 'Income', data: _cfSeries.map(s => s.inc), backgroundColor: '#16a34a' },
+        { type: 'bar', label: 'Expense', data: _cfSeries.map(s => s.exp), backgroundColor: '#dc2626' },
+        { type: 'line', label: 'Net', data: _cfSeries.map(s => s.net), borderColor: '#2563eb', backgroundColor: '#2563eb', tension: 0.25, fill: false, pointRadius: 2 }
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { y: { ticks: { callback: v => fmtCurrency(v, 0) } } } }
+    });
+    activeCharts.push(_cfChart);
+  }
 }
 
 function cfSetRange() {

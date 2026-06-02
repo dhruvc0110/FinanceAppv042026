@@ -58,6 +58,7 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Sequence:** F1 → F6 → F8 → F18 → F9 → F24 → F20 → F29 → F12+F14. Low-risk viz first; budgeting envelope pair (F12/F14) last (touches budget engine). Same cadence: build → verify vs real constraints → deploy each → auto-mark Done.
 - **Note:** Dashboard already has small net-worth + income/expense lines — F1/F6 are richer dedicated views, not duplicates.
 - **Built: F1 Net worth over time** — new **Net worth** tab on the Assets composite (`_renderNetWorthTab`, `_nwMonths` 12/24/36/All). Cumulative assets−liabilities per period via `buildBalanceMap(periods<=P)`, excluding BELOW_THE_LINE (matches dashboard logic + manual-asset BS settings). Chart.js line (net worth/assets/liabilities) + stat cards. Verified.
+- **Built: F6 Cash-flow over time** — added an "Income vs expense by month" Chart.js chart (grouped Income/Expense bars + Net line) to the **Cash Flow** tab beneath the Sankey, spanning the periods in the existing cfFrom..cfTo range. `_cfChart` tracked + destroyed on re-render, pushed to activeCharts. Per-period income/expense via `buildBalanceMap([p])`. Verified.
 
 ---
 
