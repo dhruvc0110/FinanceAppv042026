@@ -1848,6 +1848,8 @@ function startApp() {
     if (db.getRowsModified() > 0) syncAfterWrite();
     db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F6' AND status<>'Done'", [new Date().toISOString()]);
     if (db.getRowsModified() > 0) syncAfterWrite();
+    db.run("UPDATE RoadmapItem SET status='Done', updatedAt=? WHERE id='F8' AND status<>'Done'", [new Date().toISOString()]);
+    if (db.getRowsModified() > 0) syncAfterWrite();
     db.run(`CREATE TABLE IF NOT EXISTS Document (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, url TEXT, category TEXT,
       accountId TEXT, docDate TEXT, notes TEXT, createdAt TEXT, updatedAt TEXT)`);
@@ -5084,7 +5086,7 @@ function docSave() {
 // Hand-rolled SVG (no charting dependency, keeps the single-file /
 // offline-PWA nature intact). Reads income (CR-DR) and expense (DR-CR)
 // per account over a period range — same data path as P&L.
-let cfFrom = '', cfTo = '', _cfChart = null;
+let cfFrom = '', cfTo = '', _cfChart = null, _cfCatChart = null;
 const _CF_INC_COLORS = ['#059669','#0d9488','#15803d','#16a34a','#65a30d','#0e7490'];
 const _CF_EXP_COLORS = ['#dc2626','#ea580c','#d97706','#ca8a04','#9333ea','#c026d3','#db2777','#e11d48','#0891b2','#2563eb','#7c3aed','#b45309','#be123c','#475569'];
 
@@ -5225,6 +5227,10 @@ function renderCashFlowSankey(container) {
         <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;">Income vs expense by month</div>
         <div style="height:14rem;"><canvas id="cfTrendChart"></canvas></div>
       </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.85rem;">
+        <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;">Top spending categories over time</div>
+        <div style="height:15rem;"><canvas id="cfCatChart"></canvas></div>
+      </div>
     </div>`;
 
   if (_cfChart) { try { _cfChart.destroy(); } catch(e) {} _cfChart = null; }
@@ -5246,6 +5252,26 @@ function renderCashFlowSankey(container) {
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }, scales: { y: { ticks: { callback: v => fmtCurrency(v, 0) } } } }
     });
     activeCharts.push(_cfChart);
+  }
+
+  // F8 — top spending categories over time (stacked bars)
+  if (_cfCatChart) { try { _cfCatChart.destroy(); } catch(e) {} _cfCatChart = null; }
+  const _cfRange = periods.filter(p => p >= cfFrom && p <= cfTo).sort();
+  const _cfExpAccts = query("SELECT id,name FROM Account WHERE type='EXPENSE' AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL'))");
+  const _cfPer = {};
+  _cfRange.forEach(p => { const m = buildBalanceMap([p]); _cfExpAccts.forEach(a => { const v = (m[a.id] ? m[a.id].balance : 0) || 0; if (!_cfPer[a.id]) _cfPer[a.id] = { name: a.name, total: 0, by: {} }; _cfPer[a.id].by[p] = v; _cfPer[a.id].total += v; }); });
+  const _cfCats = Object.values(_cfPer).filter(c => c.total > 0.005).sort((a, b) => b.total - a.total);
+  const _cfTop = _cfCats.slice(0, 6), _cfRest = _cfCats.slice(6);
+  const _cfDatasets = _cfTop.map((c, idx) => ({ label: c.name, data: _cfRange.map(p => c.by[p] || 0), backgroundColor: _CF_EXP_COLORS[idx % _CF_EXP_COLORS.length] }));
+  if (_cfRest.length) _cfDatasets.push({ label: 'Other (' + _cfRest.length + ')', data: _cfRange.map(p => _cfRest.reduce((s, c) => s + (c.by[p] || 0), 0)), backgroundColor: '#cbd5e1' });
+  const _cfCatCanvas = document.getElementById('cfCatChart');
+  if (_cfCatCanvas && _cfDatasets.length && typeof Chart !== 'undefined') {
+    _cfCatChart = new Chart(_cfCatCanvas, {
+      type: 'bar',
+      data: { labels: _cfRange.map(p => periodLabel(p)), datasets: _cfDatasets },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }, scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => fmtCurrency(v, 0) } } } }
+    });
+    activeCharts.push(_cfCatChart);
   }
 }
 

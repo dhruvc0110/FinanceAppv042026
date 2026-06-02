@@ -59,6 +59,7 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - **Note:** Dashboard already has small net-worth + income/expense lines — F1/F6 are richer dedicated views, not duplicates.
 - **Built: F1 Net worth over time** — new **Net worth** tab on the Assets composite (`_renderNetWorthTab`, `_nwMonths` 12/24/36/All). Cumulative assets−liabilities per period via `buildBalanceMap(periods<=P)`, excluding BELOW_THE_LINE (matches dashboard logic + manual-asset BS settings). Chart.js line (net worth/assets/liabilities) + stat cards. Verified.
 - **Built: F6 Cash-flow over time** — added an "Income vs expense by month" Chart.js chart (grouped Income/Expense bars + Net line) to the **Cash Flow** tab beneath the Sankey, spanning the periods in the existing cfFrom..cfTo range. `_cfChart` tracked + destroyed on re-render, pushed to activeCharts. Per-period income/expense via `buildBalanceMap([p])`. Verified.
+- **Built: F8 Spending-by-category trends** — third Cash Flow card "Top spending categories over time": stacked-bar Chart.js (`_cfCatChart`) of top-6 EXPENSE accounts by total over the range (rest → "Other (n)"), per-period via `buildBalanceMap([p])`. Cash Flow tab is now the cash-flow analytics hub (Sankey + income/expense trend + category stacks). Verified.
 
 ---
 
