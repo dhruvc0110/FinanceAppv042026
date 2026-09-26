@@ -13671,6 +13671,10 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
           ${p._mp?`<div class="font-medium ${glCls}">${p._unreal>=0?'+':''}${fmtCurrency(p._unreal,2)}</div>
             <div class="text-xs ${glCls}">${p._glPct>=0?'+':''}${p._glPct.toFixed(1)}%</div>`:'&mdash;'}
         </td>
+        <td class="px-4 py-3 text-center">
+          <input type="checkbox" class="w-4 h-4 accent-slate-700 cursor-pointer" ${stIsLinked(p.ticker)?'checked':''}
+            onchange="stToggleLinked('${escHtml(p.ticker)}',this.checked)" title="Include ${escHtml(p.ticker)} in Shock Test" aria-label="Include ${escHtml(p.ticker)} in Shock Test">
+        </td>
       </tr>`;
     }).join('');
 
@@ -13708,6 +13712,7 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
           ${sTh('_mp','Market Price ✎')}
           ${sTh('_mktVal','Market Value')}
           ${sTh('_unreal','Unrealized G/L')}
+          <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap" title="Tick to include in Shock Test">Shock Test</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -13715,6 +13720,7 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
         <td colspan="4" class="px-4 py-2.5 text-sm font-bold text-slate-800">Total Portfolio</td>
         <td class="px-4 py-2.5 text-sm font-bold text-right text-slate-800">${totalValue?fmtCurrency(totalValue,2):'&mdash;'}</td>
         <td class="px-4 py-2.5 text-sm font-bold text-right ${totalUnreal>=0?'text-green-700':'text-red-600'}">${totalValue?(totalUnreal>=0?'+':'')+fmtCurrency(totalUnreal,2):'&mdash;'}</td>
+        <td></td>
       </tr></tfoot>
     </table>`;
   }
@@ -15571,7 +15577,7 @@ const _ST_PRESETS = [
 const _ST_COL = {ink:'#0f172a',muted:'#64748b',line:'#e2e8f0',soft:'#f1f5f9',cc:'#b45309',trad:'#1d4ed8'};
 
 // ── State + persistence ───────────────────────────────────────
-let _stState = { holdings: _ST_EXAMPLE.map(h=>({...h})), overrides:{}, scen:{mkt:0,groups:{},stocks:{}}, isExample:true };
+let _stState = { holdings: _ST_EXAMPLE.map(h=>({...h})), overrides:{}, scen:{mkt:0,groups:{},stocks:{}}, isExample:true, linked:[] };
 let _stLoadedFor = null, _stSaveTimer = null, _stRt = -20;
 const _stOpen = new Set();
 
@@ -15587,7 +15593,8 @@ function _stLoad() {
       holdings: d.holdings.map(h=>({t:String(h.t).toUpperCase(),amt:+h.amt||0})),
       overrides: (d.overrides && typeof d.overrides==='object') ? d.overrides : {},
       scen: (d.scen && typeof d.scen==='object') ? {mkt:+d.scen.mkt||0,groups:d.scen.groups||{},stocks:d.scen.stocks||{}} : {mkt:0,groups:{},stocks:{}},
-      isExample: !!d.isExample
+      isExample: !!d.isExample,
+      linked: Array.isArray(d.linked) ? d.linked.map(t=>String(t).toUpperCase()) : []
     };
   } catch(e) { console.warn('ShockTest load:', e.message); }
 }
@@ -15607,6 +15614,44 @@ function _stSave() {
   }, 1200);
 }
 function _stStatus(t) { const el = document.getElementById('stStatus'); if (el) el.textContent = t; }
+
+// ── Equity page link ──────────────────────────────────────────
+// Open positions = EquityLot qty − EquityLotSale qty, valued at
+// MarketPrice (same math as the Equity page summary). Read-only.
+function _stEquityPositions() {
+  const out = {};
+  if (!db) return out;
+  const lots = query(`SELECT el.ticker, CAST(el.qty AS REAL) AS qty,
+      COALESCE((SELECT SUM(CAST(s.qty AS REAL)) FROM EquityLotSale s WHERE s.lotId=el.id),0) AS soldQty
+    FROM EquityLot el`);
+  const price = {};
+  query(`SELECT ticker, CAST(price AS REAL) AS price FROM MarketPrice`).forEach(r => { price[r.ticker] = +r.price || 0; });
+  lots.forEach(l => {
+    const rem = (+l.qty||0) - (+l.soldQty||0);
+    if (rem <= 0.00001) return;
+    const t = String(l.ticker).toUpperCase();
+    if (!out[t]) out[t] = { shares:0, price: price[l.ticker] || price[t] || 0 };
+    out[t].shares += rem;
+  });
+  Object.values(out).forEach(p => { p.value = p.shares * p.price; });
+  return out;
+}
+// Every holding the simulator uses: Equity-linked positions + manual entries.
+function _stHoldingsAll() {
+  const pos = _stEquityPositions();
+  const linked = (_stState.linked||[]).filter(t => pos[t] && pos[t].value > 0).map(t => ({ t, amt: pos[t].value, src:'equity' }));
+  return linked.concat(_stState.holdings.map(h => ({ t:h.t, amt:h.amt, src:'manual' })));
+}
+function stIsLinked(ticker) { _stLoad(); return (_stState.linked||[]).includes(String(ticker).toUpperCase()); }
+function stToggleLinked(ticker, on) {
+  _stLoad();
+  const t = String(ticker).toUpperCase();
+  const set = new Set(_stState.linked || []);
+  if (on) set.add(t); else set.delete(t);
+  _stState.linked = [...set];
+  if (on && _stState.isExample) { _stState.holdings = []; _stState.isExample = false; }
+  _stSave();
+}
 
 // ── Model ─────────────────────────────────────────────────────
 function _stProfile(t) {
@@ -15633,7 +15678,7 @@ function _stFund(p,sc){
 }
 function _stPort(sc){
   let total=0,pnl=0,nc=0,ccV=0,ccP=0,trV=0,trP=0;const rows=[];
-  for (const h of _stState.holdings){
+  for (const h of _stHoldingsAll()){
     const v=+h.amt||0;if(v<=0)continue;
     const p=_stProfile(h.t),f=_stFund(p,sc);
     total+=v;pnl+=v*f.r;nc+=v*f.nc;
@@ -15644,7 +15689,7 @@ function _stPort(sc){
 }
 function _stExposures(){
   const sec={},stk={};let total=0;
-  for(const h of _stState.holdings){const v=+h.amt||0;if(v<=0)continue;total+=v;const p=_stProfile(h.t);
+  for(const h of _stHoldingsAll()){const v=+h.amt||0;if(v<=0)continue;total+=v;const p=_stProfile(h.t);
     for(const [g,w] of Object.entries(p.sectors||{})) sec[g]=(sec[g]||0)+v*w/100;
     for(const [k,w] of Object.entries(p.stocks||{})) stk[k]=(stk[k]||0)+v*w/100;}
   const n=o=>Object.entries(o).map(([k,v])=>[k,total?v/total:0]).sort((a,b)=>b[1]-a[1]);
@@ -15833,7 +15878,7 @@ function _stRenderRoundTrip(){
   const d=_stRt,m2=(1/(1+d/100)-1)*100;
   const s1={mkt:d,groups:{},stocks:{}},s2={mkt:m2,groups:{},stocks:{}};
   let tot=0,end=0;const rows=[];
-  for(const h of _stState.holdings){const v=+h.amt||0;if(v<=0)continue;const p=_stProfile(h.t);const a=_stFund(p,s1).r,b=_stFund(p,s2).r;const net=(1+a)*(1+b)-1;tot+=v;end+=v*(1+net);
+  for(const h of _stHoldingsAll()){const v=+h.amt||0;if(v<=0)continue;const p=_stProfile(h.t);const a=_stFund(p,s1).r,b=_stFund(p,s2).r;const net=(1+a)*(1+b)-1;tot+=v;end+=v*(1+net);
     rows.push(`<tr><td>${escHtml(h.t)}${_stTag(p)}</td><td class="${_stCls(a)}">${_stPct(a)}</td><td class="${_stCls(b)}">${_stPct(b)}</td><td class="${_stCls(net)}"><b>${_stPct(net)}</b></td></tr>`);}
   const n=tot?end/tot-1:0;
   box.innerHTML=rows.length?rows.join('')+`<tr><td><b>Portfolio</b></td><td></td><td></td><td class="${_stCls(n)}"><b>${_stPct(n)} (${_stUsd(end-tot)})</b></td></tr>`:'<tr><td colspan="4" class="text-slate-500">Add holdings first.</td></tr>';
@@ -15872,22 +15917,39 @@ function _stEditor(t,p){
 }
 function _stHoldHtml(){
   const P='bg-white border border-slate-200 rounded-lg p-4';
-  const tot=_stState.holdings.reduce((s,h)=>s+(+h.amt||0),0);
+  const all=_stHoldingsAll();
+  const tot=all.reduce((s,h)=>s+(+h.amt||0),0);
+  const pos=_stEquityPositions();
+  const assump=(t,p)=>`<details${_stOpen.has(t)?' open':''} data-t="${escHtml(t)}"><summary class="text-xs text-slate-500 cursor-pointer mt-1">Assumptions${p.unknown?' – set these, ticker not in the built-in list':''}</summary>${_stEditor(t,p)}</details>`;
+  const linkedList=(_stState.linked||[]).length?_stState.linked.map(t=>{const p=_stProfile(t);const ps=pos[t];
+    let right;
+    if(!ps) right='<span class="st-tag st-warn">no open position</span>';
+    else if(!ps.price) right='<span class="st-tag st-warn">no market price</span><span class="text-xs text-slate-500 ml-2">set it on the Equity page</span>';
+    else right=`<span class="text-xs text-slate-500 ml-auto">${(ps.value/(tot||1)*100).toFixed(1)}%</span><span class="text-sm text-right" style="min-width:8.5rem">${ps.shares%1===0?ps.shares.toLocaleString():ps.shares.toFixed(4)} × ${fmtCurrency(ps.price,2)}<br><b>${fmtCurrency(ps.value,0)}</b></span>`;
+    return `<div class="st-hold" data-t="${escHtml(t)}" data-src="equity"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(t)}</span>${_stTag(p)}${right}<button class="st-x" data-unlink aria-label="Remove ${escHtml(t)} from Shock Test">×</button></div>${assump(t,p)}</div>`;}).join('')
+    :'<p class="text-sm text-slate-500">None yet. On the Equity page, tick the Shock Test box next to a position.</p>';
   const list=_stState.holdings.length?_stState.holdings.map((h,i)=>{const p=_stProfile(h.t);const w=tot?(+h.amt||0)/tot:0;
-    return `<div class="st-hold" data-i="${i}"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(h.t)}</span>${_stTag(p)}<span class="text-xs text-slate-500 ml-auto">${(w*100).toFixed(1)}%</span><input class="st-amt" type="number" min="0" step="100" value="${+h.amt||0}" aria-label="${escHtml(h.t)} amount"><button class="st-x" data-del aria-label="Remove ${escHtml(h.t)}">×</button></div>
-      <details${_stOpen.has(h.t)?' open':''} data-t="${escHtml(h.t)}"><summary class="text-xs text-slate-500 cursor-pointer mt-1">Assumptions${p.unknown?' – set these, ticker not in the built-in list':''}</summary>${_stEditor(h.t,p)}</details></div>`;}).join(''):'<p class="text-sm text-slate-500">No holdings yet. Add one below or import a list.</p>';
+    return `<div class="st-hold" data-i="${i}" data-t="${escHtml(h.t)}" data-src="manual"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(h.t)}</span>${_stTag(p)}<span class="text-xs text-slate-500 ml-auto">${(w*100).toFixed(1)}%</span><input class="st-amt" type="number" min="0" step="100" value="${+h.amt||0}" aria-label="${escHtml(h.t)} market value in dollars"><button class="st-x" data-del aria-label="Remove ${escHtml(h.t)}">×</button></div>
+      ${assump(h.t,p)}</div>`;}).join(''):'<p class="text-sm text-slate-500">No manual holdings. Add one below or import a list.</p>';
   const e=_stExposures();
   const bars=(arr,col)=>{const mx=arr[0]?Math.max(arr[0][1],0.0001):1;return arr.slice(0,5).map(([k,v])=>`<div class="st-bar"><span>${escHtml(_ST_GROUP_LABEL[k]||k)}</span><span class="st-track"><span style="width:${v/mx*100}%;background:${col}"></span></span><span>${(v*100).toFixed(1)}%</span></div>`).join('');};
   return `<div class="grid gap-5 lg:grid-cols-2">
     <div class="${P}">
       <h3 class="st-h">Your holdings</h3>
       <p class="text-xs text-slate-500" id="stStatus">${_stState.isExample?'Example portfolio. Replace it with yours; changes save to finance.sqlite.':'Saved in finance.sqlite on Drive.'}</p>
-      <div id="stHoldList">${list}</div>
+      <div id="stHoldList">
+        <p class="text-sm font-medium mt-2">From the Equity page</p>
+        <p class="text-xs text-slate-500">Shares × latest market price, updated automatically. Tick or untick positions on the Equity page.</p>
+        ${linkedList}
+        <p class="text-sm font-medium mt-4">Added manually</p>
+        <p class="text-xs text-slate-500">Market value in dollars, e.g. 40000 = $40,000.</p>
+        ${list}
+      </div>
       <p class="text-xs text-slate-500 mt-2">${tot?'Total $'+tot.toLocaleString('en-US',{maximumFractionDigits:0}):''}</p>
-      <h3 class="st-h mt-4">Add a holding</h3>
+      <h3 class="st-h mt-4">Add a holding manually</h3>
       <div class="flex flex-wrap gap-2">
         <input id="stNewT" list="stTickerList" placeholder="Ticker, e.g. JEPQ" class="st-input w-36 uppercase" aria-label="Ticker">
-        <input id="stNewA" type="number" min="0" step="100" placeholder="Amount $" class="st-input w-32" aria-label="Amount in dollars">
+        <input id="stNewA" type="number" min="0" step="100" placeholder="Market value $" class="st-input w-36" aria-label="Market value in dollars">
         <button class="st-btn st-primary" id="stAddBtn">Add holding</button>
       </div>
       <datalist id="stTickerList">${Object.keys(_ST_LIB).map(k=>`<option value="${k}">`).join('')}</datalist>
@@ -15961,7 +16023,8 @@ function _stWireHold(){
   list.addEventListener('click',e=>{
     const hold=e.target.closest('.st-hold');if(!hold)return;const i=+hold.dataset.i;
     if(e.target.closest('[data-del]')){_stState.holdings.splice(i,1);_stState.isExample=false;_stSave();_stRenderContent();}
-    else if(e.target.closest('[data-reset]')){delete _stState.overrides[_stState.holdings[i].t];_stSave();_stRenderContent();}
+    else if(e.target.closest('[data-unlink]')){stToggleLinked(hold.dataset.t,false);_stRenderContent();}
+    else if(e.target.closest('[data-reset]')){delete _stState.overrides[hold.dataset.t];_stSave();_stRenderContent();}
   });
   list.addEventListener('toggle',e=>{const d=e.target;if(d.tagName!=='DETAILS')return;if(d.open)_stOpen.add(d.dataset.t);else _stOpen.delete(d.dataset.t);},true);
   document.getElementById('stAddBtn').addEventListener('click',()=>{
@@ -15979,7 +16042,7 @@ function _stWireHold(){
   document.getElementById('stImportBtn').addEventListener('click',()=>_stImport(document.getElementById('stPaste').value,'the pasted list'));
   document.getElementById('stFile').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>_stImport(String(rd.result),f.name);rd.onerror=()=>{document.getElementById('stImportMsg').textContent='Could not read that file. Save it as CSV and try again.';};rd.readAsText(f);});
   document.getElementById('stExampleBtn').addEventListener('click',()=>{_stState.holdings=_ST_EXAMPLE.map(h=>({...h}));_stState.isExample=true;_stSave();_stRenderContent();});
-  document.getElementById('stClearBtn').addEventListener('click',()=>{if(!confirm('Remove all Shock Test holdings and edited assumptions?'))return;_stState.holdings=[];_stState.overrides={};_stState.isExample=false;_stSave();_stRenderContent();});
+  document.getElementById('stClearBtn').addEventListener('click',()=>{if(!confirm('Remove all manually added holdings and edited assumptions? Positions ticked on the Equity page stay.'))return;_stState.holdings=[];_stState.overrides={};_stState.isExample=false;_stSave();_stRenderContent();});
 }
 
 
