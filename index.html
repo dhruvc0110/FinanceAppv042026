@@ -136,6 +136,43 @@ body.dark-mode .bn-dot { background:#60a5fa; }
   /* Tablet compact view — secondary columns marked .tablet-hide disappear. */
   html.use-tablet-hide .tablet-hide { display: none !important; }
   </style>
+  <!-- Shock Test module styles (scoped to #stRoot) -->
+  <style id="shockTestStyles">
+    #stRoot{font-variant-numeric:tabular-nums;color:#0f172a}
+    #stRoot .st-pos{color:#15803d} #stRoot .st-neg{color:#b91c1c}
+    #stRoot .st-h{font-size:.95rem;font-weight:600;margin-bottom:.5rem}
+    #stRoot .st-chip{border:1px solid #cbd5e1;border-radius:999px;padding:.2rem .7rem;font-size:.8rem;background:#fff}
+    #stRoot .st-chip:hover{background:#f1f5f9}
+    #stRoot .st-shock{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:2px 10px;padding:8px 0;border-bottom:1px solid #f1f5f9}
+    #stRoot .st-shock input[type=range]{grid-column:1/-1;width:100%;accent-color:#0f172a}
+    #stRoot .st-val{min-width:3.6em;text-align:right;font-weight:600;font-size:.9rem}
+    #stRoot .st-x{color:#94a3b8;font-size:1.1rem;line-height:1;padding:2px 6px}
+    #stRoot .st-x:hover{color:#b91c1c}
+    #stRoot .st-select,#stRoot .st-input{border:1px solid #cbd5e1;border-radius:.375rem;padding:.35rem .5rem;font-size:.875rem;background:#fff}
+    #stRoot .st-select{width:100%}
+    #stRoot .st-btn{border:1px solid #cbd5e1;border-radius:.375rem;padding:.35rem .8rem;font-size:.875rem;font-weight:500;background:#fff}
+    #stRoot .st-btn:hover{border-color:#64748b}
+    #stRoot .st-primary{background:#0f172a;color:#fff;border-color:#0f172a}
+    #stRoot .st-sleeve{border-left:4px solid;padding:2px 10px}
+    #stRoot .st-table{border-collapse:collapse;width:100%;min-width:420px;font-size:.875rem}
+    #stRoot .st-table th,#stRoot .st-table td{text-align:right;padding:6px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap}
+    #stRoot .st-table th:first-child,#stRoot .st-table td:first-child{text-align:left}
+    #stRoot .st-table th{font-weight:500;color:#64748b;font-size:.8rem}
+    #stRoot .st-tag{display:inline-block;font-size:.7rem;padding:0 7px;border-radius:999px;border:1px solid currentColor;margin-left:6px;vertical-align:1px}
+    #stRoot .st-cc{color:#b45309} #stRoot .st-trad{color:#1d4ed8} #stRoot .st-warn{color:#b91c1c}
+    #stRoot .st-note{font-size:.8rem;color:#64748b;border-left:3px solid #e2e8f0;padding-left:10px;margin-top:10px}
+    #stRoot .st-hold{border-bottom:1px solid #f1f5f9;padding:8px 0}
+    #stRoot .st-amt{width:8.5rem;border:1px solid #cbd5e1;border-radius:.375rem;padding:.25rem .5rem;text-align:right;font-size:.875rem}
+    #stRoot .st-edit{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:8px;padding:12px;background:#f1f5f9;border-radius:.5rem}
+    #stRoot .st-edit label{display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:#64748b}
+    #stRoot .st-edit input,#stRoot .st-edit select,#stRoot .st-edit textarea{border:1px solid #cbd5e1;border-radius:.375rem;padding:.3rem .5rem;background:#fff;color:#0f172a;font-size:.85rem}
+    #stRoot .st-edit textarea{min-height:56px}
+    #stRoot .st-wide{grid-column:1/-1}
+    #stRoot .st-edit:not(.is-cc) .cc-only{display:none}
+    #stRoot .st-bar{display:grid;grid-template-columns:9.5em 1fr 3.4em;gap:8px;align-items:center;font-size:.82rem;margin:4px 0}
+    #stRoot .st-track{height:9px;background:#f1f5f9;border-radius:5px;overflow:hidden}
+    #stRoot .st-track span{display:block;height:100%}
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
   <!-- Budget note connector line -->
@@ -325,6 +362,14 @@ body.dark-mode .bn-dot { background:#60a5fa; }
       <button onclick="navigate('roadmap')" data-page="roadmap" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 11 3 3 11 3"/><path d="M3 3l8 8"/><path d="M21 13v8h-8"/><path d="M13 21l8-8"/><line x1="11" y1="13" x2="13" y2="11"/></svg>
         <span class="nav-label">Roadmap</span>
+      </button>
+
+      <!-- ── ANALYZE ── -->
+      <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Analyze</div>
+
+      <button onclick="navigate('shock-test')" data-page="shock-test" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2 12 6 12 9 3 15 21 18 12 22 12"/></svg>
+        <span class="nav-label">Shock Test</span>
       </button>
 
       <!-- Settings — thin lines above and below provided by border-t here and border-t on clock section -->
@@ -2107,6 +2152,15 @@ function startApp() {
     )`);
   } catch(e) { console.warn('NotificationConfig init:', e.message); }
 
+  // Ensure ShockTestPortfolio table exists (one JSON row, id='default')
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS ShockTestPortfolio (
+      id TEXT PRIMARY KEY,
+      data TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('ShockTestPortfolio init:', e.message); }
+
   // Add source column to DraftBatch to separate Dictate drafts from Import drafts
   try { db.run(`ALTER TABLE DraftBatch ADD COLUMN source TEXT NOT NULL DEFAULT 'Import'`); } catch(e) {}
 
@@ -2425,6 +2479,7 @@ function navigate(page) {
   else if (page === 'transact-equity')      renderTransactEquity(container);
   // ── Settings ─────────────────────────────────────────────
   else if (page === 'roadmap')              renderRoadmap(container);
+  else if (page === 'shock-test')           renderShockTest(container);
   else if (page === 'settings')             renderSettings(container);
   // ── Legacy direct routes (deep links / existing code) ────
   else if (page === 'future-transactions')  renderFutureTransactions(container);
@@ -2461,6 +2516,7 @@ function _currentSub(page) {
   if (page === 'financial-statements') return _fsTab;
   if (page === 'manual-assets')        return _asTab;
   if (page === 'roadmap')              return _rmMainTab;
+  if (page === 'shock-test')           return _stTab;
   if (page === 'settings')             return settingsTab;
   return null;
 }
@@ -2473,6 +2529,7 @@ function _switchSub(page, sub) {
   else if (page === 'financial-statements') fsSetTab(sub);
   else if (page === 'manual-assets')        asSetTab(sub);
   else if (page === 'roadmap')              rmSetMainTab(sub);
+  else if (page === 'shock-test')           stSetTab(sub);
   else if (page === 'settings')             settingsGoTab(sub);
 }
 
@@ -15450,6 +15507,481 @@ function _seedRoadmap() {
 let _rmBucketFilter = 'all';
 let _rmStatusFilter = 'all';
 const _RM_BUCKET_COLOR = { Must: '#059669', Should: '#d97706', Nice: '#64748b' };
+
+// ════════════════════════════════════════════════════════════
+// SHOCK TEST — covered call / traditional ETF sensitivity simulator
+// ════════════════════════════════════════════════════════════
+// Self-contained module. All names prefixed _st / st.
+// State lives in one JSON row of the ShockTestPortfolio table
+// (id='default'), written via db.run + syncAfterWrite() → Drive.
+// ETF profiles below are approximate estimates, editable per holding.
+
+const _ST_TABS = [{ id:'scenario', label:'Scenario' }, { id:'sensitivity', label:'Sensitivity' }, { id:'holdings', label:'Holdings' }];
+let _stTab = 'scenario';
+
+const _ST_SECTORS = {Tech:'Technology',Comm:'Communication',Disc:'Consumer discretionary',Fin:'Financials',Health:'Health care',Indus:'Industrials',Staples:'Consumer staples',Energy:'Energy',Util:'Utilities',RE:'Real estate',Mat:'Materials',Small:'Small caps'};
+const _ST_BASKETS = {Mag7:{label:'Magnificent 7',list:['AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA']},Semis:{label:'AI chips (NVDA, AVGO, AMD)',list:['NVDA','AVGO','AMD']}};
+const _ST_GROUP_LABEL = Object.assign({}, _ST_SECTORS, Object.fromEntries(Object.entries(_ST_BASKETS).map(([k,v])=>[k,v.label])));
+const _ST_STOCKS = {NVDA:{b:1.8,s:'Tech'},AAPL:{b:1.1,s:'Tech'},MSFT:{b:1.0,s:'Tech'},AVGO:{b:1.4,s:'Tech'},AMD:{b:1.9,s:'Tech'},AMZN:{b:1.2,s:'Disc'},TSLA:{b:2.0,s:'Disc'},GOOGL:{b:1.05,s:'Comm'},META:{b:1.25,s:'Comm'},NFLX:{b:1.1,s:'Comm'},COST:{b:0.8,s:'Staples'},JPM:{b:1.0,s:'Fin'},BRKB:{b:0.85,s:'Fin'},LLY:{b:0.6,s:'Health'}};
+const _ST_LIB = (function(){
+  const SP_SEC={Tech:34,Comm:10,Disc:10,Fin:13,Health:9,Indus:8,Staples:5,Energy:3,Util:2.5,RE:2,Mat:2};
+  const SP_STK={NVDA:7.5,MSFT:6.5,AAPL:6.5,AMZN:4,GOOGL:4,META:3,AVGO:2.8,TSLA:2,BRKB:1.6,JPM:1.5,LLY:1.2,AMD:0.5};
+  const NDX_SEC={Tech:52,Comm:16,Disc:13,Health:5,Staples:4.5,Indus:4,Util:1.5,Mat:1,Energy:0.5};
+  const NDX_STK={NVDA:9,MSFT:8.5,AAPL:8,AMZN:5.5,AVGO:5,GOOGL:5,META:3.5,TSLA:3,NFLX:2.5,COST:2.5,AMD:1.8};
+  const RUT_SEC={Small:100,Fin:17,Indus:18,Health:15,Tech:13,Disc:10,RE:6,Energy:6,Mat:5,Util:3,Staples:3,Comm:3};
+  const DIV_SEC={Energy:20,Staples:19,Health:15,Indus:12,Fin:9,Disc:8,Tech:8,Comm:5,Mat:3};
+  const scale=(o,f)=>Object.fromEntries(Object.entries(o).map(([k,v])=>[k,+(v*f).toFixed(2)]));
+  const T=(b,sec,stk)=>({type:'trad',b,sectors:sec,stocks:stk});
+  const CC=(b,sec,stk,idx,cov,otm,prem)=>({type:'cc',b,sectors:sec,stocks:stk,idx,cov,otm,prem});
+  const ONE=(tk,cc,otm,prem)=>{const s=_ST_STOCKS[tk];const base={b:s.b,sectors:{[s.s]:100},stocks:{[tk]:100},single:tk};return cc?Object.assign(base,{type:'cc',idx:'SPX',cov:100,otm,prem}):Object.assign(base,{type:'trad'});};
+  const L={
+    SPY:T(1,SP_SEC,SP_STK),VOO:T(1,SP_SEC,SP_STK),IVV:T(1,SP_SEC,SP_STK),
+    VTI:T(1.02,Object.assign(scale(SP_SEC,0.9),{Small:8}),scale(SP_STK,0.85)),
+    QQQ:T(1.15,NDX_SEC,NDX_STK),QQQM:T(1.15,NDX_SEC,NDX_STK),
+    SCHD:T(0.8,DIV_SEC,{}),IWM:T(1.15,RUT_SEC,{}),
+    XLK:T(1.2,{Tech:100},{NVDA:14,AAPL:13,MSFT:12,AVGO:5,AMD:2.5}),
+    SMH:T(1.5,{Tech:100},{NVDA:20,AVGO:8,AMD:5}),
+    JEPI:CC(0.7,{Tech:15,Health:13,Fin:13,Indus:13,Staples:10,Disc:9,Comm:6,Util:5,Energy:3,RE:3,Mat:3},{NVDA:1.6,MSFT:1.6,AMZN:1.6,META:1.5,AAPL:1,GOOGL:1.2},'SPX',70,3,0.7),
+    JEPQ:CC(1.1,NDX_SEC,scale(NDX_STK,0.9),'NDX',75,3,1.0),
+    QYLD:CC(1.15,NDX_SEC,NDX_STK,'NDX',100,0,2.0),
+    XYLD:CC(1,SP_SEC,SP_STK,'SPX',100,0,1.6),
+    RYLD:CC(1.15,RUT_SEC,{},'RUT',100,0,2.2),
+    SPYI:CC(1,SP_SEC,SP_STK,'SPX',90,2,1.1),
+    QQQI:CC(1.15,NDX_SEC,NDX_STK,'NDX',90,2,1.4),
+    GPIX:CC(1,SP_SEC,SP_STK,'SPX',50,2,0.9),
+    GPIQ:CC(1.15,NDX_SEC,NDX_STK,'NDX',50,2,1.2),
+    DIVO:CC(0.85,{Fin:20,Tech:18,Health:12,Indus:12,Staples:10,Disc:10,Energy:6,Comm:6,Mat:4},{MSFT:5,AAPL:5,JPM:5},'SPX',25,3,0.4),
+    NVDY:ONE('NVDA',true,5,4.0),TSLY:ONE('TSLA',true,5,5.0)
+  };
+  for (const tk of Object.keys(_ST_STOCKS)) if (!L[tk]) L[tk]=ONE(tk,false);
+  return L;
+})();
+const _ST_IDX_REF = {SPX:'SPY',NDX:'QQQ',RUT:'IWM'};
+const _ST_IDX_LABEL = {SPX:'S&P 500',NDX:'Nasdaq-100',RUT:'Russell 2000'};
+const _ST_EXAMPLE = [{t:'SPY',amt:40000},{t:'QQQ',amt:20000},{t:'SCHD',amt:15000},{t:'JEPI',amt:15000},{t:'JEPQ',amt:10000},{t:'QYLD',amt:8000},{t:'NVDY',amt:5000}];
+const _ST_PRESETS = [
+  {n:'Broad selloff',s:{mkt:-15,groups:{},stocks:{}}},
+  {n:'Tech correction',s:{mkt:-5,groups:{Tech:-10},stocks:{}}},
+  {n:'AI rally',s:{mkt:6,groups:{Mag7:6},stocks:{NVDA:10}}},
+  {n:'NVDA earnings miss',s:{mkt:-1,groups:{},stocks:{NVDA:-20}}},
+  {n:'Rate shock',s:{mkt:-6,groups:{RE:-6,Util:-5,Small:-5},stocks:{}}},
+  {n:'Strong month',s:{mkt:8,groups:{},stocks:{}}},
+  {n:'Reset',s:{mkt:0,groups:{},stocks:{}}}
+];
+const _ST_COL = {ink:'#0f172a',muted:'#64748b',line:'#e2e8f0',soft:'#f1f5f9',cc:'#b45309',trad:'#1d4ed8'};
+
+// ── State + persistence ───────────────────────────────────────
+let _stState = { holdings: _ST_EXAMPLE.map(h=>({...h})), overrides:{}, scen:{mkt:0,groups:{},stocks:{}}, isExample:true };
+let _stLoadedFor = null, _stSaveTimer = null, _stRt = -20;
+const _stOpen = new Set();
+
+function _stLoad() {
+  if (!db || _stLoadedFor === db) return;
+  _stLoadedFor = db;
+  try {
+    const raw = queryVal("SELECT data FROM ShockTestPortfolio WHERE id='default'");
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (!d || !Array.isArray(d.holdings)) return;
+    _stState = {
+      holdings: d.holdings.map(h=>({t:String(h.t).toUpperCase(),amt:+h.amt||0})),
+      overrides: (d.overrides && typeof d.overrides==='object') ? d.overrides : {},
+      scen: (d.scen && typeof d.scen==='object') ? {mkt:+d.scen.mkt||0,groups:d.scen.groups||{},stocks:d.scen.stocks||{}} : {mkt:0,groups:{},stocks:{}},
+      isExample: !!d.isExample
+    };
+  } catch(e) { console.warn('ShockTest load:', e.message); }
+}
+function _stSave() {
+  clearTimeout(_stSaveTimer);
+  _stSaveTimer = setTimeout(() => {
+    if (!db) return;
+    try {
+      db.run("INSERT OR REPLACE INTO ShockTestPortfolio (id,data,updatedAt) VALUES ('default',?,?)",
+        [JSON.stringify(_stState), new Date().toISOString()]);
+      syncAfterWrite();
+      _stStatus('Saved to finance.sqlite (syncing to Drive).');
+    } catch(e) {
+      console.error('ShockTest save:', e.message);
+      _stStatus('Save failed: ' + e.message);
+    }
+  }, 1200);
+}
+function _stStatus(t) { const el = document.getElementById('stStatus'); if (el) el.textContent = t; }
+
+// ── Model ─────────────────────────────────────────────────────
+function _stProfile(t) {
+  if (_stState.overrides[t]) return _stState.overrides[t];
+  if (_ST_LIB[t]) return _ST_LIB[t];
+  return {type:'trad',b:1,sectors:{},stocks:{},unknown:true};
+}
+function _stBasket(tk,sc){let s=0;for(const [k,v] of Object.entries(_ST_BASKETS)) if(v.list.includes(tk)) s+=(sc.groups[k]||0)/100;return s;}
+function _stStockTotal(tk,sc){const p=_ST_STOCKS[tk]||{b:1.5,s:''};return p.b*sc.mkt/100+(sc.groups[p.s]||0)/100+_stBasket(tk,sc)+(sc.stocks[tk]||0)/100;}
+function _stUnder(p,sc){
+  if (p.single) return _stStockTotal(p.single,sc);
+  let r=(+p.b||0)*sc.mkt/100;
+  for (const [g,w] of Object.entries(p.sectors||{})) r+=w/100*((sc.groups[g]||0)/100);
+  for (const [tk,w] of Object.entries(p.stocks||{})) r+=w/100*(_stBasket(tk,sc)+(sc.stocks[tk]||0)/100);
+  return r;
+}
+function _stFund(p,sc){
+  const u=Math.max(-1,_stUnder(p,sc));
+  if (p.type!=='cc') return {u,r:u,nc:u,capped:false};
+  const ri = p.single ? u : Math.max(-1,_stUnder(_ST_LIB[_ST_IDX_REF[p.idx]||'SPY'],sc));
+  const k=(+p.otm||0)/100, cov=(+p.cov||0)/100, prem=(+p.prem||0)/100;
+  const give=Math.max(0,ri-k);
+  return {u,r:Math.max(-1,u+cov*(prem-give)),nc:u,capped:give>0&&cov>0};
+}
+function _stPort(sc){
+  let total=0,pnl=0,nc=0,ccV=0,ccP=0,trV=0,trP=0;const rows=[];
+  for (const h of _stState.holdings){
+    const v=+h.amt||0;if(v<=0)continue;
+    const p=_stProfile(h.t),f=_stFund(p,sc);
+    total+=v;pnl+=v*f.r;nc+=v*f.nc;
+    if(p.type==='cc'){ccV+=v;ccP+=v*f.r;}else{trV+=v;trP+=v*f.r;}
+    rows.push({t:h.t,v,p,f});
+  }
+  return {total,pnl,pct:total?pnl/total:0,nc,ncPct:total?nc/total:0,ccV,ccP,trV,trP,rows};
+}
+function _stExposures(){
+  const sec={},stk={};let total=0;
+  for(const h of _stState.holdings){const v=+h.amt||0;if(v<=0)continue;total+=v;const p=_stProfile(h.t);
+    for(const [g,w] of Object.entries(p.sectors||{})) sec[g]=(sec[g]||0)+v*w/100;
+    for(const [k,w] of Object.entries(p.stocks||{})) stk[k]=(stk[k]||0)+v*w/100;}
+  const n=o=>Object.entries(o).map(([k,v])=>[k,total?v/total:0]).sort((a,b)=>b[1]-a[1]);
+  const bsk=Object.entries(_ST_BASKETS).map(([k,b])=>[k,b.list.reduce((s,t)=>s+(stk[t]||0),0)/(total||1)]);
+  return {sec:n(sec),stk:n(stk),bsk,total};
+}
+
+// ── Formatting ────────────────────────────────────────────────
+const _stCls = x=>x>0.00005?'st-pos':x<-0.00005?'st-neg':'';
+const _stSgn = x=>x<-0.00005?'−':x>0.00005?'+':'';
+const _stUsd = x=>_stSgn(x)+'$'+Math.abs(x).toLocaleString('en-US',{maximumFractionDigits:0});
+const _stPct = (x,d=1)=>_stSgn(x)+(Math.abs(x)*100).toFixed(d)+'%';
+const _stSigned = v=>(v>0?'+':'')+v+'%';
+function _stTag(p){
+  if(p.unknown) return '<span class="st-tag st-warn">needs profile</span>';
+  return p.type==='cc' ? '<span class="st-tag st-cc">covered call</span>' : `<span class="st-tag st-trad">${p.single?'stock':'traditional'}</span>`;
+}
+
+// ── Page shell ────────────────────────────────────────────────
+function renderShockTest(container) {
+  if (!container) container = document.getElementById('pageContent');
+  if (!db) { container.innerHTML = ''; return; }
+  _stLoad();
+  const wrap = document.createElement('div'); wrap.className = 'flex flex-col h-full';
+  const bar = document.createElement('div'); bar.className = 'flex-shrink-0'; bar.innerHTML = _pageTabBar(_ST_TABS, _stTab, 'stSetTab');
+  const content = document.createElement('div'); content.id = 'stContent'; content.className = 'flex-1 overflow-auto';
+  wrap.appendChild(bar); wrap.appendChild(content);
+  container.innerHTML = ''; container.appendChild(wrap);
+  _stRenderContent();
+}
+function stSetTab(tab) {
+  _stTab = tab;
+  const c = document.getElementById('stContent');
+  if (c && c.previousElementSibling) c.previousElementSibling.innerHTML = _pageTabBar(_ST_TABS, _stTab, 'stSetTab');
+  _stRenderContent();
+  _pushNavState('shock-test', tab);
+}
+function _stRenderContent() {
+  const c = document.getElementById('stContent');
+  if (!c) return;
+  const intro = `<div class="mb-4"><h2 class="text-lg font-semibold text-slate-900">Shock Test</h2>
+    <p class="text-sm text-slate-500 max-w-2xl">Move the whole market, a sector or basket, or one stock, and see what your covered call and traditional ETFs do over one option cycle (about a month). ETF profiles are estimates, editable on the Holdings tab. What-if tool, not investment advice.</p></div>`;
+  let body;
+  if (_stTab === 'sensitivity') body = _stSensHtml();
+  else if (_stTab === 'holdings') body = _stHoldHtml();
+  else body = _stScenHtml();
+  c.innerHTML = `<div id="stRoot" class="p-4 md:p-6 max-w-6xl">${intro}${body}</div>`;
+  if (_stTab === 'sensitivity') _stWireSens();
+  else if (_stTab === 'holdings') _stWireHold();
+  else _stWireScen();
+}
+
+// ── Scenario tab ──────────────────────────────────────────────
+function _stShockRow(kind,key,label,val){
+  return `<div class="st-shock" data-kind="${kind}" data-key="${escHtml(key)}"><span class="font-medium text-sm">${escHtml(label)}</span><span class="st-val ${_stCls(val)}">${_stSigned(val)}</span><button class="st-x" data-rm aria-label="Remove ${escHtml(label)} shock">×</button><input type="range" min="-50" max="50" step="1" value="${val}" aria-label="${escHtml(label)} move"></div>`;
+}
+function _stScenHtml(){
+  const sc=_stState.scen, e=_stExposures();
+  const eg=new Set(e.sec.filter(x=>x[1]>0.001).map(x=>x[0]).concat(e.bsk.filter(x=>x[1]>0.001).map(x=>x[0])));
+  const gOpts=Object.keys(_ST_GROUP_LABEL).filter(k=>!(k in sc.groups)).sort((a,b)=>eg.has(b)-eg.has(a));
+  const sOpts=e.stk.filter(x=>x[1]>0.0005).map(x=>x[0]).filter(k=>!(k in sc.stocks));
+  const P='bg-white border border-slate-200 rounded-lg p-4';
+  return `<div class="grid gap-5 lg:grid-cols-[340px_1fr]">
+    <div class="${P}">
+      <h3 class="st-h">Set the shock</h3>
+      <div class="flex flex-wrap gap-1.5 mb-3">${_ST_PRESETS.map((p,i)=>`<button class="st-chip" data-preset="${i}">${escHtml(p.n)}</button>`).join('')}</div>
+      <div class="st-shock"><span class="font-medium text-sm">Whole market (S&amp;P 500)</span><span class="st-val ${_stCls(sc.mkt)}" id="stMktVal">${_stSigned(sc.mkt)}</span><span></span>
+        <input type="range" id="stMkt" min="-40" max="40" step="1" value="${sc.mkt}" aria-label="Market move"></div>
+      <h3 class="st-h mt-4">Sector or basket</h3>
+      <p class="text-xs text-slate-500">Extra move on top of the market move.</p>
+      <div id="stGroupRows">${Object.entries(sc.groups).map(([k,v])=>_stShockRow('groups',k,_ST_GROUP_LABEL[k]||k,v)).join('')}</div>
+      <select id="stAddGroup" class="st-select mt-2"><option value="">Add a sector or basket…</option>${gOpts.map(k=>`<option value="${k}">${escHtml(_ST_GROUP_LABEL[k])}${eg.has(k)?'':' (no exposure)'}</option>`).join('')}</select>
+      <h3 class="st-h mt-4">Single stock</h3>
+      <p class="text-xs text-slate-500">Extra move on top of market and sector, wherever the stock sits inside your ETFs.</p>
+      <div id="stStockRows">${Object.entries(sc.stocks).map(([k,v])=>_stShockRow('stocks',k,k,v)).join('')}</div>
+      <select id="stAddStock" class="st-select mt-2"><option value="">Add a stock…</option>${sOpts.map(k=>`<option value="${escHtml(k)}">${escHtml(k)}</option>`).join('')}</select>
+    </div>
+    <div class="space-y-5">
+      <div class="${P}">
+        <p class="text-xs text-slate-500">Portfolio change</p>
+        <div class="flex flex-wrap items-baseline gap-x-3"><span id="stPnl" class="text-4xl font-semibold tracking-tight"></span><span id="stPctV" class="text-lg font-medium"></span></div>
+        <p class="text-sm mt-1" id="stCalls"></p>
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div class="st-sleeve" style="border-left-color:${_ST_COL.cc}"><span class="text-xs text-slate-500">Covered call ETFs</span><b id="stCC" class="block"></b></div>
+          <div class="st-sleeve" style="border-left-color:${_ST_COL.trad}"><span class="text-xs text-slate-500">Traditional ETFs &amp; stocks</span><b id="stTrad" class="block"></b></div>
+        </div>
+      </div>
+      <div class="${P}">
+        <h3 class="st-h">By holding</h3>
+        <div class="overflow-x-auto"><table class="st-table"><thead><tr><th>Holding</th><th>Underlying</th><th>Fund</th><th>$ change</th></tr></thead><tbody id="stRows"></tbody></table></div>
+        <p class="st-note">Covered call rows: fund return = underlying move + premium − any gain above the call strike on the covered share. "Capped" means the calls took away some upside.</p>
+      </div>
+    </div>
+  </div>`;
+}
+function _stScenResults(){
+  const P=_stPort(_stState.scen), el=id=>document.getElementById(id);
+  if(!el('stPnl')) return;
+  el('stPnl').textContent=_stUsd(P.pnl); el('stPnl').className='text-4xl font-semibold tracking-tight '+_stCls(P.pnl);
+  el('stPctV').textContent=_stPct(P.pct); el('stPctV').className='text-lg font-medium '+_stCls(P.pnl);
+  const diff=P.pnl-P.nc;
+  el('stCalls').innerHTML=P.ccV>0?`Without the calls: <b>${_stUsd(P.nc)}</b>. The calls ${Math.abs(diff)<1?'make no difference':diff>0?`<span class="st-pos">add ${_stUsd(diff).slice(1)}</span> here (premium)`:`<span class="st-neg">cost ${_stUsd(-diff).slice(1)}</span> here (capped upside)`}.`:'No covered call holdings.';
+  el('stCC').innerHTML=P.ccV?`<span class="${_stCls(P.ccP)}">${_stUsd(P.ccP)} (${_stPct(P.ccP/P.ccV)})</span>`:'None';
+  el('stTrad').innerHTML=P.trV?`<span class="${_stCls(P.trP)}">${_stUsd(P.trP)} (${_stPct(P.trP/P.trV)})</span>`:'None';
+  el('stRows').innerHTML=P.rows.length?P.rows.map(r=>`<tr><td>${escHtml(r.t)}${_stTag(r.p)}${r.f.capped?'<span class="st-tag st-warn">capped</span>':''}</td><td class="${_stCls(r.f.u)}">${_stPct(r.f.u)}</td><td class="${_stCls(r.f.r)}">${_stPct(r.f.r)}</td><td class="${_stCls(r.f.r)}">${_stUsd(r.v*r.f.r)}</td></tr>`).join(''):'<tr><td colspan="4" class="text-slate-500">Add holdings on the Holdings tab.</td></tr>';
+}
+function _stWireScen(){
+  const root=document.getElementById('stRoot');
+  _stScenResults();
+  root.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{_stState.scen=JSON.parse(JSON.stringify(_ST_PRESETS[+b.dataset.preset].s));_stSave();_stRenderContent();}));
+  document.getElementById('stMkt').addEventListener('input',e=>{const v=+e.target.value;_stState.scen.mkt=v;const l=document.getElementById('stMktVal');l.textContent=_stSigned(v);l.className='st-val '+_stCls(v);_stScenResults();_stSave();});
+  ['stGroupRows','stStockRows'].forEach(id=>{const box=document.getElementById(id);
+    box.addEventListener('input',e=>{if(e.target.type!=='range')return;const row=e.target.closest('.st-shock');const v=+e.target.value;_stState.scen[row.dataset.kind][row.dataset.key]=v;const l=row.querySelector('.st-val');l.textContent=_stSigned(v);l.className='st-val '+_stCls(v);_stScenResults();_stSave();});
+    box.addEventListener('click',e=>{if(!e.target.closest('[data-rm]'))return;const row=e.target.closest('.st-shock');delete _stState.scen[row.dataset.kind][row.dataset.key];_stSave();_stRenderContent();});
+  });
+  document.getElementById('stAddGroup').addEventListener('change',e=>{if(!e.target.value)return;_stState.scen.groups[e.target.value]=-10;_stSave();_stRenderContent();});
+  document.getElementById('stAddStock').addEventListener('change',e=>{if(!e.target.value)return;_stState.scen.stocks[e.target.value]=-10;_stSave();_stRenderContent();});
+}
+
+// ── Sensitivity tab ───────────────────────────────────────────
+function _stSensHtml(){
+  const P='bg-white border border-slate-200 rounded-lg p-4';
+  const lg=(c,d)=>`<span><i style="display:inline-block;width:18px;border-top:3px ${d?'dashed':'solid'} ${c};vertical-align:middle;margin-right:6px"></i>`;
+  return `<div class="space-y-5">
+    <div class="${P}">
+      <h3 class="st-h">Portfolio return across market moves</h3>
+      <p class="text-xs text-slate-500">Market from −30% to +30%. Sector and stock shocks stay as set on the Scenario tab.</p>
+      <div id="stPayoff" class="max-w-3xl"></div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
+        ${lg(_ST_COL.ink)}Whole portfolio</span>${lg(_ST_COL.ink,1)}Same holdings, no calls</span>${lg(_ST_COL.cc)}Covered call sleeve</span>${lg(_ST_COL.trad)}Traditional sleeve</span>
+      </div>
+      <p class="text-sm mt-2" id="stCapture"></p>
+    </div>
+    <div class="${P}">
+      <h3 class="st-h">What a 10% shock does</h3>
+      <p class="text-xs text-slate-500">Each row moves one thing by 10% with everything else flat, measured against a flat month. Sector, basket and stock rows are extra moves beyond the market.</p>
+      <div class="overflow-x-auto"><table class="st-table"><thead><tr><th>Shock</th><th>Your exposure</th><th>−10%</th><th>+10%</th><th>Upside kept</th></tr></thead><tbody id="stSensRows"></tbody></table></div>
+      <p class="st-note">"Upside kept" = gain from +10% divided by loss from −10%. Below 100% means the calls give away more on the way up than they save on the way down.</p>
+    </div>
+    <div class="${P}">
+      <h3 class="st-h">Round trip: drop, then full recovery</h3>
+      <div class="st-shock"><span class="font-medium text-sm">Market falls, then climbs back to where it started</span><span class="st-val st-neg" id="stRtVal">${_stSigned(_stRt)}</span><span></span>
+        <input type="range" id="stRt" min="-40" max="-5" step="1" value="${_stRt}" aria-label="Round trip drop size"></div>
+      <div class="overflow-x-auto mt-2"><table class="st-table"><thead><tr><th>Holding</th><th>Month 1</th><th>Month 2</th><th>Net</th></tr></thead><tbody id="stRtRows"></tbody></table></div>
+      <p class="st-note">Covered call funds often finish a round trip below where they started: they take most of the drop, then the calls cap the rebound.</p>
+    </div>
+  </div>`;
+}
+function _stNiceStep(raw){const p=Math.pow(10,Math.floor(Math.log10(raw||1)));const n=raw/p;return (n<1.5?1:n<3.5?2:n<7.5?5:10)*p;}
+function _stRenderPayoff(){
+  const box=document.getElementById('stPayoff');if(!box)return;
+  const base=_stState.scen,xs=[];for(let m=-30;m<=30;m++)xs.push(m);
+  const S={tot:[],nc:[],cc:[],tr:[]};
+  for(const m of xs){const P=_stPort(Object.assign({},base,{mkt:m}));S.tot.push(P.pct);S.nc.push(P.ncPct);S.cc.push(P.ccV?P.ccP/P.ccV:null);S.tr.push(P.trV?P.trP/P.trV:null);}
+  const all=[].concat(S.tot,S.nc,S.cc,S.tr).filter(v=>v!==null);
+  if(!all.length){box.innerHTML='<p class="text-slate-500 text-sm">Add holdings to see the curve.</p>';return;}
+  let lo=Math.min(...all),hi=Math.max(...all);const pad=(hi-lo)*0.08||0.01;lo-=pad;hi+=pad;
+  const W=400,H=250,L=40,R=10,Tp=10,B=26,C=_ST_COL;
+  const X=m=>L+(m+30)/60*(W-L-R),Y=v=>Tp+(hi-v)/(hi-lo)*(H-Tp-B);
+  const step=_stNiceStep((hi-lo)*100/5)/100;let g='';
+  for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step)g+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C.soft}"/><text x="${L-5}" y="${Y(v)+4}" text-anchor="end" font-size="10" fill="${C.muted}">${(v*100).toFixed(step<0.01?1:0)}%</text>`;
+  for(const m of [-30,-20,-10,0,10,20,30])g+=`<text x="${X(m)}" y="${H-8}" text-anchor="middle" font-size="10" fill="${C.muted}">${m>0?'+':''}${m}%</text>`;
+  const zero=(lo<0&&hi>0)?`<line x1="${L}" x2="${W-R}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.muted}"/>`:'';
+  const path=(arr,col,w,dash)=>arr.some(v=>v===null)?'':`<polyline fill="none" stroke="${col}" stroke-width="${w}" ${dash?'stroke-dasharray="5 4"':''} stroke-linejoin="round" points="${arr.map((v,i)=>X(xs[i]).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}"/>`;
+  const cm=Math.max(-30,Math.min(30,base.mkt)),cur=_stPort(base);
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Portfolio return versus market move">${g}<line x1="${X(0)}" x2="${X(0)}" y1="${Tp}" y2="${H-B}" stroke="${C.line}"/>${zero}${path(S.tr,C.trad,2)}${path(S.cc,C.cc,2)}${path(S.nc,C.ink,1.5,true)}${path(S.tot,C.ink,2.5)}<line x1="${X(cm)}" x2="${X(cm)}" y1="${Tp}" y2="${H-B}" stroke="${C.ink}" stroke-dasharray="2 3"/><circle cx="${X(cm)}" cy="${Y(cur.pct)}" r="4.5" fill="${C.ink}"/><text x="${W-R}" y="${H-B-4}" text-anchor="end" font-size="10" fill="${C.muted}">market move →</text></svg>`;
+  const up=_stPort({mkt:10,groups:{},stocks:{}}),dn=_stPort({mkt:-10,groups:{},stocks:{}});
+  document.getElementById('stCapture').innerHTML=`Market +10%: <b class="${_stCls(up.pct)}">${_stPct(up.pct)}</b> (no calls ${_stPct(up.ncPct)}). Market −10%: <b class="${_stCls(dn.pct)}">${_stPct(dn.pct)}</b> (no calls ${_stPct(dn.ncPct)}).`;
+}
+function _stRenderSensTable(){
+  const box=document.getElementById('stSensRows');if(!box)return;
+  const e=_stExposures();
+  if(!e.total){box.innerHTML='<tr><td colspan="5" class="text-slate-500">Add holdings to see sensitivities.</td></tr>';return;}
+  const rows=[{label:'Whole market',exp:'100% (beta-weighted)',mk:v=>({mkt:v,groups:{},stocks:{}})}];
+  const grp=e.sec.filter(x=>x[1]>0.005).concat(e.bsk.filter(x=>x[1]>0.005)).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  for(const [k,w] of grp) rows.push({label:_ST_GROUP_LABEL[k]||k,exp:(w*100).toFixed(1)+'%',mk:v=>({mkt:0,groups:{[k]:v},stocks:{}})});
+  for(const [k,w] of e.stk.slice(0,5)) if(w>0.001) rows.push({label:k,exp:(w*100).toFixed(1)+'%',mk:v=>({mkt:0,groups:{},stocks:{[k]:v}})});
+  const flat=_stPort({mkt:0,groups:{},stocks:{}});
+  const cell=x=>`<td class="${_stCls(x)}">${_stUsd(x)}<br><span class="text-xs">${_stPct(x/e.total,2)}</span></td>`;
+  box.innerHTML=`<tr><td>Flat month (premium income)</td><td>–</td><td colspan="2" class="${_stCls(flat.pnl)}">${_stUsd(flat.pnl)} (${_stPct(flat.pct,2)})</td><td>–</td></tr>`+
+    rows.map(r=>{const d=_stPort(r.mk(-10)).pnl-flat.pnl,u=_stPort(r.mk(10)).pnl-flat.pnl;const cap=d<-0.5?u/-d:null;
+      return `<tr><td>${escHtml(r.label)}</td><td>${r.exp}</td>${cell(d)}${cell(u)}<td>${cap===null?'–':Math.round(cap*100)+'%'}</td></tr>`;}).join('');
+}
+function _stRenderRoundTrip(){
+  const box=document.getElementById('stRtRows');if(!box)return;
+  const d=_stRt,m2=(1/(1+d/100)-1)*100;
+  const s1={mkt:d,groups:{},stocks:{}},s2={mkt:m2,groups:{},stocks:{}};
+  let tot=0,end=0;const rows=[];
+  for(const h of _stState.holdings){const v=+h.amt||0;if(v<=0)continue;const p=_stProfile(h.t);const a=_stFund(p,s1).r,b=_stFund(p,s2).r;const net=(1+a)*(1+b)-1;tot+=v;end+=v*(1+net);
+    rows.push(`<tr><td>${escHtml(h.t)}${_stTag(p)}</td><td class="${_stCls(a)}">${_stPct(a)}</td><td class="${_stCls(b)}">${_stPct(b)}</td><td class="${_stCls(net)}"><b>${_stPct(net)}</b></td></tr>`);}
+  const n=tot?end/tot-1:0;
+  box.innerHTML=rows.length?rows.join('')+`<tr><td><b>Portfolio</b></td><td></td><td></td><td class="${_stCls(n)}"><b>${_stPct(n)} (${_stUsd(end-tot)})</b></td></tr>`:'<tr><td colspan="4" class="text-slate-500">Add holdings first.</td></tr>';
+}
+function _stWireSens(){
+  _stRenderPayoff();_stRenderSensTable();_stRenderRoundTrip();
+  document.getElementById('stRt').addEventListener('input',e=>{_stRt=+e.target.value;document.getElementById('stRtVal').textContent=_stSigned(_stRt);_stRenderRoundTrip();});
+}
+
+// ── Holdings tab ──────────────────────────────────────────────
+function _stWText(o){return Object.entries(o||{}).map(([k,v])=>`${_ST_SECTORS[k]||k} ${v}`).join(', ');}
+function _stParseW(txt,isSector){
+  const out={};
+  for(const part of String(txt).split(/[,;\n]+/)){
+    const m=part.trim().match(/^(.+?)[\s:=]+(-?[\d.]+)\s*%?$/);if(!m)continue;let k=m[1].trim();
+    if(isSector){const hit=Object.entries(_ST_SECTORS).find(([key,lab])=>key.toLowerCase()===k.toLowerCase()||lab.toLowerCase()===k.toLowerCase());if(!hit)continue;k=hit[0];}
+    else k=k.toUpperCase().replace(/[^A-Z.]/g,'');
+    if(k)out[k]=+m[2];
+  }
+  return out;
+}
+function _stEditor(t,p){
+  const isC=p.type==='cc';
+  return `<div class="st-edit ${isC?'is-cc':''}" data-t="${escHtml(t)}">
+    <label>Type<select data-f="type"><option value="trad"${!isC?' selected':''}>Traditional / stock</option><option value="cc"${isC?' selected':''}>Covered call</option></select></label>
+    <label>Market beta<input data-f="b" type="number" step="0.05" value="${p.b}"></label>
+    <label>Tracks one stock<input data-f="single" placeholder="e.g. NVDA" value="${escHtml(p.single||'')}"></label>
+    <label class="cc-only">Calls written on<select data-f="idx">${Object.keys(_ST_IDX_LABEL).map(k=>`<option value="${k}"${p.idx===k?' selected':''}>${_ST_IDX_LABEL[k]}</option>`).join('')}</select></label>
+    <label class="cc-only">Share covered %<input data-f="cov" type="number" step="5" min="0" max="100" value="${p.cov??100}"></label>
+    <label class="cc-only">Strike above price %<input data-f="otm" type="number" step="0.5" value="${p.otm??0}"></label>
+    <label class="cc-only">Premium per month %<input data-f="prem" type="number" step="0.1" value="${p.prem??1}"></label>
+    <label class="st-wide">Sector weights %<textarea data-f="sectors">${escHtml(_stWText(p.sectors))}</textarea></label>
+    <label class="st-wide">Top stock weights %<textarea data-f="stocks">${escHtml(_stWText(p.stocks))}</textarea></label>
+    <div class="st-wide"><button class="st-btn" data-reset>Reset to default</button> <span class="text-xs text-slate-500">${_stState.overrides[t]?'Edited':'Default profile'}</span></div>
+  </div>`;
+}
+function _stHoldHtml(){
+  const P='bg-white border border-slate-200 rounded-lg p-4';
+  const tot=_stState.holdings.reduce((s,h)=>s+(+h.amt||0),0);
+  const list=_stState.holdings.length?_stState.holdings.map((h,i)=>{const p=_stProfile(h.t);const w=tot?(+h.amt||0)/tot:0;
+    return `<div class="st-hold" data-i="${i}"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(h.t)}</span>${_stTag(p)}<span class="text-xs text-slate-500 ml-auto">${(w*100).toFixed(1)}%</span><input class="st-amt" type="number" min="0" step="100" value="${+h.amt||0}" aria-label="${escHtml(h.t)} amount"><button class="st-x" data-del aria-label="Remove ${escHtml(h.t)}">×</button></div>
+      <details${_stOpen.has(h.t)?' open':''} data-t="${escHtml(h.t)}"><summary class="text-xs text-slate-500 cursor-pointer mt-1">Assumptions${p.unknown?' – set these, ticker not in the built-in list':''}</summary>${_stEditor(h.t,p)}</details></div>`;}).join(''):'<p class="text-sm text-slate-500">No holdings yet. Add one below or import a list.</p>';
+  const e=_stExposures();
+  const bars=(arr,col)=>{const mx=arr[0]?Math.max(arr[0][1],0.0001):1;return arr.slice(0,5).map(([k,v])=>`<div class="st-bar"><span>${escHtml(_ST_GROUP_LABEL[k]||k)}</span><span class="st-track"><span style="width:${v/mx*100}%;background:${col}"></span></span><span>${(v*100).toFixed(1)}%</span></div>`).join('');};
+  return `<div class="grid gap-5 lg:grid-cols-2">
+    <div class="${P}">
+      <h3 class="st-h">Your holdings</h3>
+      <p class="text-xs text-slate-500" id="stStatus">${_stState.isExample?'Example portfolio. Replace it with yours; changes save to finance.sqlite.':'Saved in finance.sqlite on Drive.'}</p>
+      <div id="stHoldList">${list}</div>
+      <p class="text-xs text-slate-500 mt-2">${tot?'Total $'+tot.toLocaleString('en-US',{maximumFractionDigits:0}):''}</p>
+      <h3 class="st-h mt-4">Add a holding</h3>
+      <div class="flex flex-wrap gap-2">
+        <input id="stNewT" list="stTickerList" placeholder="Ticker, e.g. JEPQ" class="st-input w-36 uppercase" aria-label="Ticker">
+        <input id="stNewA" type="number" min="0" step="100" placeholder="Amount $" class="st-input w-32" aria-label="Amount in dollars">
+        <button class="st-btn st-primary" id="stAddBtn">Add holding</button>
+      </div>
+      <datalist id="stTickerList">${Object.keys(_ST_LIB).map(k=>`<option value="${k}">`).join('')}</datalist>
+      <p class="text-xs text-slate-500 mt-1" id="stAddMsg"></p>
+    </div>
+    <div class="space-y-5">
+      <div class="${P}">
+        <h3 class="st-h">Import tickers and amounts</h3>
+        <p class="text-xs text-slate-500 mb-2">Upload a CSV from your broker, or paste lines like <code>JEPI, 25000</code>. Import replaces the current list.</p>
+        <input type="file" id="stFile" accept=".csv,.txt,text/csv,text/plain" class="text-sm mb-2" aria-label="Upload CSV">
+        <textarea id="stPaste" class="st-input w-full" rows="4" placeholder="SPY, 40000&#10;QQQ, 20000&#10;JEPI, 15000"></textarea>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button class="st-btn st-primary" id="stImportBtn">Import pasted list</button>
+          <button class="st-btn" id="stExampleBtn">Load example portfolio</button>
+          <button class="st-btn" id="stClearBtn">Clear all</button>
+        </div>
+        <p class="text-sm mt-2" id="stImportMsg"></p>
+      </div>
+      <div class="${P}">
+        <h3 class="st-h">Look-through exposure</h3>
+        <p class="text-xs text-slate-500 mb-2">Share of your whole portfolio in each sector and top stock, through all your ETFs.</p>
+        ${e.total?`<div class="grid gap-4 sm:grid-cols-2"><div><p class="text-sm font-medium mb-1">Sectors</p>${bars(e.sec,_ST_COL.trad)}</div><div><p class="text-sm font-medium mb-1">Top stocks</p>${bars(e.stk,_ST_COL.cc)}</div></div>`:'<p class="text-sm text-slate-500">Add holdings first.</p>'}
+      </div>
+    </div>
+  </div>`;
+}
+function _stSplitCSV(line){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}else if((c===','||c==='\t'||c===';')&&!q){out.push(cur);cur='';}else cur+=c;}out.push(cur);return out.map(s=>s.trim());}
+function _stNum(s){if(s==null)return NaN;let t=String(s).trim();const neg=/^\(.*\)$/.test(t);t=t.replace(/[$,()\s]/g,'');const n=parseFloat(t);return neg?-n:n;}
+function _stIsTicker(s){return /^[A-Z][A-Z0-9.\-]{0,6}$/.test(String(s).trim().toUpperCase())&&/[A-Za-z]/.test(s);}
+function _stParseHoldings(text){
+  const SKIP=/^(CASH|TOTAL|PENDING|SPAXX|FDRXX|FCASH|CORE|ACCOUNT)/i;
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);if(!lines.length)return{rows:[],skipped:0};
+  const rows=lines.map(l=>/[,\t;]/.test(l)?_stSplitCSV(l):l.split(/\s+/));
+  let symI=-1,valI=-1,start=0;
+  for(let r=0;r<Math.min(rows.length,12)&&symI<0;r++){const h=rows[r].map(c=>c.toLowerCase());const si=h.findIndex(c=>/^(symbol|ticker)/.test(c));
+    if(si>=0){symI=si;start=r+1;for(const pat of [/current value/,/market value/,/^value/,/amount/,/balance/,/value/]){valI=h.findIndex(c=>pat.test(c));if(valI>=0)break;}}}
+  const map=new Map();let skipped=0;
+  for(const r of rows.slice(start)){
+    let t,v;
+    if(symI>=0&&valI>=0){t=(r[symI]||'').replace(/\*+$/,'');v=_stNum(r[valI]);}
+    else{t=r.find(_stIsTicker);const nums=r.map(_stNum).filter(n=>!isNaN(n)&&n>0);v=nums.length?nums[nums.length-1]:NaN;}
+    t=String(t||'').trim().toUpperCase();
+    if(!_stIsTicker(t)||SKIP.test(t)||!(v>0)){skipped++;continue;}
+    map.set(t,(map.get(t)||0)+v);
+  }
+  return{rows:[...map].map(([t,amt])=>({t,amt:Math.round(amt)})),skipped};
+}
+function _stImport(text,source){
+  const {rows,skipped}=_stParseHoldings(text);
+  if(!rows.length){const m=document.getElementById('stImportMsg');if(m)m.innerHTML=`<span class="st-neg">No ticker and amount pairs found in ${escHtml(source)}.</span> Use one holding per line, like <code>JEPI, 25000</code>, or a CSV with Symbol and Value columns.`;return;}
+  _stState.holdings=rows;_stState.isExample=false;
+  const unknown=rows.filter(r=>!_ST_LIB[r.t]&&!_stState.overrides[r.t]).map(r=>r.t);unknown.forEach(t=>_stOpen.add(t));
+  _stSave();_stRenderContent();
+  const m=document.getElementById('stImportMsg');
+  if(m)m.innerHTML=`<span class="st-pos">Imported ${rows.length} holding${rows.length>1?'s':''}</span> from ${escHtml(source)}${skipped?`, skipped ${skipped} line${skipped>1?'s':''}`:''}.${unknown.length?` Set assumptions for: <b>${unknown.map(escHtml).join(', ')}</b>.`:''}`;
+}
+function _stWireHold(){
+  const list=document.getElementById('stHoldList');
+  list.addEventListener('change',e=>{
+    const hold=e.target.closest('.st-hold');if(!hold)return;const i=+hold.dataset.i;
+    if(e.target.classList.contains('st-amt')){_stState.holdings[i].amt=Math.max(0,+e.target.value||0);_stState.isExample=false;_stSave();_stRenderContent();return;}
+    const ed=e.target.closest('.st-edit');if(!ed)return;
+    const t=ed.dataset.t,f=e.target.dataset.f;const p=JSON.parse(JSON.stringify(_stProfile(t)));delete p.unknown;
+    if(f==='type'){p.type=e.target.value;if(p.type==='cc'){p.idx=p.idx||'SPX';p.cov=p.cov??100;p.otm=p.otm??0;p.prem=p.prem??1;}}
+    else if(f==='sectors'||f==='stocks')p[f]=_stParseW(e.target.value,f==='sectors');
+    else if(f==='single'){const s=e.target.value.trim().toUpperCase();if(s)p.single=s;else delete p.single;}
+    else if(f==='idx')p.idx=e.target.value;
+    else p[f]=+e.target.value||0;
+    _stState.overrides[t]=p;_stState.isExample=false;_stOpen.add(t);_stSave();_stRenderContent();
+  });
+  list.addEventListener('click',e=>{
+    const hold=e.target.closest('.st-hold');if(!hold)return;const i=+hold.dataset.i;
+    if(e.target.closest('[data-del]')){_stState.holdings.splice(i,1);_stState.isExample=false;_stSave();_stRenderContent();}
+    else if(e.target.closest('[data-reset]')){delete _stState.overrides[_stState.holdings[i].t];_stSave();_stRenderContent();}
+  });
+  list.addEventListener('toggle',e=>{const d=e.target;if(d.tagName!=='DETAILS')return;if(d.open)_stOpen.add(d.dataset.t);else _stOpen.delete(d.dataset.t);},true);
+  document.getElementById('stAddBtn').addEventListener('click',()=>{
+    const t=document.getElementById('stNewT').value.trim().toUpperCase().replace(/[^A-Z.\-]/g,'');const a=+document.getElementById('stNewA').value;
+    const msg=document.getElementById('stAddMsg');
+    if(!t){msg.textContent='Enter a ticker.';return;}
+    if(!(a>0)){msg.textContent='Enter an amount above $0.';return;}
+    if(_stState.isExample){_stState.holdings=[];_stState.isExample=false;}
+    const ex=_stState.holdings.find(h=>h.t===t);if(ex)ex.amt=(+ex.amt||0)+a;else _stState.holdings.push({t,amt:a});
+    if(!_ST_LIB[t])_stOpen.add(t);
+    _stSave();_stRenderContent();
+    const m2=document.getElementById('stAddMsg');
+    if(m2)m2.textContent=_ST_LIB[t]||_stState.overrides[t]?`Added ${t}.`:`Added ${t}. It isn't in the built-in list, so open its Assumptions and set type, beta and weights.`;
+  });
+  document.getElementById('stImportBtn').addEventListener('click',()=>_stImport(document.getElementById('stPaste').value,'the pasted list'));
+  document.getElementById('stFile').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>_stImport(String(rd.result),f.name);rd.onerror=()=>{document.getElementById('stImportMsg').textContent='Could not read that file. Save it as CSV and try again.';};rd.readAsText(f);});
+  document.getElementById('stExampleBtn').addEventListener('click',()=>{_stState.holdings=_ST_EXAMPLE.map(h=>({...h}));_stState.isExample=true;_stSave();_stRenderContent();});
+  document.getElementById('stClearBtn').addEventListener('click',()=>{if(!confirm('Remove all Shock Test holdings and edited assumptions?'))return;_stState.holdings=[];_stState.overrides={};_stState.isExample=false;_stSave();_stRenderContent();});
+}
+
 
 let _rmMainTab = 'roadmap';
 const _RM_TABS = [{ id: 'roadmap', label: 'Roadmap' }, { id: 'validation', label: 'Validation' }];
