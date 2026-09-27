@@ -331,6 +331,11 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Equity</span>
       </button>
 
+      <button onclick="navigate('shock-test')" data-page="shock-test" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2 12 6 12 9 3 15 21 18 12 22 12"/></svg>
+        <span class="nav-label">Sensitivity Analysis</span>
+      </button>
+
       <button onclick="navigate('manual-assets')" data-page="manual-assets" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/></svg>
         <span class="nav-label">Assets</span>
@@ -362,14 +367,6 @@ body.dark-mode .bn-dot { background:#60a5fa; }
       <button onclick="navigate('roadmap')" data-page="roadmap" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
         <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 11 3 3 11 3"/><path d="M3 3l8 8"/><path d="M21 13v8h-8"/><path d="M13 21l8-8"/><line x1="11" y1="13" x2="13" y2="11"/></svg>
         <span class="nav-label">Roadmap</span>
-      </button>
-
-      <!-- ── ANALYZE ── -->
-      <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Analyze</div>
-
-      <button onclick="navigate('shock-test')" data-page="shock-test" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2 12 6 12 9 3 15 21 18 12 22 12"/></svg>
-        <span class="nav-label">Shock Test</span>
       </button>
 
       <!-- Settings — thin lines above and below provided by border-t here and border-t on clock section -->
@@ -2152,6 +2149,17 @@ function startApp() {
     )`);
   } catch(e) { console.warn('NotificationConfig init:', e.message); }
 
+  // Ensure EquitySplit table exists — log of splits so they can be reversed
+  try {
+    db.run(`CREATE TABLE IF NOT EXISTS EquitySplit (
+      id TEXT PRIMARY KEY,
+      ticker TEXT NOT NULL,
+      num REAL NOT NULL,
+      den REAL NOT NULL,
+      createdAt TEXT NOT NULL
+    )`);
+  } catch(e) { console.warn('EquitySplit init:', e.message); }
+
   // Ensure ShockTestPortfolio table exists (one JSON row, id='default')
   try {
     db.run(`CREATE TABLE IF NOT EXISTS ShockTestPortfolio (
@@ -2798,7 +2806,7 @@ function _renderDividendsTab(container) {
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
       <td class="px-3 py-2 text-xs text-amber-600 font-medium">Scheduled</td>
-      <td class="px-3 py-2 text-right whitespace-nowrap">${_txRowActionsHtml(r.id, 'ft')}</td>
+      <td class="px-3 py-2 text-right whitespace-nowrap">${_txRowActionsHtml(r.id, 'ft')} <button onclick="divReverse('${escHtml(r.id)}','ft')" title="Remove this scheduled dividend from Future Transactions" style="font-size:0.65rem;padding:0.125rem 0.375rem;border:1px solid #fecaca;background:white;color:#dc2626;border-radius:0.25rem;cursor:pointer;">Reverse</button></td>
     </tr>`).join('');
 
   const postedRows = postedDivs.map(r => `
@@ -2809,7 +2817,7 @@ function _renderDividendsTab(container) {
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.drName||'')}</td>
       <td class="px-3 py-2 text-xs text-slate-500">${escHtml(r.crName||'')}</td>
       <td class="px-3 py-2 text-xs text-green-600 font-medium">Posted</td>
-      <td class="px-3 py-2 text-right whitespace-nowrap">${_txRowActionsHtml(r.id)}</td>
+      <td class="px-3 py-2 text-right whitespace-nowrap">${_txRowActionsHtml(r.id)} <button onclick="divReverse('${escHtml(r.id)}','tx')" title="Reverse this dividend and delete its entry in Transactions" style="font-size:0.65rem;padding:0.125rem 0.375rem;border:1px solid #fecaca;background:white;color:#dc2626;border-radius:0.25rem;cursor:pointer;">Reverse</button></td>
     </tr>`).join('');
 
   container.innerHTML = `
@@ -2913,18 +2921,19 @@ function _renderDividendsTab(container) {
 
   // Load account pickers
   window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
-  document.getElementById('divDrWrap').innerHTML = acctPickerHtml('divDr', '', 'Search DR account…', {});
-  document.getElementById('divCrWrap').innerHTML = acctPickerHtml('divCr', divIncomeAcct?.id||'', 'Search CR account…', {});
-  if (divIncomeAcct) acctPickerSetValue('divCr', divIncomeAcct.id);
+  const divCrDefault = _defAcct('divCr') || divIncomeAcct?.id || '';
+  document.getElementById('divDrWrap').innerHTML = acctPickerHtml('divDr', _defAcct('divDr'), 'Search DR account…', {});
+  document.getElementById('divCrWrap').innerHTML = acctPickerHtml('divCr', divCrDefault, 'Search CR account…', {});
+  if (divCrDefault) acctPickerSetValue('divCr', divCrDefault);
 }
 
 function divClearForm() {
   document.getElementById('divDate').value   = new Date().toLocaleDateString('en-CA');
   document.getElementById('divTicker').value = '';
   document.getElementById('divAmount').value = '';
-  acctPickerSetValue('divDr', '');
+  acctPickerSetValue('divDr', _defAcct('divDr'));
   const divIncomeAcct = query(`SELECT id FROM Account WHERE LOWER(name) LIKE '%dividend%income%' AND isActive=1 LIMIT 1`)[0];
-  acctPickerSetValue('divCr', divIncomeAcct?.id||'');
+  acctPickerSetValue('divCr', _defAcct('divCr') || divIncomeAcct?.id || '');
   const e = document.getElementById('divErr');
   if (e) { e.textContent=''; e.style.display='none'; }
 }
@@ -4661,8 +4670,8 @@ let plLayouts  = { income: [], expense: [] };
 // NOTE: the marker lives in `isManualAsset`, NOT `role` — existing DBs have a
 // CHECK constraint restricting role to a fixed allow-list.
 // Shared asset-class taxonomy (Manual Assets F2 + Allocation F3).
-const _ASSET_CLASSES = ['Cash','Equities','Bonds','Real estate','Crypto','Precious metals','Collectible','Vehicle','Other'];
-const _ASSET_CLASS_COLOR = { 'Cash':'#059669','Equities':'#2563eb','Bonds':'#0891b2','Real estate':'#0d9488','Crypto':'#9333ea','Precious metals':'#ca8a04','Collectible':'#db2777','Vehicle':'#f97316','Other':'#64748b','Unclassified':'#cbd5e1' };
+const _ASSET_CLASSES = ['Cash','Equities','Bonds','Retirement accounts','Real estate','Crypto','Precious metals','Collectible','Vehicle','Other'];
+const _ASSET_CLASS_COLOR = { 'Cash':'#059669','Equities':'#2563eb','Bonds':'#0891b2','Real estate':'#0d9488','Crypto':'#9333ea','Precious metals':'#ca8a04','Retirement accounts':'#65a30d','Collectible':'#db2777','Vehicle':'#f97316','Other':'#64748b','Unclassified':'#cbd5e1' };
 let maView = 'list', maEditId = null;
 
 function _maOffsetAccountId() {
@@ -6988,6 +6997,7 @@ function _renderSettingsPage(container) {
       { id:'periods',       label:'Periods' },
       { id:'cctemplates',   label:'Credit Card Templates' },
       { id:'notifications', label:'Notifications' },
+      { id:'defaultaccounts', label:'Default Accounts' },
     ]},
     { id:'viewsettings',    label:'View Settings',   tabs:[
       { id:'display',    label:'Display' },
@@ -7877,6 +7887,7 @@ function _renderSettingsPage(container) {
   else if (settingsTab==='importdata')    tabContent = importDataTab();
   else if (settingsTab==='cctemplates')   tabContent = ccTemplatesTab();
   else if (settingsTab==='notifications') tabContent = notificationsTab();
+  else if (settingsTab==='defaultaccounts') tabContent = _defAcctTab();
   else if (settingsTab==='about')         tabContent = aboutTab();
 
   container.innerHTML = `
@@ -8111,6 +8122,76 @@ function _renderSettingsPage(container) {
         </div>
       </div>
     </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+// DEFAULT ACCOUNTS — pre-fill DR/CR on Buy/Vest, Record Sale, Record Dividend
+// Stored as JSON in AppSettings key 'defaultAccounts' (syncs via Drive).
+// ════════════════════════════════════════════════════════════
+const _DEF_ACCT_FIELDS = [
+  { key:'buyDr',  form:'Buy / Vest',      label:'DR account (investment)' },
+  { key:'buyCr',  form:'Buy / Vest',      label:'CR account (cash paid)' },
+  { key:'sellDr', form:'Record Sale',     label:'DR account (cash received)' },
+  { key:'sellCr', form:'Record Sale',     label:'CR account (investment)' },
+  { key:'divDr',  form:'Record Dividend', label:'DR account (cash received)' },
+  { key:'divCr',  form:'Record Dividend', label:'CR account (income)' },
+];
+function _defAcctGet() {
+  try { const r = query("SELECT value FROM AppSettings WHERE key='defaultAccounts'")[0]; return r && r.value ? JSON.parse(r.value) : {}; }
+  catch(e) { return {}; }
+}
+// Returns the saved default account id for a field, or '' if unset or the account is inactive/deleted.
+function _defAcct(key) {
+  const id = _defAcctGet()[key] || '';
+  if (!id) return '';
+  return queryVal('SELECT COUNT(*) FROM Account WHERE id=? AND isActive=1', [id]) ? id : '';
+}
+function _defAcctTab() {
+  window._acctPickerAccounts = query("SELECT id,code,name,hasSubAccounts FROM Account WHERE isActive=1 ORDER BY code ASC");
+  const d = _defAcctGet();
+  const forms = [...new Set(_DEF_ACCT_FIELDS.map(f => f.form))];
+  const blocks = forms.map(form => `
+    <div class="border border-slate-200 rounded-lg p-4">
+      <div class="text-sm font-semibold text-slate-800 mb-3">${escHtml(form)}</div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        ${_DEF_ACCT_FIELDS.filter(f => f.form === form).map(f => `
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">${escHtml(f.label)}</label>
+            ${acctPickerHtml('defAcct_' + f.key, d[f.key] || '', 'Search account\u2026', {})}
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+  return `
+    <div class="space-y-4 max-w-3xl">
+      <div>
+        <h2 class="text-base font-semibold text-slate-900">Default Accounts</h2>
+        <p class="text-sm text-slate-500">Pre-fill the DR and CR accounts when you open these forms on the Buy-Vest-Sell page. You can still change them on each entry. Clear a box to remove its default.</p>
+      </div>
+      ${blocks}
+      <div class="flex items-center gap-3">
+        <button onclick="defAcctSave()" class="bg-slate-900 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-slate-700">Save defaults</button>
+        <span id="defAcctMsg" class="text-sm"></span>
+      </div>
+    </div>`;
+}
+function defAcctSave() {
+  const out = {}, bad = [];
+  _DEF_ACCT_FIELDS.forEach(f => {
+    const id = acctPickerGetValue('defAcct_' + f.key);
+    const wrap = document.querySelector(`[data-wrapper-id="defAcct_${f.key}"] .acct-picker-input`);
+    if (id) out[f.key] = id;
+    else if (wrap && wrap.value.trim()) bad.push(f.form + ' \u2013 ' + f.label);
+  });
+  const msg = document.getElementById('defAcctMsg');
+  if (bad.length) { if (msg) { msg.className = 'text-sm text-red-600'; msg.textContent = 'Pick an account from the list for: ' + bad.join(', '); } return; }
+  try {
+    db.run("INSERT INTO AppSettings (key,value,updatedAt) VALUES ('defaultAccounts',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updatedAt=excluded.updatedAt",
+      [JSON.stringify(out), new Date().toISOString()]);
+    syncAfterWrite();
+    if (msg) { msg.className = 'text-sm text-green-700'; msg.textContent = 'Defaults saved.'; }
+  } catch(e) {
+    if (msg) { msg.className = 'text-sm text-red-600'; msg.textContent = 'Save failed: ' + e.message; }
+  }
 }
 
 function settingsGoTab(tab) {
@@ -13446,16 +13527,42 @@ function _renderPBSPage(container) {
     return row ? (+row.inc || 0) - (+row.exp || 0) : null; // null = no budget set
   }
 
+  // ── Current month: remaining "Proj to Close" (same formula as P&L page) ──
+  // Per account: projectedClose override if set, else max(0, budget − actual).
+  // Net = Σ income − Σ expense. Returns null if the period is locked.
+  function projToCloseNet(period) {
+    const lock = query(`SELECT isLocked FROM Period WHERE period='${period}'`)[0];
+    if (lock && lock.isLocked) return null;
+    const accts = query(`SELECT id, type FROM Account WHERE type IN ('INCOME','EXPENSE') AND isActive=1 AND (role IS NULL OR role NOT IN ('EXCLUDED','FLUX_PL'))`);
+    const dr = {}, cr = {}, bp = {};
+    query(`SELECT drAccountId AS aid, SUM(amount) AS tot FROM "Transaction" WHERE period='${period}' GROUP BY drAccountId`).forEach(r => { dr[r.aid] = +r.tot || 0; });
+    query(`SELECT crAccountId AS aid, SUM(amount) AS tot FROM "Transaction" WHERE period='${period}' GROUP BY crAccountId`).forEach(r => { cr[r.aid] = +r.tot || 0; });
+    query(`SELECT accountId, SUM(amount) AS amount, SUM(projectedClose) AS projectedClose FROM BudgetPlan WHERE period='${period}' GROUP BY accountId`)
+      .forEach(r => { bp[r.accountId] = { bgt: +r.amount || 0, projR: r.projectedClose }; });
+    let inc = 0, exp = 0;
+    for (const a of accts) {
+      const act = a.type === 'INCOME' ? (cr[a.id] || 0) - (dr[a.id] || 0) : (dr[a.id] || 0) - (cr[a.id] || 0);
+      const b = bp[a.id] || { bgt: 0, projR: null };
+      const proj = (b.projR !== null && b.projR !== undefined) ? +b.projR : Math.max(0, b.bgt - act);
+      if (a.type === 'INCOME') inc += proj; else exp += proj;
+    }
+    return inc - exp;
+  }
+
   // ── Build rows ─────────────────────────────────────────────
-  // Opening NW of row 1 = currNW; each subsequent row opens at prior closing NW
+  // Row 1 = current month (opens at currNW, adds remaining Proj to Close).
+  // Each later row opens at the prior closing NW and adds that month's budget.
   let runningNW = currNW;
-  const rows = projPeriods.map(period => {
+  const curNet = projToCloseNet(cp);
+  const curRow = { period: cp, openingNW: currNW, budgetNet: curNet, closingNW: curNet !== null ? currNW + curNet : null, isCurrent: true, locked: curNet === null };
+  runningNW = curRow.closingNW !== null ? curRow.closingNW : currNW;
+  const rows = [curRow].concat(projPeriods.map(period => {
     const openingNW = runningNW;
     const budgetNet = netBudget(period);       // null if no budget entries
     const closingNW = budgetNet !== null ? openingNW + budgetNet : null;
     runningNW = closingNW !== null ? closingNW : openingNW; // carry forward
     return { period, openingNW, budgetNet, closingNW };
-  });
+  }));
 
   // ── UI ─────────────────────────────────────────────────────
   const nwCls  = v => v == null ? 'text-slate-300' : v >= 0 ? 'text-green-700' : 'text-red-600';
@@ -13466,9 +13573,9 @@ function _renderPBSPage(container) {
 
   const rowsHtml = rows.map(r => `
     <tr class="border-t border-slate-100 hover:bg-slate-50">
-      <td class="px-4 py-3 text-sm font-medium text-slate-700 whitespace-nowrap">${periodLabel(r.period)}</td>
+      <td class="px-4 py-3 text-sm font-medium text-slate-700 whitespace-nowrap">${periodLabel(r.period)}${r.isCurrent?' <span class="ml-1 text-xs text-slate-400 font-normal">current month</span>':''}</td>
       <td class="px-4 py-3 text-sm text-right font-medium ${nwCls(r.openingNW)}">${fmtNW(r.openingNW)}</td>
-      <td class="px-4 py-3 text-sm text-right">${fmtPL(r.budgetNet)}</td>
+      <td class="px-4 py-3 text-sm text-right">${r.locked ? '<span class="text-xs text-slate-300">period locked</span>' : fmtPL(r.budgetNet)}${r.isCurrent && !r.locked ? '<div class="text-xs text-slate-400">Proj to Close (P&amp;L)</div>' : ''}</td>
       <td class="px-4 py-3 text-sm text-right font-bold ${nwCls(r.closingNW)}">${fmtNW(r.closingNW)}</td>
     </tr>`).join('');
 
@@ -13481,7 +13588,7 @@ function _renderPBSPage(container) {
       <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-xl font-bold text-slate-900">Projected Balance Sheet</h1>
-          <p class="text-sm text-slate-500">Net P&amp;L sourced from Budget sheet</p>
+          <p class="text-sm text-slate-500">Current month: remaining Proj to Close from the P&amp;L page. Later months: Budget sheet.</p>
         </div>
         <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
           ${optBtns}
@@ -13673,7 +13780,7 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
         </td>
         <td class="px-4 py-3 text-center">
           <input type="checkbox" class="w-4 h-4 accent-slate-700 cursor-pointer" ${stIsLinked(p.ticker)?'checked':''}
-            onchange="stToggleLinked('${escHtml(p.ticker)}',this.checked)" title="Include ${escHtml(p.ticker)} in Shock Test" aria-label="Include ${escHtml(p.ticker)} in Shock Test">
+            onchange="stToggleLinked('${escHtml(p.ticker)}',this.checked)" title="Include ${escHtml(p.ticker)} in Sensitivity Analysis" aria-label="Include ${escHtml(p.ticker)} in Sensitivity Analysis">
         </td>
       </tr>`;
     }).join('');
@@ -13712,7 +13819,7 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
           ${sTh('_mp','Market Price ✎')}
           ${sTh('_mktVal','Market Value')}
           ${sTh('_unreal','Unrealized G/L')}
-          <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap" title="Tick to include in Shock Test">Shock Test</th>
+          <th class="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase whitespace-nowrap" title="Tick to include in Sensitivity Analysis">Sensitivity Analysis</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -13807,8 +13914,8 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
       const lotMkt   = mp ? rem * mp : 0;
       const lotGL    = mp ? lotMkt - rem * lot.price : 0;
       const lotGlCls = lotGL >= 0 ? 'text-green-700' : 'text-red-600';
-      const sales    = query(`SELECT CAST(qty AS REAL) AS qty, trxDate FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate`);
-      const sd       = sales.map(s=>`${fmtDate(s.trxDate)}: ${(+s.qty).toFixed(4)}`).join(' · ');
+      const sales    = query(`SELECT id, CAST(qty AS REAL) AS qty, trxDate FROM EquityLotSale WHERE lotId='${lot.id}' ORDER BY trxDate`);
+      const sd       = sales.map(s=>`${fmtDate(s.trxDate)}: ${(+s.qty).toFixed(4)} <button onclick="event.stopPropagation();eqReverseSale('${escHtml(s.id)}')" class="not-italic text-red-400 hover:text-red-600 underline ml-0.5" title="Reverse this sale and delete its entry in Transactions">Reverse</button>`).join(' · ');
 
       allRows += `
         <tr class="border-t border-slate-100 hover:bg-slate-50" style="display:none">
@@ -13825,6 +13932,8 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
               class="text-xs border border-slate-200 hover:border-slate-400 rounded px-2 py-0.5 text-slate-500 hover:text-slate-800">Sell</button>
             <button onclick="event.stopPropagation();eqOpenSplitModal('${escHtml(lot.id)}','${escHtml(lot.ticker)}')"
               class="text-xs border border-slate-200 hover:border-amber-400 rounded px-2 py-0.5 text-slate-500 hover:text-amber-700 ml-1">Split</button>
+            <button onclick="event.stopPropagation();eqReverseBuy('${escHtml(lot.id)}')"
+              class="text-xs border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-400 hover:text-red-600 ml-1" title="Reverse this purchase and delete its entry in Transactions">Reverse</button>
           </td>
         </tr>
         ${sd?`<tr style="display:none"><td colspan="9" class="px-3 pb-1.5 pt-0 text-xs text-slate-400 italic pl-10">${sd}</td></tr>`:''}`;
@@ -13958,8 +14067,8 @@ query(`SELECT ticker FROM MarketPrice WHERE isManual=1`)
           ${sTr(fmtCurrency(s.costBasis,2),'text-slate-500')}
           ${sTr(`<span class="${sGlCls}">${s.gainLoss>=0?'+':''}${fmtCurrency(s.gainLoss,2)}</span>`,'')}
           <td class="px-3 py-2 text-right whitespace-nowrap">
-            <button onclick="event.stopPropagation();eqUnwindSale('${escHtml(s.saleId)}')"
-              class="text-xs border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-400 hover:text-red-600">Unwind</button>
+            <button onclick="event.stopPropagation();eqReverseSale('${escHtml(s.saleId)}')"
+              class="text-xs border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-400 hover:text-red-600" title="Reverse this sale and delete its entry in Transactions">Reverse</button>
           </td>
         </tr>`;
     }
@@ -14274,6 +14383,7 @@ function eqOpenSplitModal(lotId, ticker) {
   const totalShares = openLots.reduce((s,l) => s + (l.qty - l.soldQty), 0);
   document.getElementById('eqSplitInfo').textContent =
     `${escHtml(ticker)} — ${openLots.length} lot${openLots.length!==1?'s':''}, ${totalShares.toFixed(4)} shares on hand`;
+  _eqRenderSplitHistory(ticker);
   eqSplitPreview();
   modal.style.display = 'flex';
 }
@@ -14305,7 +14415,12 @@ function eqConfirmSplit() {
       const newQty   = lot.qty   * ratio;
       const newPrice = lot.price / ratio;
       db.run('UPDATE EquityLot SET qty=?, price=? WHERE id=?', [newQty, newPrice, lot.id]);
+      // Restate this lot's sales in post-split shares so remaining = qty − sold stays correct.
+      // Dollar amounts (proceeds, costBasis, gainLoss) don't change.
+      db.run('UPDATE EquityLotSale SET qty=CAST(qty AS REAL)*?, price=CAST(price AS REAL)/? WHERE lotId=?', [ratio, ratio, lot.id]);
     }
+    // Log the split so it can be reversed later (see eqReverseSplit)
+    db.run('INSERT INTO EquitySplit (id,ticker,num,den,createdAt) VALUES (?,?,?,?,?)', [genId(), _eqSplitTicker, num, den, new Date().toISOString()]);
     syncAfterWrite();
     document.getElementById('eqSplitModal').style.display = 'none';
     equityTab = 'lots';
@@ -14415,6 +14530,122 @@ async function eqFetchOneTicker(ticker) {
     if (btn) { btn.innerHTML = '&#x21BB;'; btn.disabled = false; btn.title = 'Fetch failed — try again'; btn.classList.add('text-red-400'); }
   }
 }
+// ════════════════════════════════════════════════════════════
+// REVERSALS — undo a buy, sale, split or dividend (option: delete both
+// the equity record and its linked entry in the Transactions register).
+// Blocked when the original period is locked.
+// ════════════════════════════════════════════════════════════
+function _eqPeriodLocked(period) {
+  return !!queryVal('SELECT isLocked FROM Period WHERE period=?', [period]);
+}
+function _eqLockedMsg(period) {
+  return `${periodLabel(period)} is locked. Unlock it in Settings → Configuration → Periods to reverse this.`;
+}
+// Delete a register entry and any Transaction links pointing at it.
+function _eqDeleteTx(txId) {
+  if (!txId) return;
+  db.run('DELETE FROM "Transaction" WHERE id=?', [txId]);
+  db.run('DELETE FROM TransactionLink WHERE txAId=? OR txBId=?', [txId, txId]);
+}
+function _eqRerender() {
+  if (document.getElementById('teContent')) _renderTEContent(); else _renderEquityPage();
+}
+
+function eqReverseBuy(lotId) {
+  const lot = query('SELECT id, ticker, trxDate, period, CAST(qty AS REAL) AS qty, CAST(amount AS REAL) AS amount, linkedTxId FROM EquityLot WHERE id=?', [lotId])[0];
+  if (!lot) return alert('Lot not found.');
+  const nSales = queryVal('SELECT COUNT(*) FROM EquityLotSale WHERE lotId=?', [lotId]) || 0;
+  if (nSales) return alert(`This ${lot.ticker} lot has ${nSales} sale${nSales>1?'s':''} recorded against it. Reverse ${nSales>1?'those sales':'that sale'} first, then reverse the purchase.`);
+  if (_eqPeriodLocked(lot.period)) return alert(_eqLockedMsg(lot.period));
+  if (!confirm(`Reverse this purchase?\n\n${lot.ticker}: ${(+lot.qty).toFixed(4)} shares bought ${fmtDate(lot.trxDate)} for ${fmtCurrency(lot.amount,2)}.\n\nThis deletes the lot and its "Buy ${lot.ticker}" entry in Transactions. It can't be undone.`)) return;
+  try {
+    db.run('BEGIN');
+    // Only delete the register entry if no other lot still points at it
+    const otherRefs = lot.linkedTxId ? (queryVal('SELECT COUNT(*) FROM EquityLot WHERE linkedTxId=? AND id<>?', [lot.linkedTxId, lotId]) || 0) : 0;
+    if (lot.linkedTxId && !otherRefs) _eqDeleteTx(lot.linkedTxId);
+    db.run('DELETE FROM EquityLot WHERE id=?', [lotId]);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _eqRerender();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Reverse failed: ' + e.message); }
+}
+
+function eqReverseSale(saleId) {
+  const sale = query(`SELECT s.id, s.trxDate, s.period, CAST(s.qty AS REAL) AS qty, CAST(s.proceeds AS REAL) AS proceeds, s.linkedTxId, el.ticker
+    FROM EquityLotSale s LEFT JOIN EquityLot el ON el.id=s.lotId WHERE s.id=?`, [saleId])[0];
+  if (!sale) return alert('Sale not found.');
+  if (_eqPeriodLocked(sale.period)) return alert(_eqLockedMsg(sale.period));
+  if (!confirm(`Reverse this sale?\n\n${sale.ticker||''}: ${(+sale.qty).toFixed(4)} shares sold ${fmtDate(sale.trxDate)} for ${fmtCurrency(sale.proceeds||0,2)}.\n\nThe shares go back to the lot, and its "Sell ${sale.ticker||''}" entry in Transactions is deleted. It can't be undone.`)) return;
+  try {
+    db.run('BEGIN');
+    db.run('DELETE FROM EquityLotSale WHERE id=?', [saleId]);
+    // A multi-lot sale can share one register entry; delete it only when nothing else references it
+    if (sale.linkedTxId && !(queryVal('SELECT COUNT(*) FROM EquityLotSale WHERE linkedTxId=?', [sale.linkedTxId]) || 0)) _eqDeleteTx(sale.linkedTxId);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _eqRerender();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Reverse failed: ' + e.message); }
+}
+
+function _eqRenderSplitHistory(ticker) {
+  const modal = document.getElementById('eqSplitModal');
+  if (!modal) return;
+  let box = document.getElementById('eqSplitHistory');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'eqSplitHistory';
+    box.className = 'text-xs text-slate-500 border-t border-slate-100 pt-3 mt-1';
+    const info = document.getElementById('eqSplitInfo');
+    info.parentNode.insertBefore(box, info.nextSibling);
+  }
+  const rows = query('SELECT id, num, den, createdAt FROM EquitySplit WHERE ticker=? ORDER BY createdAt DESC', [ticker]);
+  box.innerHTML = (rows.length
+    ? '<div class="font-medium text-slate-700 mb-1">Recorded splits</div>' + rows.map(r =>
+        `<div class="flex items-center justify-between py-0.5"><span>${+r.num}:${+r.den} on ${fmtDate(r.createdAt)}</span>
+          <button onclick="eqReverseSplit('${escHtml(r.id)}')" class="border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-500 hover:text-red-700">Reverse</button></div>`).join('')
+    : '<div>No recorded splits for this ticker.</div>')
+    + '<div class="mt-1 text-slate-400">Splits made before this update weren\'t recorded. To undo one, enter the inverse ratio above (for example 1:2 to undo a 2:1).</div>';
+}
+
+function eqReverseSplit(splitId) {
+  const sp = query('SELECT id, ticker, num, den, createdAt FROM EquitySplit WHERE id=?', [splitId])[0];
+  if (!sp) return alert('Split not found.');
+  const ratio = (+sp.num) / (+sp.den);
+  // Only lots that existed when the split was applied were rescaled by it
+  const lots = query('SELECT id, CAST(qty AS REAL) AS qty, CAST(price AS REAL) AS price FROM EquityLot WHERE ticker=? AND createdAt<=?', [sp.ticker, sp.createdAt]);
+  if (!confirm(`Reverse the ${+sp.num}:${+sp.den} split of ${sp.ticker}?\n\n${lots.length} lot${lots.length!==1?'s':''} will go back to their pre-split shares and cost per share. Splits don't create Transactions entries, so the register isn't affected.`)) return;
+  try {
+    db.run('BEGIN');
+    for (const l of lots) {
+      db.run('UPDATE EquityLot SET qty=?, price=? WHERE id=?', [l.qty / ratio, l.price * ratio, l.id]);
+      // All sales of these lots are in post-split shares (earlier ones were restated at split time)
+      db.run('UPDATE EquityLotSale SET qty=CAST(qty AS REAL)/?, price=CAST(price AS REAL)*? WHERE lotId=?', [ratio, ratio, l.id]);
+    }
+    db.run('DELETE FROM EquitySplit WHERE id=?', [splitId]);
+    db.run('COMMIT');
+    syncAfterWrite();
+    document.getElementById('eqSplitModal').style.display = 'none';
+    _eqRerender();
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Reverse failed: ' + e.message); }
+}
+
+function divReverse(id, kind) {
+  const isFt = kind === 'ft';
+  const tbl  = isFt ? 'FutureTransaction' : '"Transaction"';
+  const r = query(`SELECT id, trxDate, period, description, CAST(amount AS REAL) AS amount FROM ${tbl} WHERE id=?`, [id])[0];
+  if (!r) return alert('Dividend not found.');
+  if (!isFt && _eqPeriodLocked(r.period)) return alert(_eqLockedMsg(r.period));
+  if (!confirm(`Reverse "${r.description}" of ${fmtCurrency(r.amount,2)} on ${fmtDate(r.trxDate)}?\n\nThis deletes it from ${isFt ? 'Future Transactions' : 'Transactions'}. It can't be undone.`)) return;
+  try {
+    db.run('BEGIN');
+    if (isFt) db.run('DELETE FROM FutureTransaction WHERE id=?', [id]);
+    else _eqDeleteTx(id);
+    db.run('COMMIT');
+    syncAfterWrite();
+    _renderDividendsTab(document.getElementById('teContent'));
+  } catch(e) { try { db.run('ROLLBACK'); } catch(_) {} alert('Reverse failed: ' + e.message); }
+}
+
 function eqUnwindSale(saleId, ticker) {
   if (!confirm(`Unwind this sale of ${ticker}? The lot will return to "Lots with On Hand".`)) return;
   try {
@@ -15032,8 +15263,8 @@ function eqOpenBuyModal(prefillTicker) {
   modalDiv.querySelector('#eqBuyNotes').value          = '';
   modalDiv.querySelector('#eqBuyTickerList').innerHTML = tickerOpts;
 
-  document.getElementById('eqBuyDrWrap').innerHTML = acctPickerHtml('eqBuyDr','','DR account (investment)\u2026',{isFilter:true});
-  document.getElementById('eqBuyCrWrap').innerHTML = acctPickerHtml('eqBuyCr','','CR account (cash paid)\u2026',{isFilter:true});
+  document.getElementById('eqBuyDrWrap').innerHTML = acctPickerHtml('eqBuyDr',_defAcct('buyDr'),'DR account (investment)\u2026',{isFilter:true});
+  document.getElementById('eqBuyCrWrap').innerHTML = acctPickerHtml('eqBuyCr',_defAcct('buyCr'),'CR account (cash paid)\u2026',{isFilter:true});
 
   if (prefillTicker) eqBuyTickerChange(prefillTicker);
   modalDiv.style.display = 'flex';
@@ -15069,8 +15300,8 @@ function eqOpenSellModal(lotId) {
   modalDiv.querySelector('#eqSellNotes').value    = '';
   modalDiv.querySelector('#eqSellPreview').innerHTML = '';
 
-  document.getElementById('eqSellDrWrap').innerHTML = acctPickerHtml('eqSellDr','','DR account (cash received)\u2026',{isFilter:true});
-  document.getElementById('eqSellCrWrap').innerHTML = acctPickerHtml('eqSellCr','','CR account (investment)\u2026',{isFilter:true});
+  document.getElementById('eqSellDrWrap').innerHTML = acctPickerHtml('eqSellDr',_defAcct('sellDr'),'DR account (cash received)\u2026',{isFilter:true});
+  document.getElementById('eqSellCrWrap').innerHTML = acctPickerHtml('eqSellCr',_defAcct('sellCr'),'CR account (investment)\u2026',{isFilter:true});
 
   modalDiv.style.display = 'flex';
 }
@@ -15528,7 +15759,7 @@ let _stTab = 'scenario';
 const _ST_SECTORS = {Tech:'Technology',Comm:'Communication',Disc:'Consumer discretionary',Fin:'Financials',Health:'Health care',Indus:'Industrials',Staples:'Consumer staples',Energy:'Energy',Util:'Utilities',RE:'Real estate',Mat:'Materials',Small:'Small caps'};
 const _ST_BASKETS = {Mag7:{label:'Magnificent 7',list:['AAPL','MSFT','NVDA','AMZN','GOOGL','META','TSLA']},Semis:{label:'AI chips (NVDA, AVGO, AMD)',list:['NVDA','AVGO','AMD']}};
 const _ST_GROUP_LABEL = Object.assign({}, _ST_SECTORS, Object.fromEntries(Object.entries(_ST_BASKETS).map(([k,v])=>[k,v.label])));
-const _ST_STOCKS = {NVDA:{b:1.8,s:'Tech'},AAPL:{b:1.1,s:'Tech'},MSFT:{b:1.0,s:'Tech'},AVGO:{b:1.4,s:'Tech'},AMD:{b:1.9,s:'Tech'},AMZN:{b:1.2,s:'Disc'},TSLA:{b:2.0,s:'Disc'},GOOGL:{b:1.05,s:'Comm'},META:{b:1.25,s:'Comm'},NFLX:{b:1.1,s:'Comm'},COST:{b:0.8,s:'Staples'},JPM:{b:1.0,s:'Fin'},BRKB:{b:0.85,s:'Fin'},LLY:{b:0.6,s:'Health'}};
+const _ST_STOCKS = {NVDA:{b:1.8,s:'Tech'},AAPL:{b:1.1,s:'Tech'},MSFT:{b:1.0,s:'Tech'},AVGO:{b:1.4,s:'Tech'},AMD:{b:1.9,s:'Tech'},AMZN:{b:1.2,s:'Disc'},TSLA:{b:2.0,s:'Disc'},GOOGL:{b:1.05,s:'Comm'},META:{b:1.25,s:'Comm'},NFLX:{b:1.1,s:'Comm'},COST:{b:0.8,s:'Staples'},JPM:{b:1.0,s:'Fin'},BRKB:{b:0.85,s:'Fin'},LLY:{b:0.6,s:'Health'},PLTR:{b:2.2,s:'Tech'}};
 const _ST_LIB = (function(){
   const SP_SEC={Tech:34,Comm:10,Disc:10,Fin:13,Health:9,Indus:8,Staples:5,Energy:3,Util:2.5,RE:2,Mat:2};
   const SP_STK={NVDA:7.5,MSFT:6.5,AAPL:6.5,AMZN:4,GOOGL:4,META:3,AVGO:2.8,TSLA:2,BRKB:1.6,JPM:1.5,LLY:1.2,AMD:0.5};
@@ -15556,14 +15787,27 @@ const _ST_LIB = (function(){
     QQQI:CC(1.15,NDX_SEC,NDX_STK,'NDX',90,2,1.4),
     GPIX:CC(1,SP_SEC,SP_STK,'SPX',50,2,0.9),
     GPIQ:CC(1.15,NDX_SEC,NDX_STK,'NDX',50,2,1.2),
-    DIVO:CC(0.85,{Fin:20,Tech:18,Health:12,Indus:12,Staples:10,Disc:10,Energy:6,Comm:6,Mat:4},{MSFT:5,AAPL:5,JPM:5},'SPX',25,3,0.4),
-    NVDY:ONE('NVDA',true,5,4.0),TSLY:ONE('TSLA',true,5,5.0)
+    DIVO:CC(0.85,{Fin:20,Tech:18,Health:12,Indus:12,Staples:10,Disc:10,Energy:6,Comm:6,Mat:4},{MSFT:5,AAPL:5,JPM:5},'OWN',25,3,0.4),
+    NVDY:ONE('NVDA',true,5,4.0),TSLY:ONE('TSLA',true,5,5.0),
+    // Added Sep 2026 — approximate, from public fund pages; edit per holding if needed.
+    DJIA:CC(0.9,{Fin:27,Indus:17,Tech:17,Health:13,Disc:12,Staples:4.5,Mat:4,Energy:2.7,Comm:2},{MSFT:5,AAPL:3,AMZN:2.5,NVDA:0.5},'DJI',100,0,1.5),
+    ISPY:CC(1,SP_SEC,SP_STK,'SPX',60,0,0.8),       // daily 0DTE calls, approximated as partial monthly coverage
+    IWMI:CC(1.15,RUT_SEC,{},'RUT',90,2,1.5),
+    IYRI:CC(0.95,{RE:100},{},'REIT',90,2,1.0),
+    IDVO:CC(0.75,{Fin:22,Tech:15,Energy:12,Indus:12,Comm:8,Health:8,Mat:8,Disc:8,Staples:5,Util:2},{},'OWN',30,3,0.3),
+    SEPI:CC(0.95,{Tech:30,Fin:13,Comm:11,Disc:10.5,Health:10,Indus:8.5,Staples:5,Energy:4.5,Util:2.5,Mat:2,RE:2},{AAPL:5.3,GOOGL:4.8,NVDA:4,AVGO:4,META:3.6,MSFT:3.6},'OWN',50,3,0.6),
+    QTOP:T(1.25,{Tech:62,Comm:14,Disc:15,Staples:4,Health:4,Indus:1},{NVDA:12,MSFT:11,AAPL:10,AMZN:7.5,AVGO:5.5,META:5,GOOGL:5,TSLA:4.5,COST:4,NFLX:2.5,AMD:2}),
+    SHLD:T(0.8,{Indus:85,Tech:15},{PLTR:8.5})
   };
   for (const tk of Object.keys(_ST_STOCKS)) if (!L[tk]) L[tk]=ONE(tk,false);
   return L;
 })();
-const _ST_IDX_REF = {SPX:'SPY',NDX:'QQQ',RUT:'IWM'};
-const _ST_IDX_LABEL = {SPX:'S&P 500',NDX:'Nasdaq-100',RUT:'Russell 2000'};
+const _ST_IDX_PROF = {
+  SPX:_ST_LIB.SPY, NDX:_ST_LIB.QQQ, RUT:_ST_LIB.IWM,
+  DJI:{type:'trad',b:0.9,sectors:{Fin:27,Indus:17,Tech:17,Health:13,Disc:12,Staples:4.5,Mat:4,Energy:2.7,Comm:2},stocks:{MSFT:5,AAPL:3,AMZN:2.5,NVDA:0.5}},
+  REIT:{type:'trad',b:0.95,sectors:{RE:100},stocks:{}}
+};
+const _ST_IDX_LABEL = {SPX:'S&P 500',NDX:'Nasdaq-100',RUT:'Russell 2000',DJI:'Dow Jones',REIT:'US real estate',OWN:"Fund's own stocks"};
 const _ST_EXAMPLE = [{t:'SPY',amt:40000},{t:'QQQ',amt:20000},{t:'SCHD',amt:15000},{t:'JEPI',amt:15000},{t:'JEPQ',amt:10000},{t:'QYLD',amt:8000},{t:'NVDY',amt:5000}];
 const _ST_PRESETS = [
   {n:'Broad selloff',s:{mkt:-15,groups:{},stocks:{}}},
@@ -15671,7 +15915,7 @@ function _stUnder(p,sc){
 function _stFund(p,sc){
   const u=Math.max(-1,_stUnder(p,sc));
   if (p.type!=='cc') return {u,r:u,nc:u,capped:false};
-  const ri = p.single ? u : Math.max(-1,_stUnder(_ST_LIB[_ST_IDX_REF[p.idx]||'SPY'],sc));
+  const ri = (p.single || p.idx==='OWN') ? u : Math.max(-1,_stUnder(_ST_IDX_PROF[p.idx]||_ST_LIB.SPY,sc));
   const k=(+p.otm||0)/100, cov=(+p.cov||0)/100, prem=(+p.prem||0)/100;
   const give=Math.max(0,ri-k);
   return {u,r:Math.max(-1,u+cov*(prem-give)),nc:u,capped:give>0&&cov>0};
@@ -15730,7 +15974,7 @@ function stSetTab(tab) {
 function _stRenderContent() {
   const c = document.getElementById('stContent');
   if (!c) return;
-  const intro = `<div class="mb-4"><h2 class="text-lg font-semibold text-slate-900">Shock Test</h2>
+  const intro = `<div class="mb-4"><h2 class="text-lg font-semibold text-slate-900">Sensitivity Analysis</h2>
     <p class="text-sm text-slate-500 max-w-2xl">Move the whole market, a sector or basket, or one stock, and see what your covered call and traditional ETFs do over one option cycle (about a month). ETF profiles are estimates, editable on the Holdings tab. What-if tool, not investment advice.</p></div>`;
   let body;
   if (_stTab === 'sensitivity') body = _stSensHtml();
@@ -15926,8 +16170,8 @@ function _stHoldHtml(){
     if(!ps) right='<span class="st-tag st-warn">no open position</span>';
     else if(!ps.price) right='<span class="st-tag st-warn">no market price</span><span class="text-xs text-slate-500 ml-2">set it on the Equity page</span>';
     else right=`<span class="text-xs text-slate-500 ml-auto">${(ps.value/(tot||1)*100).toFixed(1)}%</span><span class="text-sm text-right" style="min-width:8.5rem">${ps.shares%1===0?ps.shares.toLocaleString():ps.shares.toFixed(4)} × ${fmtCurrency(ps.price,2)}<br><b>${fmtCurrency(ps.value,0)}</b></span>`;
-    return `<div class="st-hold" data-t="${escHtml(t)}" data-src="equity"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(t)}</span>${_stTag(p)}${right}<button class="st-x" data-unlink aria-label="Remove ${escHtml(t)} from Shock Test">×</button></div>${assump(t,p)}</div>`;}).join('')
-    :'<p class="text-sm text-slate-500">None yet. On the Equity page, tick the Shock Test box next to a position.</p>';
+    return `<div class="st-hold" data-t="${escHtml(t)}" data-src="equity"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(t)}</span>${_stTag(p)}${right}<button class="st-x" data-unlink aria-label="Remove ${escHtml(t)} from Sensitivity Analysis">×</button></div>${assump(t,p)}</div>`;}).join('')
+    :'<p class="text-sm text-slate-500">None yet. On the Equity page, tick the Sensitivity Analysis box next to a position.</p>';
   const list=_stState.holdings.length?_stState.holdings.map((h,i)=>{const p=_stProfile(h.t);const w=tot?(+h.amt||0)/tot:0;
     return `<div class="st-hold" data-i="${i}" data-t="${escHtml(h.t)}" data-src="manual"><div class="flex items-center gap-2 flex-wrap"><span class="font-semibold w-16">${escHtml(h.t)}</span>${_stTag(p)}<span class="text-xs text-slate-500 ml-auto">${(w*100).toFixed(1)}%</span><input class="st-amt" type="number" min="0" step="100" value="${+h.amt||0}" aria-label="${escHtml(h.t)} market value in dollars"><button class="st-x" data-del aria-label="Remove ${escHtml(h.t)}">×</button></div>
       ${assump(h.t,p)}</div>`;}).join(''):'<p class="text-sm text-slate-500">No manual holdings. Add one below or import a list.</p>';
