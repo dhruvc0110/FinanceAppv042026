@@ -2425,6 +2425,16 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
+    <button onclick="rptOpenAsk()" title="Ask a question about your money" aria-label="Ask"
+      style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.4v.3"/>
+        <line x1="12" y1="15.5" x2="12" y2="15.51"/>
+      </svg>
+    </button>
+    <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
     <button onclick="navigate('reports')" title="Reports"
       style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
@@ -2461,6 +2471,14 @@ function _pillInitDrag() {
       pill.style.bottom = 'auto'; pill.style.right = 'auto';
     }
   } catch(e) {}
+  // Keep the whole pill on screen (it's wider now that it has an Ask button,
+  // and the default spot is off the right edge on a phone).
+  const keepOnScreen = () => {
+    const r = pill.getBoundingClientRect();
+    if (r.right > window.innerWidth - 4) pill.style.left = Math.max(4, window.innerWidth - r.width - 4) + 'px';
+  };
+  keepOnScreen();
+  window.addEventListener('resize', keepOnScreen);
   let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
   handle.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -17283,6 +17301,17 @@ function _rptRenderAnswer() {
     ${a.note ? `<div style="font-size:0.75rem;color:#64748b;margin-top:0.2rem;">${escHtml(a.note)}</div>` : ''}
     ${a.warnings.map(w => `<div style="font-size:0.75rem;color:#b45309;margin-top:0.2rem;">⚠ ${escHtml(w)}</div>`).join('')}
     <div style="font-size:0.7rem;color:#94a3b8;margin-top:0.35rem;">Not quite right? Change the fields below, or rephrase. The numbers always come from your data, not from AI.</div>`;
+}
+
+// Floating tray "Ask" button: open Reports and put the cursor in the Ask box.
+function rptOpenAsk() {
+  if (typeof currentPage === 'undefined' || currentPage !== 'reports') navigate('reports');
+  setTimeout(() => {
+    const i = document.getElementById('rptAskInput');
+    if (!i) return;
+    try { i.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    try { i.focus({ preventScroll: true }); } catch (_) { i.focus(); }
+  }, 60);
 }
 
 async function rptAsk(questionArg) {

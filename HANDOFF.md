@@ -512,11 +512,12 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - Consumption sites updated: `migrateFutureTransactions` (auto-gen), CC tile due-date math (current + next month resolved separately), `repPlay` (manual play).
 - `FinanceNotifications.gs` rewritten from scratch (file wasn't in the repo) to mirror the same logic.
 
-### Floating Dictate + Ask pill (now Dictate + Reports)
+### Floating pill (Dictate · New transaction · Ask · Reports)
 - One `_floatingPillHtml()` returns a two-half pill (red Dictate mic + slate Ask button + thin separator).
 - Mounted ONCE in `startApp()`, appended to `document.body`. `position:fixed` so DOM placement is irrelevant.
 - Dictate context derived at click time via `_dtCtxFromPage()` (Future Transactions → 'ft', otherwise 'tx').
 - **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → paused → **restored Nov 2026** (dark like the other halves, tooltip "Reports"). Navigates to `renderReports`.
+- **Nov 2026:** an **Ask** button (speech bubble with a question mark) sits between New transaction and Reports. `rptOpenAsk()` opens Reports and focuses the Ask box.
 
 ### Ask FinApp (paused, code intact)
 - **Architecture:** Single Chat mode. KB-first routing: HIGH → cached SQL single-shot; MEDIUM → cached SQL with visible "inferred params" assumptions; LOW → tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`) that iterates until it has enough grounding to answer.
