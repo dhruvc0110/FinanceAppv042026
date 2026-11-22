@@ -4,6 +4,38 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 
 ---
 
+## 2026-11-22 — Conversational analytics, step 1 (Claude project thread)
+
+### Decided: Conversational analytics = "Claude picks the report, the app does the maths".
+- **What:** Plain-language questions will be turned by Claude into a Reports config (fixed fields from `RPT_DIMENSIONS` / `RPT_MEASURES` / date presets only), then run by the deterministic Reports engine. Claude never writes SQL. Every answer shows how the question was read and opens in the builder.
+- **Why:** Dhruv wants to ask questions in plain language. The earlier Ask FinApp failed because Claude wrote SQL (ERRORS.md "LLM-SQL whack-a-mole"). This route was rejected in Session 3, but Dhruv approved it on 2026-11-22 now that Reports exists as the engine.
+- **Steps:** (1) restore Reports with date shortcuts, charts, phone layout; (2) Ask box, one small Claude call per question; (3) follow-ups + saved questions. One PR each.
+
+### Done: Step 1 — Reports restored and hardened.
+- Back in the sidebar and pill. Date shortcuts saved as relative (`config.datePreset`). Auto charts with Chart/Table toggle. Phone layout. Inline filter editor with real-value pick-list. Quick-start reports. See HANDOFF.md → Reports.
+- **Rejected:** a separate Ask page. The Ask box will live on the Reports page so every answer can be tweaked in the builder.
+
+---
+
+## 2026-11-22 — Nov 2026 clean-up (Claude project thread)
+
+### Decided: GitHub `main` is the master copy; snapshots before every release.
+- **Why:** Dhruv had been publishing by uploading `index.html` from the local Mac folder; one upload on 2026-11-21 briefly replaced the live app with an older file. Re-uploading the old folder would also wipe repo-side fixes.
+- **Mechanism:** named snapshot branches `snapshot/YYYY-MM-DD` of each live version (git tags are blocked from the Claude cloud environment), listed in `VERSIONS.md` with browser-only rollback steps. Make a new snapshot before every change goes live.
+
+### Decided: Delete-with-refunds keeps the refunds.
+- Refunds are real money movements, so deleting their original does NOT cascade. Instead: confirm dialog says how many refunds / how much, then `linkedTxId` is nulled and `TransactionLink` rows for the deleted ids are removed.
+
+### Decided: Firebase lock-down is two-step.
+- Code exchanges the Google access token for a Firebase ID token only when `FIREBASE_WEB_API_KEY` is set, and falls back to open mode on any failure. Rules get tightened only after the key is live and verified (see `firebase-security-rules.md`).
+
+### Decided: Models — Sonnet 5.5 for Dictate, Haiku 5.5 for screenshot import + ticker lookup, thinking off.
+- Kept the existing tier split (user did not ask to change cost profile). Thinking off because these are short extraction calls with small `max_tokens`.
+
+### Removed: Ask FinApp module and the repPlaySave dead-tail.
+
+---
+
 ## 2026-06-01 — Session 5
 
 ### Decided: Multi-line Journal Entries — BUILT then REVERTED.

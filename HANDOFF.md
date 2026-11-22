@@ -1,7 +1,9 @@
 # Finance App — Claude Code Hand-Off Document
 
-> **Last updated:** 2026-05-28 — end of session 3
-> **State:** Production, deployed, working. ~15,500 lines in `index.html`.
+> **Last updated:** 2026-11-22 — clean-up session (see "Nov 2026 clean-up" at the end)
+> **State:** Production, deployed, working. ~17,600 lines in `index.html`.
+>
+> **Nov 2026:** GitHub (`main`) is now the master copy — do not re-upload `index.html` from the old local Mac folder. Named snapshots of past live versions and the rollback steps are in `VERSIONS.md`. Before any change goes live, snapshot the current `main` first.
 >
 > **Session 3 highlights:** Browser back-gesture restoration. PWA long-press shortcuts. Day-of-month allows 1–31 + "Last day" (sentinel 32). LLM-driven Ask FinApp built, iterated, and abandoned. Pivot to deterministic Reports (self-service drag-and-drop pivot builder) — Phase A+B shipped, then UI surface paused for a future hardening pass.
 
@@ -78,8 +80,11 @@ Browser (index.html)
 | `sw.js` | Service worker — network-first HTML, cache-first same-origin assets |
 | `icon.svg` | App icon — slate-900 background with white `$` glyph |
 | `FinanceNotifications.gs` | Google Apps Script for email notifications |
-| `notifications-setup.md` | One-time setup instructions for the Apps Script |
-| `firebase-security-rules.md` | Firebase rules tightening guide (not yet applied) |
+| `notifications-setup.md` | One-time setup instructions for the Apps Script (not in the GitHub repo; copy lives in the old local folder) |
+| `firebase-security-rules.md` | Firebase lock-down guide (code ready; console steps + rules not yet applied) |
+| `VERSIONS.md` | Saved snapshots of past live versions + how to roll back |
+| `tools/check-app.mjs` | Syntax check for every inline script, `sw.js` and the manifest (`node tools/check-app.mjs`) |
+| `.github/workflows/check.yml` | Runs the check above automatically on every push and pull request |
 | `HANDOFF.md` | This document |
 | `MEMORY.md` | Cross-session decision log (loaded automatically) |
 | `ERRORS.md` | Known failure modes with fixes |
@@ -119,9 +124,13 @@ Approximate line ranges. The file grows — these are guides, not contracts.
 | 12000–13145 | View-mode logic (`_applyViewMode` etc.), responsive helpers, global handlers |
 | 13145–13780 | Build History panel, history-aware `_pushNavState` / popstate, late-mounted feature glue |
 | 13780–14660 | **Reports module** (Session 3) — semantic model (`RPT_DIMENSIONS`, `RPT_MEASURES`), `_rptBuildQuery`, `_rptPivot`, `renderReports`, drag-and-drop, drill-down modal, save/load. UI surface currently paused. |
-| 14660–15500 | **Ask FinApp module** (Session 3, paused) — `askOpen` modal, KB matcher, tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`), pattern store, confidence chip. Pill no longer routes here. |
+| ~15,800–16,300 | **Sensitivity Analysis** (Sep 2026) — `_ST_TABS` Scenario / Sensitivity / Holdings; what-if moves of market / sector / single stock on covered-call vs traditional ETFs. Tickers are opted in from the Equity page ("Sensitivity Analysis" checkbox, `stToggleLinked`). |
 
-> ⚠️ **Dead-tail hazard:** Lines ~11099-11140 contain leftover code from `repPlaySave()` that calls `navigate('transactions')` **at top-level on script load**. Any `let`/`const` whose value is read by `_TX_COMBO_TABS`-related code must be declared **before** this point. See ERRORS.md ("TDZ trap") for the full story. Eventually remove the dead-tail in a dedicated cleanup pass.
+> Line ranges above are from session 3 and have drifted; search by function name.
+>
+> ✅ **Dead-tail removed (Nov 2026).** The leftover `repPlaySave()` code that ran `navigate('transactions')` at script load (and threw `r is not defined` twice on every load) is gone. The early `let _showDictateTab` declaration and the `_historyReady` gate were left in place; they are harmless.
+>
+> ✅ **Ask FinApp module removed (Nov 2026).** ~1,000 lines deleted. Its `SavedQuery` / `QueryPattern` tables are still created on start-up so existing Drive DBs are untouched.
 
 ---
 
@@ -507,7 +516,7 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - One `_floatingPillHtml()` returns a two-half pill (red Dictate mic + slate Ask button + thin separator).
 - Mounted ONCE in `startApp()`, appended to `document.body`. `position:fixed` so DOM placement is irrelevant.
 - Dictate context derived at click time via `_dtCtxFromPage()` (Future Transactions → 'ft', otherwise 'tx').
-- **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → now paused (slate-400, opacity 0.7, tooltip "Reports (work in progress — design not yet hardened)"). Still clickable, navigates to `renderReports`.
+- **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → paused → **restored Nov 2026** (dark like the other halves, tooltip "Reports"). Navigates to `renderReports`.
 
 ### Ask FinApp (paused, code intact)
 - **Architecture:** Single Chat mode. KB-first routing: HIGH → cached SQL single-shot; MEDIUM → cached SQL with visible "inferred params" assumptions; LOW → tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`) that iterates until it has enough grounding to answer.
@@ -517,8 +526,16 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - **Why paused:** Despite many targeted fixes, NL-to-SQL against opinionated finance data kept producing partially-correct answers. User pivoted to deterministic Reports. See `ERRORS.md` → "LLM-SQL whack-a-mole."
 - **Reviving:** Pill no longer routes to `askOpen`. The function still works if called directly. Modal HTML is built lazily on first call.
 
-### Reports — self-service pivot builder (paused after Phase A+B)
-- **Surface:** Currently no sidebar entry; pill's right half (slate-400, dimmed) opens it. To revive as a primary surface, re-add the nav button in `<div id="sidebar">`.
+### Reports — self-service pivot builder (live again, Nov 2026)
+- **Surface:** Sidebar entry under Review (after Documents) + the pill's right half.
+- **Nov 2026 hardening (step 1 of conversational analytics):**
+  - **Date shortcuts:** `RPT_DATE_PRESETS` + `_rptPresetRange()`. Stored as `config.datePreset` (`this_month`, `last_month`, `this_quarter`, `last_quarter`, `this_year`, `last_year`, `last_12`, `custom`; absent = all time). Resolved at query time on `tx.period`, so saved reports stay relative. `custom` keeps the old managed `date between` filter (hidden from the Filters chips). All WHERE building goes through `_rptWhereParts(cfg)` (used by `_rptBuildQuery` and `rptDrillDown`).
+  - **Charts:** `_rptChartModel()` picks the form from the pivot shape: time rows + one series → line; time rows + several additive positive series → stacked bars; category rows → horizontal bars sorted by size (top 25). >8 series fold into "Other". Fixed 8-colour palette `RPT_SERIES_COLORS`. Clicking a mark drills down. `config.view` = `chart` (default) | `table`. Chart instance `_rptChart`, also pushed to `activeCharts`.
+  - **Quick starts:** `RPT_QUICK_STARTS` shown on the empty state.
+  - **Phone layout:** `RPT_CSS` + `RPT_PHONE_RULES`, applied under `@media (max-width:768px)` and under `html.use-cards` (Phone view mode). Result first, setup below, field library behind "+ Add a field".
+  - **Click a field:** measures → Values; dimensions open an "Add to Rows / Columns / Filters" menu (`_rptFieldClick`, works with touch).
+  - **Filter editor:** modal (`rptEditFilter`, `rptFilterApply`, `rptFilterCancel`) with a datalist of real values (`_rptDistinctValues`), month picker for Period, date picker for Date. Cancelling a just-added filter removes it.
+  - **Honest empty:** a report whose only row is all null/0 says "No transactions match" instead of showing $0.
 - **Semantic model** (hand-curated JS arrays at the top of the Reports module):
   - `RPT_DIMENSIONS`: 15 fields in 3 categories — `When` (Date, Year, Quarter, Period YYYYMM, Month name, Day of week), `Where` (Debit/Credit account name/type/grouping), `What` (Description, Source, Reconciled). Each carries an SQL expression that drops into SELECT and GROUP BY.
   - `RPT_MEASURES`: 5 fields — Sum / Avg / Max / Min of Amount, Transaction count.
@@ -526,11 +543,10 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - **Query compiler** (`_rptBuildQuery`): composes `SELECT … FROM "Transaction" tx LEFT JOIN Account dra LEFT JOIN Account cra WHERE … GROUP BY … ORDER BY … LIMIT 5000`.
 - **Pivot transformer** (`_rptPivot`): flat group-by rows → `{headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal}`. Totals are only computed for additive measures (SUM, COUNT) — AVG/MIN/MAX get blank totals.
 - **UI:** Left field library (When / Where / What / How much), drop zones (Filters / Rows / Columns / Values), live result table with totals + Export CSV + Show SQL.
-- **Drag-and-drop:** HTML5 API. Click-to-add fallback routes dims → Rows, measures → Values. Mobile/touch polish deferred to Phase E.
-- **Filter editor:** `prompt()`-based for MVP. Inline editor on Phase E.
+- **Drag-and-drop:** HTML5 API on desktop; click/tap menu everywhere.
 - **Drill-down:** Click any value cell → modal lists underlying transactions for that row × col × filters intersection. Independent Export CSV.
 - **Save/Load/Delete:** `SavedReport` table. Top-bar dropdown for browsing.
-- **Roadmap:** Settings → About → "Roadmap — Reports". A+B Shipped, C (charts) / D (date presets + comparison + %) / E (mobile + inline filter editor) listed as Later.
+- **Roadmap:** Settings → About → "Roadmap — Reports". A–E Shipped (D partly: comparison / % of total still later). "Ask" (Claude fills the report setup; the app does the maths) Planned.
 
 ---
 
@@ -606,13 +622,16 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - Session lock only (prevents two tabs from writing simultaneously)
 - Path: `/locks/{emailKey}` (email with special chars replaced by `_`)
 - **Rules are currently open** — see `firebase-security-rules.md`
+- Nov 2026: requests can now carry a Firebase ID token (`_fbEnsureAuth()` exchanges the Google access token via `accounts:signInWithIdp`). Switched on by setting `FIREBASE_WEB_API_KEY`; while blank, the app uses open mode as before.
 - Lock failure is non-fatal — app continues with a console warning
 
 ### Anthropic API
 - Key in `AppSettings.anthropicApiKey` (per-user, configured via Settings)
 - Browser header required: `'anthropic-dangerous-direct-browser-access': 'true'`
-- **Sonnet 4 (`claude-sonnet-4-20250514`)** — Dictate (`_dtProcessText`) and screenshot import (`_itHandleScreenshot`)
-- **Haiku 4.5 (`claude-haiku-4-5-20251001`)** — ticker lookup and lightweight classification
+- **Sonnet 5.5 (`claude-sonnet-5-5`)** — Dictate (`_dtProcessText`), sent with `thinking: {type: 'between_tools'}` (thinking off)
+- **Haiku 5.5 (`claude-haiku-5-5`)** — screenshot import and ticker lookup, sent with `thinking: {type: 'disabled'}`
+- Always read replies with `_claudeText(data)`; current models can return non-text blocks first, so `content[0].text` is not safe.
+- Account usage panel still calls the legacy `/v1/usage` endpoint (needs an Admin key; shows a hint otherwise).
 
 ### Google Apps Script (Notifications)
 - External — user creates at script.google.com
@@ -625,7 +644,7 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 
 ## Known Issues / Pre-existing Tech Debt
 
-1. **Dead-tail at lines ~11099-11140.** Leftover `repPlaySave()` code that calls `navigate('transactions')` at top-level on script load. Forces `_showDictateTab` (and any future `let` referenced by `_visibleTxComboTabs`) to be declared near the top of the file. Also forced the `_historyReady` gate so that synthetic-history pushes don't fire pre-login. **Remove in a dedicated cleanup pass.**
+1. ~~Dead-tail~~ — removed Nov 2026.
 
 2. **`buildTxWhere()` and FT `buildWhere()`** still interpolate dates/search strings into SQL. Low real-world risk (dates are typed inputs, strings are `replace(/'/g,"''")`-escaped) but should be parameterized.
 
@@ -639,7 +658,7 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 
 7. **Service worker cache during dev.** When iterating on `index.html` against a browser that previously loaded the PWA, hard reload alone is not enough — unregister the SW first, test in incognito, or bump the `CACHE` constant in `sw.js` (currently `'finapp-shell-v3'`).
 
-8. **Ask FinApp module — dead in UI.** ~1000 lines of Ask code (state, modal, agent loop, KB matcher, KB store, narrative, render, save, feedback, Clear KB button) remain in the script. The floating pill no longer routes there. If reviving, see `ERRORS.md` → "LLM-SQL whack-a-mole" for the failure modes to design around. If not, delete in a cleanup pass.
+8. ~~**Ask FinApp module — dead in UI.**~~ Removed Nov 2026. Original note: ~1000 lines of Ask code (state, modal, agent loop, KB matcher, KB store, narrative, render, save, feedback, Clear KB button) remain in the script. The floating pill no longer routes there. If reviving, see `ERRORS.md` → "LLM-SQL whack-a-mole" for the failure modes to design around. If not, delete in a cleanup pass.
 
 9. **Reports module — UI surface paused.** Phase A+B fully built and working when navigated to directly. Sidebar entry removed; pill's right half visually muted. Hardening pass needed before re-promoting: inline filter editor (replacing `prompt()` calls), responsive/touch layout, sub-account dimension, calculated measures, charts, date presets. See Roadmap card in Settings → About.
 
@@ -703,3 +722,23 @@ All decisions, rationale, and rejected alternatives are in `MEMORY.md`. All sess
 14. `e18ba1d` — Reports: pause UI surface — remove sidebar entry, grey the pill
 
 All decisions, rationale, and rejected alternatives are in `MEMORY.md` → "2026-05-28 — Session 3". All session-3 failure modes and how to avoid them are in `ERRORS.md` (the LLM-SQL whack-a-mole entry, aggregate-empty, Unicode dashes, KB poisoning, prompt caching, edit-tool anchor disappearance).
+
+
+---
+
+## Changes after session 5 (not previously documented)
+
+- **2026-09-26** — `d33f14d`, `accdfb9`, `d0e2790`: **Sensitivity Analysis** page (sidebar entry) with Scenario / Sensitivity / Holdings tabs, linked to Equity tickers via a per-ticker checkbox.
+- **2026-11-21** — `0915d19`, `7f0c529`: **Pending** flag on transactions (`Transaction.isPending`, checkbox in the form and rows, "Pending" filter, report dimension). Also an account-picker click fix (`onclick` instead of `onmousedown`). Note: the first of these two uploads briefly replaced the app with an older ~5,700-lines-shorter file; the second upload 13 minutes later restored it.
+
+## Nov 2026 clean-up — Summary
+
+- Version safety net: named snapshots + rollback guide (`VERSIONS.md`).
+- Removed the load-time dead-tail (cleared 2 uncaught errors and ~14 null-DB SQL errors on every page load).
+- Fixed `let accessToken` being swallowed by the comment on the line above it (it was an implicit global; sign-out and idle sign-out threw `accessToken is not defined` when no token was set).
+- Removed the abandoned Ask FinApp module.
+- Deleting a transaction that has refunds now warns, keeps the refunds, and clears their `linkedTxId` and `TransactionLink` rows (`_txRefundDeleteWarning`, `_txUnlinkDeleted`) — single and bulk delete.
+- AI calls moved to Sonnet 5.5 / Haiku 5.5 with thinking off and safe text extraction (`_claudeText`).
+- Firebase auth support (off until `FIREBASE_WEB_API_KEY` is set) + lock-down guide.
+- Automatic syntax check on every push / PR (`.github/workflows/check.yml`).
+- Verified with a headless browser against `finance-demo.sqlite`: every page renders, no new errors.
