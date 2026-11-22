@@ -2425,6 +2425,16 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
+    <button onclick="rptOpenAsk()" title="Ask a question about your money" aria-label="Ask"
+      style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.4v.3"/>
+        <line x1="12" y1="15.5" x2="12" y2="15.51"/>
+      </svg>
+    </button>
+    <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
     <button onclick="navigate('reports')" title="Reports"
       style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
@@ -2461,6 +2471,14 @@ function _pillInitDrag() {
       pill.style.bottom = 'auto'; pill.style.right = 'auto';
     }
   } catch(e) {}
+  // Keep the whole pill on screen (it's wider now that it has an Ask button,
+  // and the default spot is off the right edge on a phone).
+  const keepOnScreen = () => {
+    const r = pill.getBoundingClientRect();
+    if (r.right > window.innerWidth - 4) pill.style.left = Math.max(4, window.innerWidth - r.width - 4) + 'px';
+  };
+  keepOnScreen();
+  window.addEventListener('resize', keepOnScreen);
   let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
   handle.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -8489,7 +8507,7 @@ function aboutTab() {
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">C</td><td class="py-1 pr-2">Charts picked from the result's shape (line for one series over time, stacked bars for categories over time, horizontal bars for categories). Chart / Table toggle saved with the report. Tap a bar or point to drill down.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">D</td><td class="py-1 pr-2">Date shortcuts (This month, Last month, This/Last quarter, This/Last year, Last 12 months, Custom). Saved reports keep the shortcut, so "This year" stays current. Quick-start reports. Still later: side-by-side period comparison, % of grand total, highlighting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">E</td><td class="py-1 pr-2">Phone layout: result first, setup below, tap a field to choose where it goes (no drag needed). Inline filter editor with a pick-list of real values, replacing the prompt() dialogs. Reports back in the sidebar and on the floating pill.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Ask box on the Reports page. Claude only turns the question into a report setup using the fixed fields above; the app runs it, so the numbers come from the same deterministic engine. The old Ask FinApp (Claude writing its own SQL) was removed.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Planned</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Ask box at the top of Reports. Claude only fills in a report setup from the fixed fields via a JSON schema; the app validates it, matches names against real values, runs it, and writes the one-line answer itself. Shows "How I read it". Also added: Transactions list view, Amount filter (more than / less than), top-N sorting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Follow-ups</td><td class="py-1 pr-2">Follow-up questions ("now just restaurants", "compare to last year") and saved questions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
         </tbody>
       </table>
@@ -16696,6 +16714,8 @@ const RPT_DIMENSIONS = [
   { id: 'source',       label: 'Source',            category: 'What',  sql: "tx.importSource",                                               kind: 'text' },
   { id: 'reconciled',   label: 'Reconciled',        category: 'What',  sql: "CASE tx.isReconciled WHEN 1 THEN 'Yes' ELSE 'No' END",          kind: 'text' },
   { id: 'pending',      label: 'Pending',           category: 'What',  sql: "CASE COALESCE(tx.isPending,0) WHEN 1 THEN 'Yes' ELSE 'No' END", kind: 'text' },
+  // Filter-only: lets a report say "amount is more than 200".
+  { id: 'amount',       label: 'Amount (filter)',   category: 'What',  sql: "tx.amount", kind: 'number', filterOnly: true },
 ];
 
 // ── Semantic model: measures ─────────────────────────────────
@@ -16724,11 +16744,28 @@ const RPT_FILTER_OPS = {
   ne:       { label: 'is not',       render: 'one' },
   contains: { label: 'contains',     render: 'one' },
   between:  { label: 'between',      render: 'two' },
+  gt:       { label: 'is more than', render: 'one', numberOnly: true },
+  lt:       { label: 'is less than', render: 'one', numberOnly: true },
 };
+// Which operators make sense for a field.
+function _rptOpsFor(dim) {
+  if (dim && dim.kind === 'number') return ['gt', 'lt', 'between', 'eq'];
+  return ['eq', 'ne', 'contains', 'between'];
+}
 function _rptFilterSql(f) {
   const dim = _rptDim(f.dimensionId);
   if (!dim) return null;
   const expr = dim.sql;
+  if (dim.kind === 'number') {
+    const n1 = parseFloat(String(f.value).replace(/[$,\s]/g, ''));
+    const n2 = parseFloat(String(f.value2).replace(/[$,\s]/g, ''));
+    if (isNaN(n1)) return null;
+    if (f.op === 'gt') return `${expr} > ${n1}`;
+    if (f.op === 'lt') return `${expr} < ${n1}`;
+    if (f.op === 'eq') return `${expr} = ${n1}`;
+    if (f.op === 'between' && !isNaN(n2)) return `${expr} >= ${n1} AND ${expr} <= ${n2}`;
+    return null;
+  }
   const v  = String(f.value  || '').replace(/'/g, "''");
   const v2 = String(f.value2 || '').replace(/'/g, "''");
   if (f.op === 'eq')       return `${expr} = '${v}'`;
@@ -16804,8 +16841,16 @@ function _rptPivot(flatRows, cfg) {
   const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const dowSort = (dims) => dims.length === 1 && dims[0].dimensionId === 'day_of_week'
     ? (a, b) => DOW.indexOf(a) - DOW.indexOf(b) : undefined;
-  const rowKeys    = [...rowKeySet].sort(dowSort(rowDims));
+  let rowKeys      = [...rowKeySet].sort(dowSort(rowDims));
   const headerCols = [...colKeySet].sort(dowSort(colDims));
+  // Optional sort by value + top-N (used by "top 10 categories" style reports).
+  const totalOf = rk => headerCols.reduce((s, ck) => s + (+((matrix[rk] || {})[ck]) || 0), 0);
+  if (rowDims.length && (cfg.sort === 'value_desc' || cfg.sort === 'value_asc')) {
+    rowKeys.sort((a, b) => cfg.sort === 'value_desc' ? totalOf(b) - totalOf(a) : totalOf(a) - totalOf(b));
+  }
+  const limit = parseInt(cfg.limit, 10);
+  const allRowCount = rowKeys.length;
+  if (rowDims.length && limit > 0 && rowKeys.length > limit) rowKeys = rowKeys.slice(0, limit);
   // Totals
   const rowTotals  = {};
   const colTotals  = {};
@@ -16825,7 +16870,7 @@ function _rptPivot(flatRows, cfg) {
     if (sumOk) { rowTotals[rk] = rTotal; grandTotal += rTotal; }
   }
 
-  return { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal, measure, totalsValid: sumOk };
+  return { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal, measure, totalsValid: sumOk, allRowCount };
 }
 
 // ── Page styles (scoped to .rpt-*) ───────────────────────────
@@ -16945,10 +16990,368 @@ function rptQuickStart(i) {
   const q = RPT_QUICK_STARTS[i]; if (!q) return;
   _rptConfig = JSON.parse(JSON.stringify(q.cfg));
   _rptConfig.view = 'chart';
+  _rptAnswer = null;
   _rptSavedId = null; _rptSavedName = '';
   _rptRenderZones();
   _rptRunReport();
   _rptRefreshSavedDropdown();
+}
+
+// ════════════════════════════════════════════════════════════
+// ASK — plain-language questions → a Reports setup
+// ════════════════════════════════════════════════════════════
+// Claude never writes SQL and never computes a number. It only fills in
+// a report setup from the fixed field lists above (structured output,
+// validated here). The Reports engine then runs that setup, and the
+// one-line answer is written by this code from the computed result.
+// Background: ERRORS.md "LLM-SQL whack-a-mole".
+const RPT_ASK_MODEL = 'claude-opus-5-5';
+const RPT_ASK_EXAMPLES = [
+  'How much did we spend on groceries this year?',
+  'Spending by category over the last 12 months',
+  'What were our 10 biggest expenses this year?',
+  'Income by month this year',
+];
+let _rptAskBusy = false;
+let _rptAnswer = null;   // { question, reading, notes[], warnings[], answer } shown above the result
+
+function _rptAskSchema() {
+  const dimIds = RPT_DIMENSIONS.filter(d => !d.filterOnly).map(d => d.id);
+  const filterIds = RPT_DIMENSIONS.map(d => d.id);
+  const nullableStr = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+  return {
+    type: 'object',
+    properties: {
+      answerable: { type: 'boolean' },
+      note: { type: 'string' },
+      view: { type: 'string', enum: ['summary', 'transactions'] },
+      rows: { type: 'array', items: { type: 'string', enum: dimIds } },
+      columns: { type: 'array', items: { type: 'string', enum: dimIds } },
+      measure: { type: 'string', enum: RPT_MEASURES.map(m => m.id) },
+      date_preset: { type: 'string', enum: RPT_DATE_PRESETS.map(p => p.id) },
+      date_from: nullableStr,
+      date_to: nullableStr,
+      filters: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            field: { type: 'string', enum: filterIds },
+            op: { type: 'string', enum: Object.keys(RPT_FILTER_OPS) },
+            value: { type: 'string' },
+            value2: nullableStr,
+          },
+          required: ['field', 'op', 'value', 'value2'],
+          additionalProperties: false,
+        },
+      },
+      sort: { type: 'string', enum: ['none', 'value_desc', 'value_asc'] },
+      limit: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+    },
+    required: ['answerable', 'note', 'view', 'rows', 'columns', 'measure', 'date_preset', 'date_from', 'date_to', 'filters', 'sort', 'limit'],
+    additionalProperties: false,
+  };
+}
+
+function _rptAskSystemPrompt() {
+  // Stable text only (no dates, no account names) so it can be cached.
+  const dims = RPT_DIMENSIONS.map(d => `- ${d.id}: ${d.label}${d.filterOnly ? ' (filters only; numeric)' : ''}`).join('\n');
+  const meas = RPT_MEASURES.map(m => `- ${m.id}: ${m.label}`).join('\n');
+  const presets = RPT_DATE_PRESETS.map(p => `- ${p.id}: ${p.label}`).join('\n');
+  return `You turn a person's question about their household finances into a report setup for their finance app. You do not answer the question or calculate anything: the app runs the setup you return and computes the numbers itself.
+
+How the data works (double-entry bookkeeping):
+- Every transaction has an amount (always positive), a debit account and a credit account. Money moves from the credit account to the debit account.
+- Spending: debit account type (dr_type) is EXPENSE. The spending category is the debit account (dr_name).
+- Income: credit account type (cr_type) is INCOME. The income source is the credit account (cr_name).
+- "Paid with my Amex / from checking" means the credit account (cr_name) is that card or bank account.
+- "Paid to / put into" an asset or a loan means the debit account (dr_name) is that account.
+- Merchants, shops and payees (Costco, Amazon, Netflix) are in the transaction description: use field description with op contains and a short distinctive word.
+- Account types are ASSET, LIABILITY, INCOME, EXPENSE (upper case).
+
+Fields you can use for rows, columns and filters:
+${dims}
+
+Measures:
+${meas}
+
+Date shortcuts (they work on whole calendar months):
+${presets}
+Use date_preset "custom" with date_from and date_to (YYYY-MM-DD) for anything else, such as a named month, a specific year, or "since March". A month name on its own means its most recent occurrence that has already started. When no time is mentioned, use "all". Set date_from and date_to to null unless date_preset is "custom".
+
+Filter operators: eq (is), ne (is not), contains, between (value to value2), gt (more than), lt (less than). gt and lt work only on the amount field, and amount values are plain numbers without $ or commas. For eq and ne, use an account name exactly as it appears in the list you are given.
+
+Choosing the setup:
+- A single total ("how much did we spend on X"): view summary, rows [], columns [], measure amount_sum.
+- A breakdown ("by category", "by month", "which ... most"): put the field in rows. Use month_name for months, year for years, quarter for quarters. Use columns only when the question asks for two splits at once, such as "each category by month".
+- Top or bottom lists of categories, accounts or months: view summary with sort value_desc (or value_asc) and limit.
+- Questions about individual transactions ("show me", "list", "which payments", "biggest expenses", "largest purchases"): view transactions, with sort value_desc for "biggest" and limit when a number is given. Otherwise sort none (newest first) and limit null.
+- "How many": measure count.
+- Average or typical amount: amount_avg. Largest single one in a breakdown: amount_max.
+- Set sort "none" and limit null unless the question asks for a ranking or a number of items.
+
+Set answerable to false only when the question cannot be expressed with these fields (for example balances, net worth, budgets, forecasts or advice). Then explain why in note in one plain sentence, and fill the other fields with a reasonable default setup.
+In note, state in one short plain sentence any assumption you made (for example "I read October as October 2026" or "I treated eating out as the Dining Out category"). Leave note empty when there was nothing to assume.`;
+}
+
+function _rptAskContext() {
+  const today = new Date();
+  const ymd = today.toLocaleDateString('en-CA');
+  let accts = [];
+  try {
+    accts = query(`SELECT name, type, grouping FROM Account
+      WHERE isActive = 1 AND (role IS NULL OR role != 'EXCLUDED') ORDER BY type, name`);
+  } catch (_) {}
+  const list = accts.map(a => `${a.name} | ${a.type}${a.grouping ? ' | ' + a.grouping : ''}`).join('\n');
+  return `Today's date: ${ymd} (${today.toLocaleDateString('en-US', { weekday: 'long' })}).
+
+Accounts (name | type | grouping):
+${list}`;
+}
+
+async function _rptAskClaude(question) {
+  const apiKey = _itGetApiKey();
+  if (!apiKey) throw new Error('NO_KEY');
+  let res;
+  try {
+  res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'server-side-fallback-2026-07-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: RPT_ASK_MODEL,
+      max_tokens: 4000,
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: _rptAskSchema() } },
+      system: [{ type: 'text', text: _rptAskSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: `${_rptAskContext()}\n\nQuestion: ${question}` }],
+    }),
+  });
+  } catch (_) { throw new Error('Couldn\'t reach Claude. Check your internet connection and try again.'); }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    if (res.status === 401) throw new Error('Your Anthropic API key was rejected. Check it in Settings.');
+    if (res.status === 429) throw new Error('Too many requests right now. Wait a minute and try again.');
+    if (res.status === 529 || res.status >= 500) throw new Error('Claude is busy right now. Try again in a moment.');
+    throw new Error(`Claude returned an error (${res.status}). ${body.slice(0, 160)}`);
+  }
+  const data = await res.json();
+  if (data.stop_reason === 'refusal') throw new Error('Claude declined this question. Try rephrasing it.');
+  if (data.stop_reason === 'max_tokens') throw new Error('The answer was cut off. Try a shorter question.');
+  const text = _claudeText(data);
+  try { return JSON.parse(text); }
+  catch (_) { throw new Error('Could not read Claude\'s reply. Try again.'); }
+}
+
+// Match a value Claude gave against the values that really exist, so a
+// small spelling or case difference doesn't silently return nothing.
+function _rptResolveValue(dim, value) {
+  const v = String(value || '').trim();
+  if (!v) return { value: v };
+  const all = _rptDistinctValues(dim);
+  if (!all.length) return { value: v };
+  const norm = x => String(x).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const low = v.toLowerCase(), n = norm(v);
+  const exact = all.find(a => a.toLowerCase() === low) || all.find(a => norm(a) === n);
+  if (exact) return { value: exact };
+  const partial = n ? all.filter(a => norm(a).includes(n) || (norm(a) && n.includes(norm(a)))) : [];
+  if (partial.length === 1) return { value: partial[0], changed: true };
+  return { value: v, missing: true };
+}
+
+// Validates Claude's setup and converts it into a Reports config.
+// Anything unknown is dropped rather than trusted.
+function _rptPlanToConfig(plan) {
+  const warnings = [];
+  const dimOk = id => RPT_DIMENSIONS.some(d => d.id === id && !d.filterOnly);
+  const cfg = { filters: [], rows: [], cols: [], values: [] };
+  const isList = plan.view === 'transactions';
+  (plan.rows || []).filter(dimOk).slice(0, 2).forEach(id => { if (!cfg.rows.some(r => r.dimensionId === id)) cfg.rows.push({ dimensionId: id }); });
+  (plan.columns || []).filter(dimOk).slice(0, 1).forEach(id => { if (!cfg.rows.some(r => r.dimensionId === id)) cfg.cols.push({ dimensionId: id }); });
+  const m = RPT_MEASURES.find(x => x.id === plan.measure) || RPT_MEASURES[0];
+  cfg.values.push({ measureId: m.id });
+
+  for (const f of (plan.filters || [])) {
+    const dim = _rptDim(f.field);
+    if (!dim || !RPT_FILTER_OPS[f.op]) continue;
+    if (!_rptOpsFor(dim).includes(f.op)) continue;
+    const flt = { dimensionId: dim.id, op: f.op, value: String(f.value || '').trim() };
+    if (f.op === 'between') flt.value2 = String(f.value2 || '').trim();
+    if (!flt.value) continue;
+    if (dim.kind === 'text' && (f.op === 'eq' || f.op === 'ne')) {
+      const r = _rptResolveValue(dim, flt.value);
+      if (r.missing) warnings.push(`No ${dim.label.toLowerCase()} called "${flt.value}" was found in your data.`);
+      flt.value = r.value;
+    }
+    cfg.filters.push(flt);
+  }
+
+  const preset = RPT_DATE_PRESETS.some(p => p.id === plan.date_preset) ? plan.date_preset : 'all';
+  const okDate = d => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (preset === 'custom' && (okDate(plan.date_from) || okDate(plan.date_to))) {
+    cfg.datePreset = 'custom';
+    cfg.filters.push({ dimensionId: 'date', op: 'between', value: okDate(plan.date_from) ? plan.date_from : '0000-01-01', value2: okDate(plan.date_to) ? plan.date_to : '9999-12-31' });
+  } else if (preset !== 'all' && preset !== 'custom') {
+    cfg.datePreset = preset;
+  }
+
+  if (plan.sort === 'value_desc' || plan.sort === 'value_asc') cfg.sort = plan.sort;
+  const lim = parseInt(plan.limit, 10);
+  if (lim > 0) cfg.limit = Math.min(lim, 500);
+  cfg.view = isList ? 'list' : (cfg.rows.length ? 'chart' : 'table');
+  return { cfg, warnings };
+}
+
+// Plain-language description of a config: "how I read your question".
+function _rptDescribeConfig(cfg) {
+  const parts = [];
+  const dateFlt = (cfg.filters || []).find(f => f.dimensionId === 'date' && f.op === 'between');
+  const r = _rptPresetRange(cfg.datePreset);
+  if (r) {
+    const label = (RPT_DATE_PRESETS.find(p => p.id === cfg.datePreset) || {}).label;
+    parts.push(`${label} (${r.from === r.to ? _rptYmLabel(r.from) : _rptYmLabel(r.from) + ' – ' + _rptYmLabel(r.to)})`);
+  } else if (dateFlt) {
+    const nice = d => { const x = new Date(d + 'T00:00:00'); return isNaN(x) ? d : x.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+    const a = dateFlt.value !== '0000-01-01' ? nice(dateFlt.value) : null, b = dateFlt.value2 !== '9999-12-31' ? nice(dateFlt.value2) : null;
+    parts.push(a && b ? `${a} – ${b}` : a ? `from ${a}` : `up to ${b}`);
+  } else parts.push('All dates');
+  for (const f of (cfg.filters || [])) {
+    if (f === dateFlt) continue;
+    const dim = _rptDim(f.dimensionId); if (!dim) continue;
+    const op = RPT_FILTER_OPS[f.op] || RPT_FILTER_OPS.eq;
+    let val = _rptFilterValueLabel(f);
+    if (dim.kind === 'number') val = f.op === 'between' ? `${fmtCurrency(+f.value, 0)} – ${fmtCurrency(+f.value2, 0)}` : fmtCurrency(+f.value, 0);
+    parts.push(`${dim.label.replace(' (filter)', '')} ${op.label} ${val}`);
+  }
+  if (cfg.view === 'list') {
+    parts.push(cfg.sort === 'value_desc' ? 'largest transactions first' : cfg.sort === 'value_asc' ? 'smallest transactions first' : 'transactions, newest first');
+  } else {
+    const m = _rptMeasure((cfg.values[0] || {}).measureId);
+    if (m) parts.push(m.label);
+    if (cfg.rows.length) parts.push('by ' + cfg.rows.map(x => _rptDim(x.dimensionId).label).join(' and '));
+    if (cfg.cols.length) parts.push('split by ' + cfg.cols.map(x => _rptDim(x.dimensionId).label).join(' and '));
+  }
+  if (cfg.limit) parts.push(`top ${cfg.limit}`);
+  return parts.join(' · ');
+}
+
+// One-line answer written from the computed result (no AI involved).
+function _rptAnswerSentence() {
+  const p = _rptResult;
+  if (!p || p.error) return '';
+  if (p.list) {
+    if (!p.count) return 'No transactions match.';
+    const shown = p.list.length;
+    return `${p.count.toLocaleString()} transaction${p.count === 1 ? '' : 's'} match, totalling ${fmtCurrency(p.total, 2)}.` +
+      (shown < p.count ? ` Showing ${_rptConfig.sort === 'value_desc' ? 'the ' + shown + ' largest' : _rptConfig.sort === 'value_asc' ? 'the ' + shown + ' smallest' : 'the ' + shown + ' most recent'}.` : '');
+  }
+  const fmt = v => _rptFmt(v, p.measure.format);
+  const keys = p.rowKeys;
+  const firstCol = p.headerCols[0];
+  const val = rk => p.totalsValid ? (p.rowTotals[rk] || 0) : (+((p.matrix[rk] || {})[firstCol]) || 0);
+  if (!keys.length || (keys.length === 1 && !val(keys[0]))) return 'No transactions match.';
+  const noRows = !(_rptConfig.rows || []).length;
+  if (noRows && !(_rptConfig.cols || []).length) return `${p.measure.label}: ${fmt(val(keys[0]))}.`;
+  if (noRows) return p.totalsValid ? `Total: ${fmt(p.grandTotal)}.` : '';
+  const PLURAL = { month_name: 'months', period: 'months', year: 'years', quarter: 'quarters', date: 'days', day_of_week: 'weekdays' };
+  const r0 = _rptConfig.rows[0].dimensionId;
+  const rowLabel = _rptConfig.rows.length > 1 ? 'rows' : (PLURAL[r0] || (_rptDim(r0).label.toLowerCase() + 's'));
+  const sorted = keys.slice().sort((a, b) => val(b) - val(a));
+  const top = sorted[0], low = sorted[sorted.length - 1];
+  const isTime = _rptConfig.rows.length === 1 && RPT_TIME_DIMS.includes(_rptConfig.rows[0].dimensionId);
+  const nice = rk => (_rptConfig.rows[0].dimensionId === 'month_name' && /^\d{4}-\d{2}$/.test(rk)) ? _rptYmLabel(rk.replace('-', '')) : rk;
+  let s = p.totalsValid ? `Total ${fmt(p.grandTotal)} across ${keys.length} ${keys.length === 1 ? rowLabel.replace(/s$/, '') : rowLabel}${p.allRowCount > keys.length ? ` (top ${keys.length} of ${p.allRowCount})` : ''}. ` : '';
+  if (isTime && keys.length > 1) s += `Highest: ${nice(top)} at ${fmt(val(top))}. Lowest: ${nice(low)} at ${fmt(val(low))}.`;
+  else {
+    const share = p.totalsValid && p.grandTotal ? ` (${Math.round(val(top) / p.grandTotal * 100)}%)` : '';
+    s += `Largest: ${nice(top)} at ${fmt(val(top))}${keys.length > 1 ? share : ''}.`;
+  }
+  return s;
+}
+
+function _rptRenderAnswer() {
+  const el = document.getElementById('rptAnswer');
+  if (!el) return;
+  const a = _rptAnswer;
+  if (!a) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  if (a.loading) {
+    el.innerHTML = `<div style="font-size:0.85rem;color:#64748b;">Reading your question…</div>`;
+    return;
+  }
+  if (a.error) {
+    el.innerHTML = `<div style="font-size:0.85rem;color:#991b1b;">${a.error}</div>`;
+    return;
+  }
+  if (a.cannot) {
+    el.innerHTML = `<div style="font-size:0.75rem;color:#64748b;margin-bottom:0.2rem;">“${escHtml(a.question)}”</div>
+      <div style="font-size:0.9rem;color:#92400e;">${escHtml(a.cannot)}</div>
+      <div style="font-size:0.7rem;color:#94a3b8;margin-top:0.35rem;">Ask works with your transactions: spending, income, payments, categories, merchants and dates.</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div style="font-size:0.75rem;color:#64748b;margin-bottom:0.2rem;">“${escHtml(a.question)}”</div>
+    <div style="font-size:1rem;font-weight:600;color:#0f172a;">${escHtml(_rptAnswerSentence())}</div>
+    <div style="font-size:0.75rem;color:#475569;margin-top:0.35rem;"><span style="color:#94a3b8;">How I read it:</span> ${escHtml(_rptDescribeConfig(_rptConfig))}</div>
+    ${a.note ? `<div style="font-size:0.75rem;color:#64748b;margin-top:0.2rem;">${escHtml(a.note)}</div>` : ''}
+    ${a.warnings.map(w => `<div style="font-size:0.75rem;color:#b45309;margin-top:0.2rem;">⚠ ${escHtml(w)}</div>`).join('')}
+    <div style="font-size:0.7rem;color:#94a3b8;margin-top:0.35rem;">Not quite right? Change the fields below, or rephrase. The numbers always come from your data, not from AI.</div>`;
+}
+
+// Floating tray "Ask" button: open Reports and put the cursor in the Ask box.
+function rptOpenAsk() {
+  if (typeof currentPage === 'undefined' || currentPage !== 'reports') navigate('reports');
+  setTimeout(() => {
+    const i = document.getElementById('rptAskInput');
+    if (!i) return;
+    try { i.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    try { i.focus({ preventScroll: true }); } catch (_) { i.focus(); }
+  }, 60);
+}
+
+async function rptAsk(questionArg) {
+  const input = document.getElementById('rptAskInput');
+  const question = String(questionArg || (input ? input.value : '') || '').trim();
+  if (!question || _rptAskBusy) return;
+  if (input) input.value = question;
+  if (!_itHasApiKey()) {
+    _rptAnswer = { error: 'Ask needs your Anthropic API key. Add it in <a href="#" onclick="navigate(\'settings\');return false;" style="text-decoration:underline;">Settings</a> (the same key Dictate uses).' };
+    _rptRenderAnswer();
+    return;
+  }
+  _rptAskBusy = true;
+  const btn = document.getElementById('rptAskBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Thinking…'; }
+  _rptAnswer = { loading: true }; _rptRenderAnswer();
+  try {
+    const plan = await _rptAskClaude(question);
+    if (plan.answerable === false) {
+      // Don't show a made-up "closest" report; just explain.
+      _rptAnswer = { question, cannot: String(plan.note || '').trim() || 'This can\'t be answered from your transactions.' };
+      return;
+    }
+    const { cfg, warnings } = _rptPlanToConfig(plan);
+    _rptConfig = cfg;
+    _rptSavedId = null; _rptSavedName = '';
+    _rptRenderZones();
+    _rptRunReport();
+    _rptRefreshSavedDropdown();
+    _rptAnswer = {
+      question, warnings,
+      note: String(plan.note || '').trim(),
+    };
+  } catch (e) {
+    _rptAnswer = { error: escHtml(e.message === 'NO_KEY' ? 'Ask needs your Anthropic API key. Add it in Settings.' : (e.message || 'Something went wrong. Try again.')) };
+  } finally {
+    _rptAskBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Ask'; }
+    _rptRenderAnswer();
+  }
 }
 
 // ── Main render ──────────────────────────────────────────────
@@ -16972,6 +17375,17 @@ function renderReports(container) {
           <button id="rptDeleteBtn" onclick="rptDeleteSaved()" class="rpt-btn" style="display:none;border-color:#fecaca;color:#991b1b;">Delete</button>
           <button onclick="rptReset()" class="rpt-btn">Reset</button>
         </div>
+      </div>
+      <div class="rpt-card" style="padding:0.6rem;display:flex;flex-direction:column;gap:0.5rem;">
+        <form onsubmit="event.preventDefault(); rptAsk();" style="display:flex;gap:0.375rem;">
+          <input id="rptAskInput" type="text" class="rpt-input" autocomplete="off" enterkeyhint="go"
+            placeholder="Ask about your money, e.g. How much did we spend on dining last month?" style="flex:1;min-width:0;font-size:0.9rem;">
+          <button id="rptAskBtn" type="submit" class="rpt-btn rpt-btn-dark" style="font-size:0.85rem;padding:0.4rem 0.9rem;">Ask</button>
+        </form>
+        <div class="rpt-datechips" style="gap:0.375rem;">
+          ${RPT_ASK_EXAMPLES.map(q => `<button class="rpt-datechip" style="color:#334155;" onclick="rptAsk(${JSON.stringify(q).replace(/"/g, '&quot;')})">${escHtml(q)}</button>`).join('')}
+        </div>
+        <div id="rptAnswer" style="display:none;border-top:1px solid #f1f5f9;padding-top:0.5rem;"></div>
       </div>
       <div class="rpt-card rpt-datebar">
         <span style="font-size:0.72rem;font-weight:600;color:#475569;">Dates</span>
@@ -17017,6 +17431,8 @@ function renderReports(container) {
   _rptRunReport();
   _rptRefreshSavedDropdown();
   _rptWireDragDrop();
+  const ai = document.getElementById('rptAskInput');
+  if (ai && _rptAnswer && _rptAnswer.question) ai.value = _rptAnswer.question;
 }
 
 function rptToggleLibrary() {
@@ -17104,7 +17520,7 @@ function _rptFilterChipHtml(f, idx) {
   const op = RPT_FILTER_OPS[f.op] || RPT_FILTER_OPS.eq;
   return `<span onclick="rptEditFilter(${idx})" title="Click to edit"
     style="display:inline-flex;align-items:center;gap:0.25rem;background:#ede9fe;color:#5b21b6;font-size:0.75rem;padding:0.2rem 0.55rem;border-radius:9999px;cursor:pointer;">
-    ${escHtml(dim.label)} ${escHtml(op.label)} ${escHtml(_rptFilterValueLabel(f))}
+    ${escHtml(dim.label.replace(' (filter)', ''))} ${escHtml(op.label)} ${escHtml(_rptFilterValueLabel(f))}
     <button onclick="event.stopPropagation(); rptRemove('filters', ${idx})" title="Remove" aria-label="Remove filter"
       style="background:none;border:none;color:#5b21b6;cursor:pointer;padding:0 0.125rem;margin-left:0.125rem;font-size:1rem;line-height:1;">×</button>
   </span>`;
@@ -17134,6 +17550,8 @@ function _rptWireDragDrop() {
 // small "Add to…" menu (works with touch, where drag-and-drop doesn't).
 function _rptFieldClick(event, fieldId, fieldType) {
   if (fieldType === 'measure') { _rptAddField('values', { id: fieldId, type: fieldType }); return; }
+  const fd = _rptDim(fieldId);
+  if (fd && fd.filterOnly) { _rptAddField('filters', { id: fieldId, type: fieldType }); return; }
   const btn = event && event.currentTarget;
   _rptCloseMenu();
   const menu = document.createElement('div');
@@ -17175,8 +17593,11 @@ function _rptAddField(zone, field) {
     _rptConfig.values.push({ measureId: field.id });
   } else {
     if (zone === 'values') { showToast('Drag a measure (How much) here'); return; }
+    const d0 = _rptDim(field.id);
+    if (d0 && d0.filterOnly && zone !== 'filters') zone = 'filters';
     if (zone === 'filters') {
-      _rptConfig.filters.push({ dimensionId: field.id, op: 'eq', value: '' });
+      const fdim = _rptDim(field.id);
+      _rptConfig.filters.push({ dimensionId: field.id, op: fdim && fdim.kind === 'number' ? 'gt' : 'eq', value: '' });
       _rptRenderZones();
       rptEditFilter(_rptConfig.filters.length - 1, true);
       return;
@@ -17200,7 +17621,7 @@ function rptReset() {
     && !confirm('Reset the report?')) return;
   _rptConfig = { filters: [], rows: [], cols: [], values: [] };
   _rptSavedId = null; _rptSavedName = '';
-  _rptResult = null;
+  _rptResult = null; _rptAnswer = null;
   _rptRenderZones();
   _rptRenderResult();
   _rptRefreshSavedDropdown();
@@ -17227,6 +17648,7 @@ function _rptFilterInputHtml(dim, id, value) {
     return `<input type="month" id="${id}" class="rpt-input" value="${escHtml(v)}">`;
   }
   if (dim.id === 'date') return `<input type="date" id="${id}" class="rpt-input" value="${escHtml(value || '')}">`;
+  if (dim.kind === 'number') return `<input type="number" inputmode="decimal" step="0.01" id="${id}" class="rpt-input" value="${escHtml(value || '')}" placeholder="e.g. 200">`;
   return `<input type="text" id="${id}" class="rpt-input" list="rptFilterValues" autocomplete="off" value="${escHtml(value || '')}" placeholder="Type or pick a value">`;
 }
 function _rptFilterReadInput(dim, id) {
@@ -17238,7 +17660,7 @@ function _rptFilterReadInput(dim, id) {
 function rptEditFilter(idx, isNew) {
   const f = _rptConfig.filters[idx]; if (!f) return;
   const dim = _rptDim(f.dimensionId); if (!dim) return;
-  const values = (dim.id === 'period' || dim.id === 'date') ? [] : _rptDistinctValues(dim);
+  const values = (dim.id === 'period' || dim.id === 'date' || dim.kind === 'number') ? [] : _rptDistinctValues(dim);
   _rptCloseFilterModal();
   const bg = document.createElement('div');
   bg.className = 'rpt-modal-bg';
@@ -17253,7 +17675,7 @@ function rptEditFilter(idx, isNew) {
       </div>
       <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.75rem;color:#475569;">Show transactions where ${escHtml(dim.label)}
         <select id="rptFilterOp" class="rpt-input" onchange="_rptFilterOpChanged()">
-          ${Object.entries(RPT_FILTER_OPS).map(([k, o]) => `<option value="${k}" ${f.op === k ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('')}
+          ${_rptOpsFor(dim).map(k => `<option value="${k}" ${f.op === k ? 'selected' : ''}>${escHtml(RPT_FILTER_OPS[k].label)}</option>`).join('')}
         </select>
       </label>
       <div id="rptFilterVal1Wrap">${_rptFilterInputHtml(dim, 'rptFilterVal1', f.value)}</div>
@@ -17354,6 +17776,7 @@ function _rptSyncDateInputs() {
 }
 
 function _rptRunReport() {
+  if (_rptView() === 'list') { _rptRunList(); _rptRenderResult(); return; }
   if (!_rptConfig.values.length) { _rptResult = null; _rptRenderResult(); return; }
   let sql;
   try { sql = _rptBuildQuery(_rptConfig); }
@@ -17379,8 +17802,72 @@ let _rptChart = null;
 function _rptDestroyChart() {
   if (_rptChart) { try { _rptChart.destroy(); } catch(_) {} _rptChart = null; }
 }
-function _rptView() { return _rptConfig.view === 'table' ? 'table' : 'chart'; }
-function rptSetView(v) { _rptConfig.view = v; _rptRenderResult(); }
+function _rptView() { return ['table', 'list'].includes(_rptConfig.view) ? _rptConfig.view : 'chart'; }
+function rptSetView(v) {
+  const wasList = _rptView() === 'list';
+  _rptConfig.view = v;
+  if (wasList || v === 'list') _rptRunReport(); else _rptRenderResult();
+}
+function rptClearTopN() { delete _rptConfig.sort; delete _rptConfig.limit; _rptRunReport(); }
+
+// ── Transactions list view ───────────────────────────────────
+// Same filters and dates as the report, but shows the transactions
+// themselves (for "show me all Costco payments over $200" or
+// "my 10 biggest expenses"). Sort: config.sort; cap: config.limit.
+const RPT_LIST_FROM = `FROM "Transaction" tx
+LEFT JOIN Account dra ON dra.id = tx.drAccountId
+LEFT JOIN Account cra ON cra.id = tx.crAccountId`;
+function _rptRunList() {
+  const where = _rptWhereParts(_rptConfig);
+  const w = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const order = _rptConfig.sort === 'value_desc' ? 'tx.amount DESC, tx.trxDate DESC'
+              : _rptConfig.sort === 'value_asc'  ? 'tx.amount ASC, tx.trxDate DESC'
+              : 'tx.trxDate DESC';
+  const limit = Math.min(parseInt(_rptConfig.limit, 10) || 200, 1000);
+  const sql = `SELECT tx.trxDate, tx.description, tx.amount, dra.name AS dr_name, cra.name AS cr_name, tx.notes
+${RPT_LIST_FROM}
+${w}
+ORDER BY ${order}
+LIMIT ${limit}`;
+  try {
+    const rows = query(sql);
+    const stats = query(`SELECT COUNT(*) AS n, COALESCE(SUM(tx.amount), 0) AS total ${RPT_LIST_FROM} ${w}`)[0] || { n: 0, total: 0 };
+    _rptResult = { list: rows, count: +stats.n || 0, total: +stats.total || 0, limit, sql };
+  } catch (e) { _rptResult = { error: e.message, sql }; }
+}
+function _rptRenderList(el, toolbar) {
+  const p = _rptResult;
+  if (!p.count) {
+    el.innerHTML = toolbar + `<div style="text-align:center;padding:2rem 0.5rem;color:#64748b;font-size:0.875rem;">
+      No transactions match.<br><span style="font-size:0.75rem;color:#94a3b8;">Try a wider date range or remove a filter.</span></div>`;
+    return;
+  }
+  const shown = p.list.length;
+  const sortTxt = _rptConfig.sort === 'value_desc' ? 'largest first' : _rptConfig.sort === 'value_asc' ? 'smallest first' : 'newest first';
+  const td = 'padding:0.375rem 0.5rem;border-bottom:1px solid #f1f5f9;';
+  const th = 'padding:0.375rem 0.5rem;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;white-space:nowrap;position:sticky;top:0;';
+  el.innerHTML = toolbar + `
+    <div style="font-size:0.8rem;color:#334155;margin-bottom:0.5rem;">
+      <strong>${p.count.toLocaleString()}</strong> transaction${p.count === 1 ? '' : 's'} · total <strong>${escHtml(fmtCurrency(p.total, 2))}</strong>
+      <span style="color:#94a3b8;">· ${shown < p.count ? `showing ${shown}, ` : ''}${sortTxt}</span>
+    </div>
+    <div style="overflow:auto;max-height:60vh;border:1px solid #e2e8f0;border-radius:0.375rem;-webkit-overflow-scrolling:touch;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.8125rem;background:white;">
+        <thead><tr>
+          <th style="${th}text-align:left;">Date</th><th style="${th}text-align:left;">Description</th>
+          <th style="${th}text-align:right;">Amount</th><th style="${th}text-align:left;">Debit</th>
+          <th style="${th}text-align:left;" class="rpt-hide-phone">Credit</th>
+        </tr></thead>
+        <tbody>${p.list.map(r => `<tr>
+          <td style="${td}color:#475569;white-space:nowrap;">${escHtml(String(r.trxDate || '').slice(0, 10))}</td>
+          <td style="${td}color:#1e293b;">${escHtml(r.description || '')}${r.notes ? `<div style="font-size:0.7rem;color:#94a3b8;">${escHtml(r.notes)}</div>` : ''}</td>
+          <td style="${td}color:#1e293b;text-align:right;white-space:nowrap;">${escHtml(fmtCurrency(+r.amount || 0, 2))}</td>
+          <td style="${td}color:#64748b;">${escHtml(r.dr_name || '')}</td>
+          <td style="${td}color:#64748b;" class="rpt-hide-phone">${escHtml(r.cr_name || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
 
 function _rptShortMoney(v) {
   const a = Math.abs(v);
@@ -17408,7 +17895,7 @@ function _rptChartModel(p) {
   let note = '';
   if (!isTime) {
     const rowVal = rk => additive ? (p.rowTotals[rk] || 0) : (+((p.matrix[rk] || {})[seriesKeys[0]]) || 0);
-    if (rows.length && rows[0].dimensionId !== 'day_of_week') rowKeys.sort((a, b) => rowVal(b) - rowVal(a));
+    if (rows.length && rows[0].dimensionId !== 'day_of_week' && _rptConfig.sort !== 'value_asc') rowKeys.sort((a, b) => rowVal(b) - rowVal(a));
     if (rowKeys.length > 25) { note = `Showing the top 25 of ${rowKeys.length}. Switch to Table to see them all.`; rowKeys = rowKeys.slice(0, 25); }
   } else if (rowKeys.length > 120) {
     note = `Showing the latest 120 of ${rowKeys.length}. Switch to Table to see them all.`;
@@ -17523,6 +18010,7 @@ function _rptRenderChart(p) {
 function _rptRenderResult() {
   const el = document.getElementById('rptResult');
   if (!el) return;
+  _rptRenderAnswer();
   _rptDestroyChart();
   if (!_rptResult) {
     el.innerHTML = `<div style="text-align:center;padding:1.5rem 0.5rem;">
@@ -17537,9 +18025,9 @@ function _rptRenderResult() {
     return;
   }
   const p = _rptResult;
-  const fmt = v => _rptFmt(v, p.measure.format);
   const view = _rptView();
-  const isEmpty = !p.rowKeys.length || (p.rowKeys.length === 1 && p.headerCols.every(ck => { const v = (p.matrix[p.rowKeys[0]] || {})[ck]; return v === null || v === undefined || +v === 0; }));
+  const fmt = v => _rptFmt(v, p.measure ? p.measure.format : 'currency');
+  const isEmpty = !p.list && (!p.rowKeys.length || (p.rowKeys.length === 1 && p.headerCols.every(ck => { const v = (p.matrix[p.rowKeys[0]] || {})[ck]; return v === null || v === undefined || +v === 0; })));
   const single = !(_rptConfig.rows || []).length && !(_rptConfig.cols || []).length;
 
   const toolbar = `
@@ -17548,8 +18036,10 @@ function _rptRenderResult() {
         <div class="rpt-seg" role="group" aria-label="View">
           <button class="${view === 'chart' ? 'on' : ''}" onclick="rptSetView('chart')">Chart</button>
           <button class="${view === 'table' ? 'on' : ''}" onclick="rptSetView('table')">Table</button>
+          <button class="${view === 'list' ? 'on' : ''}" onclick="rptSetView('list')" title="The transactions behind this report">Transactions</button>
         </div>
-        <div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>
+        ${p.list ? '' : `<div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>`}
+        ${(_rptConfig.limit || _rptConfig.sort === 'value_asc' || _rptConfig.sort === 'value_desc') ? `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#f1f5f9;color:#334155;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">${_rptConfig.limit ? 'Top ' + escHtml(String(_rptConfig.limit)) : 'Sorted'} · ${_rptConfig.sort === 'value_asc' ? 'smallest first' : 'largest first'}<button onclick="rptClearTopN()" title="Show all" style="background:none;border:none;color:#64748b;cursor:pointer;padding:0;font-size:0.9rem;line-height:1;">×</button></span>` : ''}
       </div>
       <div style="display:flex;gap:0.25rem;">
         <button onclick="rptExportCsv()" class="rpt-btn" style="font-size:0.7rem;">Export CSV</button>
@@ -17557,6 +18047,7 @@ function _rptRenderResult() {
       </div>
     </div>`;
 
+  if (p.list) { _rptRenderList(el, toolbar); return; }
   if (isEmpty) {
     el.innerHTML = toolbar + `<div style="text-align:center;padding:2rem 0.5rem;color:#64748b;font-size:0.875rem;">
       No transactions match this report.<br><span style="font-size:0.75rem;color:#94a3b8;">Try a wider date range or remove a filter.</span></div>`;
@@ -17725,6 +18216,13 @@ function rptDrillExportCsv() {
 function rptExportCsv() {
   if (!_rptResult || _rptResult.error) return;
   const p = _rptResult;
+  if (p.list) {
+    const m = { _drillRows: p.list };
+    const holder = document.getElementById('rptDrillModal') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'rptDrillModal', style: 'display:none' }));
+    holder._drillRows = m._drillRows;
+    rptDrillExportCsv();
+    return;
+  }
   const esc = v => {
     if (v === null || v === undefined) return '';
     const s = String(v);
@@ -17825,6 +18323,7 @@ function rptLoad(id) {
     if (!_rptConfig.values)  _rptConfig.values = [];
     _rptSavedId   = id;
     _rptSavedName = row.name;
+    _rptAnswer = null;
     _rptRenderZones();
     _rptRunReport();
     _rptUpdateSavedLabel();
