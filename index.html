@@ -770,6 +770,7 @@ async function signOut() {
   if (btn) { btn.textContent = 'Syncing…'; btn.disabled = true; }
   try { await syncToDrive(); } catch(e) { console.warn('Sign-out sync:', e.message); }
   if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+  try { askClearStored(); } catch (_) {}
   window.location.reload();
 }
 // ════════════════════════════════════════════════════════════
@@ -2428,7 +2429,7 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
-    <button onclick="rptOpenAsk()" title="Ask a question about your money" aria-label="Ask"
+    <button onclick="askChatToggle()" title="Ask a question about your money" aria-label="Ask"
       style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -8639,7 +8640,7 @@ function aboutTab() {
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">D</td><td class="py-1 pr-2">Date shortcuts (This month, Last month, This/Last quarter, This/Last year, Last 12 months, Custom). Saved reports keep the shortcut, so "This year" stays current. Quick-start reports. Still later: side-by-side period comparison, % of grand total, highlighting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">E</td><td class="py-1 pr-2">Phone layout: result first, setup below, tap a field to choose where it goes (no drag needed). Inline filter editor with a pick-list of real values, replacing the prompt() dialogs. Reports back in the sidebar and on the floating pill.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Ask box at the top of Reports. Claude only fills in a report setup from the fixed fields via a JSON schema; the app validates it, matches names against real values, runs it, and writes the one-line answer itself. Shows "How I read it". Also added: Transactions list view, Amount filter (more than / less than), top-N sorting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr><td class="py-1 pr-2 font-semibold">Follow-ups</td><td class="py-1 pr-2">Follow-up questions ("now just restaurants", "compare to last year") and saved questions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Ask chat</td><td class="py-1 pr-2">The Ask button opens a chat window (move, resize, minimize; full screen on phone). Follow-ups ("now just restaurants", "show it as a pie"), clarifying questions with tap-to-answer options, chart type per answer (bar / line / pie / table), Open in Reports, Save as report. Chart type picker on the Reports page too.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
         </tbody>
       </table>
       <p class="text-xs text-slate-400 leading-relaxed">
@@ -16873,6 +16874,7 @@ function _rptFmt(value, format) {
 const RPT_FILTER_OPS = {
   eq:       { label: 'is',           render: 'one' },
   ne:       { label: 'is not',       render: 'one' },
+  in:       { label: 'is one of',    render: 'many' },
   contains: { label: 'contains',     render: 'one' },
   between:  { label: 'between',      render: 'two' },
   gt:       { label: 'is more than', render: 'one', numberOnly: true },
@@ -16881,7 +16883,12 @@ const RPT_FILTER_OPS = {
 // Which operators make sense for a field.
 function _rptOpsFor(dim) {
   if (dim && dim.kind === 'number') return ['gt', 'lt', 'between', 'eq'];
-  return ['eq', 'ne', 'contains', 'between'];
+  return ['eq', 'ne', 'in', 'contains', 'between'];
+}
+// Values of an "is one of" filter (kept as a list; older saves may hold "a | b").
+function _rptInValues(f) {
+  const list = Array.isArray(f.values) ? f.values : String(f.value || '').split(' | ');
+  return list.map(x => String(x).trim()).filter(Boolean);
 }
 function _rptFilterSql(f) {
   const dim = _rptDim(f.dimensionId);
@@ -16901,6 +16908,10 @@ function _rptFilterSql(f) {
   const v2 = String(f.value2 || '').replace(/'/g, "''");
   if (f.op === 'eq')       return `${expr} = '${v}'`;
   if (f.op === 'ne')       return `${expr} <> '${v}'`;
+  if (f.op === 'in') {
+    const list = _rptInValues(f).map(x => `'${x.replace(/'/g, "''")}'`);
+    return list.length ? `${expr} IN (${list.join(', ')})` : null;
+  }
   if (f.op === 'contains') return `${expr} LIKE '%${v}%'`;
   if (f.op === 'between')  return `${expr} >= '${v}' AND ${expr} <= '${v2}'`;
   return null;
@@ -17142,8 +17153,8 @@ const RPT_ASK_EXAMPLES = [
   'Spending by category over the last 12 months',
   'What were our 10 biggest expenses this year?',
   'Income by month this year',
+  'How much discretionary spending this year?',
 ];
-let _rptAskBusy = false;
 let _rptAnswer = null;   // { question, reading, notes[], warnings[], answer } shown above the result
 
 function _rptAskSchema() {
@@ -17153,8 +17164,10 @@ function _rptAskSchema() {
   return {
     type: 'object',
     properties: {
-      answerable: { type: 'boolean' },
+      reply_type: { type: 'string', enum: ['report', 'clarify', 'cannot'] },
       note: { type: 'string' },
+      options: { type: 'array', items: { type: 'string' } },
+      chart: { type: 'string', enum: ['auto', 'bar', 'line', 'pie', 'table'] },
       view: { type: 'string', enum: ['summary', 'transactions'] },
       rows: { type: 'array', items: { type: 'string', enum: dimIds } },
       columns: { type: 'array', items: { type: 'string', enum: dimIds } },
@@ -17171,15 +17184,16 @@ function _rptAskSchema() {
             op: { type: 'string', enum: Object.keys(RPT_FILTER_OPS) },
             value: { type: 'string' },
             value2: nullableStr,
+            values: { type: 'array', items: { type: 'string' } },
           },
-          required: ['field', 'op', 'value', 'value2'],
+          required: ['field', 'op', 'value', 'value2', 'values'],
           additionalProperties: false,
         },
       },
       sort: { type: 'string', enum: ['none', 'value_desc', 'value_asc'] },
       limit: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
     },
-    required: ['answerable', 'note', 'view', 'rows', 'columns', 'measure', 'date_preset', 'date_from', 'date_to', 'filters', 'sort', 'limit'],
+    required: ['reply_type', 'note', 'options', 'chart', 'view', 'rows', 'columns', 'measure', 'date_preset', 'date_from', 'date_to', 'filters', 'sort', 'limit'],
     additionalProperties: false,
   };
 }
@@ -17210,18 +17224,30 @@ Date shortcuts (they work on whole calendar months):
 ${presets}
 Use date_preset "custom" with date_from and date_to (YYYY-MM-DD) for anything else, such as a named month, a specific year, or "since March". A month name on its own means its most recent occurrence that has already started. When no time is mentioned, use "all". Set date_from and date_to to null unless date_preset is "custom".
 
-Filter operators: eq (is), ne (is not), contains, between (value to value2), gt (more than), lt (less than). gt and lt work only on the amount field, and amount values are plain numbers without $ or commas. For eq and ne, use an account name exactly as it appears in the list you are given.
+Filter operators: eq (is), ne (is not), in (is one of: put the names in values), contains, between (value to value2), gt (more than), lt (less than). gt and lt work only on the amount field, and amount values are plain numbers without $ or commas. For eq, ne and in, use account names exactly as they appear in the list you are given. Leave values as [] unless op is in, and set value to "" when op is in.
+
+Groups of categories:
+Questions often use a word that stands for several categories rather than one, such as discretionary, non-essential, wants, fun or lifestyle spending; essentials, needs, necessities, fixed costs, bills or living expenses; food (groceries and dining); housing; kids; or travel and leisure. Interpret the word yourself and pick every EXPENSE account from the list that fits, using dr_name with op in. If an account has a grouping that matches the word, use that grouping. As a guide, discretionary spending is spending a household could cut back on, such as dining out, entertainment, shopping, hobbies, travel, gifts and most subscriptions; essentials are housing (mortgage, rent, property tax, HOA), utilities, groceries, insurance, healthcare, transportation, childcare and education, and loan payments. Use account names to decide; when one is ambiguous (for example Miscellaneous), leave it out. Always add a dr_type eq EXPENSE filter too. In note, say in one sentence which categories you counted, for example "I counted Dining Out, Entertainment, Shopping and Travel as discretionary." Never use reply_type "cannot" or "clarify" just because the question uses a word like this.
 
 Choosing the setup:
 - A single total ("how much did we spend on X"): view summary, rows [], columns [], measure amount_sum.
 - A breakdown ("by category", "by month", "which ... most"): put the field in rows. Use month_name for months, year for years, quarter for quarters. Use columns only when the question asks for two splits at once, such as "each category by month".
 - Top or bottom lists of categories, accounts or months: view summary with sort value_desc (or value_asc) and limit.
 - Questions about individual transactions ("show me", "list", "which payments", "biggest expenses", "largest purchases"): view transactions, with sort value_desc for "biggest" and limit when a number is given. Otherwise sort none (newest first) and limit null.
+- "Show me" a spending group or a total over a period: view summary with rows [dr_name] so each category in the group is visible, unless the question asks for individual transactions.
 - "How many": measure count.
 - Average or typical amount: amount_avg. Largest single one in a breakdown: amount_max.
 - Set sort "none" and limit null unless the question asks for a ranking or a number of items.
 
-Set answerable to false only when the question cannot be expressed with these fields (for example balances, net worth, budgets, forecasts or advice). Then explain why in note in one plain sentence, and fill the other fields with a reasonable default setup.
+Charts: set chart to "auto" unless the person asks for a kind of chart or a table: "bar", "line", "pie" or "table". Pie only makes sense for one breakdown with no columns, such as spending by category.
+
+This is a conversation. Earlier turns show the person's messages and the setups you returned, as JSON. A follow-up such as "now just Amex", "what about last year", "by month instead", "only over $100" or "show it as a pie" changes the most recent setup: start from that setup and change only what the follow-up asks for, keeping everything else (including the chart choice). An answer to a question you asked completes the earlier question. A new, unrelated question starts fresh.
+
+reply_type:
+- "report" for almost everything.
+- "clarify" only when the question is ambiguous in a way that would change the answer a lot and no reasonable assumption exists. Put one short question in note and 2 to 4 short answers the person can tap in options (each a few words, written as the person would say it). Still fill the setup fields with your best guess. Prefer a stated assumption over asking: never ask about dates, and never ask twice in a row.
+- "cannot" only when the question cannot be expressed with these fields (for example balances, net worth, budgets, forecasts or advice). Explain why in note in one plain sentence, and fill the other fields with a reasonable default setup.
+Leave options as [] unless reply_type is "clarify".
 In note, state in one short plain sentence any assumption you made (for example "I read October as October 2026" or "I treated eating out as the Dining Out category"). Leave note empty when there was nothing to assume.`;
 }
 
@@ -17240,7 +17266,9 @@ Accounts (name | type | grouping):
 ${list}`;
 }
 
-async function _rptAskClaude(question) {
+async function _rptAskClaude(questionOrMessages) {
+  const messages = Array.isArray(questionOrMessages) ? questionOrMessages
+    : [{ role: 'user', content: `${_rptAskContext()}\n\nQuestion: ${questionOrMessages}` }];
   const apiKey = _itGetApiKey();
   if (!apiKey) throw new Error('NO_KEY');
   let res;
@@ -17260,7 +17288,7 @@ async function _rptAskClaude(question) {
       fallbacks: 'default',
       output_config: { effort: 'low', format: { type: 'json_schema', schema: _rptAskSchema() } },
       system: [{ type: 'text', text: _rptAskSystemPrompt(), cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: `${_rptAskContext()}\n\nQuestion: ${question}` }],
+      messages,
     }),
   });
   } catch (_) { throw new Error('Couldn\'t reach Claude. Check your internet connection and try again.'); }
@@ -17311,6 +17339,17 @@ function _rptPlanToConfig(plan) {
     const dim = _rptDim(f.field);
     if (!dim || !RPT_FILTER_OPS[f.op]) continue;
     if (!_rptOpsFor(dim).includes(f.op)) continue;
+    if (f.op === 'in') {
+      const picked = [];
+      for (const raw of (Array.isArray(f.values) && f.values.length ? f.values : String(f.value || '').split(/\s*\|\s*/))) {
+        if (!String(raw || '').trim()) continue;
+        const r = _rptResolveValue(dim, raw);
+        if (r.missing) { warnings.push(`No ${dim.label.toLowerCase()} called "${String(raw).trim()}" was found in your data, so it was left out.`); continue; }
+        if (!picked.includes(r.value)) picked.push(r.value);
+      }
+      if (picked.length) cfg.filters.push({ dimensionId: dim.id, op: 'in', values: picked, value: picked.join(' | ') });
+      continue;
+    }
     const flt = { dimensionId: dim.id, op: f.op, value: String(f.value || '').trim() };
     if (f.op === 'between') flt.value2 = String(f.value2 || '').trim();
     if (!flt.value) continue;
@@ -17335,6 +17374,10 @@ function _rptPlanToConfig(plan) {
   const lim = parseInt(plan.limit, 10);
   if (lim > 0) cfg.limit = Math.min(lim, 500);
   cfg.view = isList ? 'list' : (cfg.rows.length ? 'chart' : 'table');
+  if (!isList && cfg.rows.length) {
+    if (plan.chart === 'table') cfg.view = 'table';
+    else if (['bar', 'line', 'pie'].includes(plan.chart)) cfg.chartType = plan.chart;
+  }
   return { cfg, warnings };
 }
 
@@ -17434,55 +17477,422 @@ function _rptRenderAnswer() {
     <div style="font-size:0.7rem;color:#94a3b8;margin-top:0.35rem;">Not quite right? Change the fields below, or rephrase. The numbers always come from your data, not from AI.</div>`;
 }
 
-// Floating tray "Ask" button: open Reports and put the cursor in the Ask box.
-function rptOpenAsk() {
-  if (typeof currentPage === 'undefined' || currentPage !== 'reports') navigate('reports');
-  setTimeout(() => {
-    const i = document.getElementById('rptAskInput');
-    if (!i) return;
-    try { i.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
-    try { i.focus({ preventScroll: true }); } catch (_) { i.focus(); }
-  }, 60);
-}
-
-async function rptAsk(questionArg) {
+// The tray's Ask button and the Reports page's Ask box both go to the Ask chat.
+function rptOpenAsk() { askChatToggle(); }
+function rptAsk(questionArg) {
   const input = document.getElementById('rptAskInput');
   const question = String(questionArg || (input ? input.value : '') || '').trim();
-  if (!question || _rptAskBusy) return;
-  if (input) input.value = question;
-  if (!_itHasApiKey()) {
-    _rptAnswer = { error: 'Ask needs your Anthropic API key. Add it in <a href="#" onclick="navigate(\'settings\');return false;" style="text-decoration:underline;">Settings</a> (the same key Dictate uses).' };
-    _rptRenderAnswer();
+  if (!question) { askChatOpen(); return; }
+  if (input) input.value = '';
+  askSend(question);
+}
+
+// ════════════════════════════════════════════════════════════
+// ASK CHAT — floating, resizable conversation window
+// ════════════════════════════════════════════════════════════
+// Grows out of the floating tray's Ask button. Each question goes to
+// Claude with the earlier turns (questions + the setups Claude returned),
+// so follow-ups like "now just Amex" or "show it as a pie" change the
+// last setup. Claude can also ask back (reply_type "clarify").
+// Every number is still computed by the Reports engine (_rptCompute).
+// The conversation is kept on this device only (localStorage), and is
+// cleared on Sign Out.
+const ASK_STORE_KEY = 'finapp.askChat.v1';
+const ASK_BOX_KEY   = 'finapp.askChat.box.v1';
+let _askMsgs = [];     // { id, role:'user', text } | { id, role:'assistant', type:'report'|'clarify'|'cannot'|'error', ... }
+let _askBusy = false;
+let _askLoaded = false;
+let _askCharts = {};   // message id → Chart
+
+const ASK_CSS = `
+  #askChat { position:fixed;z-index:250;display:none;flex-direction:column;background:#fff;border:1px solid #e2e8f0;border-radius:14px;
+    box-shadow:0 24px 60px rgba(15,23,42,0.28);overflow:hidden;resize:both;min-width:320px;min-height:360px;
+    max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .18s ease; }
+  #askChat.open { display:flex; }
+  #askChat.morph { transform:scale(.06);opacity:0;pointer-events:none; }
+  #askChat.phone { left:0 !important;top:0 !important;width:100vw !important;height:100vh !important;height:100dvh !important;
+    border-radius:0;resize:none;max-width:none;max-height:none;border:none; }
+  #askChat.phone .ask-only-desk { display:none; }
+  .ask-head { display:flex;align-items:center;gap:0.25rem;padding:0.5rem 0.5rem 0.5rem 0.85rem;background:#0f172a;color:#fff;cursor:move;user-select:none;touch-action:none; }
+  #askChat.phone .ask-head { cursor:default;padding-top:max(0.5rem, env(safe-area-inset-top)); }
+  .ask-head .ask-title { font-size:0.9rem;font-weight:600;flex:1;display:flex;align-items:center;gap:0.45rem; }
+  .ask-hbtn { background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;padding:0.35rem;border-radius:6px;display:flex; }
+  .ask-hbtn:hover { background:rgba(255,255,255,0.12);color:#fff; }
+  .ask-msgs { flex:1;overflow-y:auto;padding:0.75rem;display:flex;flex-direction:column;gap:0.6rem;background:#f8fafc;-webkit-overflow-scrolling:touch; }
+  .ask-u { align-self:flex-end;max-width:85%;background:#0f172a;color:#fff;padding:0.5rem 0.75rem;border-radius:14px 14px 4px 14px;font-size:0.85rem;white-space:pre-wrap;overflow-wrap:anywhere; }
+  .ask-a { align-self:stretch;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:0.65rem 0.75rem;font-size:0.85rem;color:#1e293b; }
+  .ask-a a { text-decoration:underline; }
+  .ask-ans { font-weight:600;font-size:0.95rem;color:#0f172a; }
+  .ask-small { font-size:0.72rem;color:#64748b;margin-top:0.3rem; }
+  .ask-warn { font-size:0.72rem;color:#b45309;margin-top:0.2rem; }
+  .ask-acts { display:flex;flex-wrap:wrap;gap:0.375rem;align-items:center;margin-top:0.55rem; }
+  .ask-seg { display:inline-flex;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden; }
+  .ask-seg button { font-size:0.7rem;padding:0.28rem 0.55rem;border:none;background:#fff;color:#475569;cursor:pointer; }
+  .ask-seg button + button { border-left:1px solid #e2e8f0; }
+  .ask-seg button.on { background:#0f172a;color:#fff; }
+  .ask-btn { font-size:0.72rem;padding:0.28rem 0.6rem;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:6px;cursor:pointer; }
+  .ask-btn:hover { background:#f1f5f9; }
+  .ask-chip { font-size:0.78rem;padding:0.35rem 0.7rem;border:1px solid #cbd5e1;background:#fff;color:#0f172a;border-radius:9999px;cursor:pointer;text-align:left; }
+  .ask-chip:hover { background:#f1f5f9; }
+  .ask-foot { display:flex;gap:0.375rem;padding:0.55rem;border-top:1px solid #e2e8f0;background:#fff; }
+  #askChat.phone .ask-foot { padding-bottom:max(0.55rem, env(safe-area-inset-bottom)); }
+  .ask-foot textarea { flex:1;min-width:0;resize:none;border:1px solid #cbd5e1;border-radius:10px;padding:0.5rem 0.65rem;font-size:0.9rem;font-family:inherit;max-height:7rem;line-height:1.3;outline:none; }
+  .ask-foot textarea:focus { border-color:#64748b; }
+  #askChat.phone .ask-foot textarea { font-size:16px; }
+  .ask-send { background:#0f172a;color:#fff;border:none;border-radius:10px;padding:0 0.9rem;font-size:0.85rem;cursor:pointer; }
+  .ask-send:disabled { opacity:0.5;cursor:default; }
+  .ask-tbl { width:100%;border-collapse:collapse;margin-top:0.5rem;font-size:0.78rem; }
+  .ask-tbl td, .ask-tbl th { padding:0.3rem 0.4rem;border-bottom:1px solid #f1f5f9;text-align:left;vertical-align:top; }
+  .ask-tbl th { font-size:0.66rem;text-transform:uppercase;color:#64748b;font-weight:600;background:#f8fafc; }
+  .ask-tbl .n { text-align:right;white-space:nowrap; }
+  .ask-typing { align-self:flex-start;font-size:0.8rem;color:#64748b;padding:0.35rem 0.2rem; }
+  .ask-empty { text-align:center;color:#64748b;font-size:0.82rem;padding:1rem 0.5rem; }
+`;
+
+function _askIsPhone() { return window.innerWidth < 640 || document.documentElement.classList.contains('use-cards'); }
+function _askJs(v) { return JSON.stringify(String(v)).replace(/"/g, '&quot;'); }
+function _askLoad() {
+  if (_askLoaded) return;
+  _askLoaded = true;
+  try { const raw = localStorage.getItem(ASK_STORE_KEY); _askMsgs = raw ? (JSON.parse(raw) || []) : []; } catch (_) { _askMsgs = []; }
+  if (!Array.isArray(_askMsgs)) _askMsgs = [];
+}
+function _askSave() {
+  // Keys starting with _ are per-render caches (computed results), not saved.
+  try { localStorage.setItem(ASK_STORE_KEY, JSON.stringify(_askMsgs.slice(-40), (k, v) => k.startsWith('_') ? undefined : v)); } catch (_) {}
+}
+function askClearStored() { try { localStorage.removeItem(ASK_STORE_KEY); } catch (_) {} _askMsgs = []; }
+
+function _askMount() {
+  let el = document.getElementById('askChat');
+  if (el) return el;
+  if (!document.getElementById('askChatCss')) {
+    const st = document.createElement('style'); st.id = 'askChatCss'; st.textContent = ASK_CSS; document.head.appendChild(st);
+  }
+  el = document.createElement('div');
+  el.id = 'askChat';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-label', 'Ask about your money');
+  el.innerHTML = `
+    <div class="ask-head" id="askHead">
+      <span class="ask-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Ask
+      </span>
+      <button class="ask-hbtn" onclick="askNewChat()" title="New chat" aria-label="New chat">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      </button>
+      <button class="ask-hbtn ask-only-desk" id="askBigBtn" onclick="askToggleBig()" title="Make bigger" aria-label="Make bigger">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
+      <button class="ask-hbtn" onclick="askChatClose()" title="Minimize" aria-label="Minimize">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+    <div class="ask-msgs" id="askMsgs"></div>
+    <form class="ask-foot" onsubmit="event.preventDefault(); askSend();">
+      <textarea id="askInput" rows="1" placeholder="Ask about your money…" enterkeyhint="send" aria-label="Your question"></textarea>
+      <button class="ask-send" id="askSendBtn" type="submit">Send</button>
+    </form>`;
+  document.body.appendChild(el);
+  const ta = el.querySelector('#askInput');
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askSend(); } });
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 112) + 'px'; });
+  _askInitDrag(el);
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => {
+      if (el.classList.contains('open') && !el.classList.contains('phone') && !el.classList.contains('morph') && !el._big) _askRememberBox(el);
+    }).observe(el);
+  }
+  window.addEventListener('resize', () => { if (el.classList.contains('open')) _askPlace(el); });
+  return el;
+}
+
+function _askGetBox() { try { return JSON.parse(localStorage.getItem(ASK_BOX_KEY) || 'null'); } catch (_) { return null; } }
+function _askRememberBox(el) {
+  const r = el.getBoundingClientRect();
+  if (r.width < 50) return;
+  try { localStorage.setItem(ASK_BOX_KEY, JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) })); } catch (_) {}
+}
+// Size and position: phone = full screen; otherwise the remembered box, kept on screen.
+function _askPlace(el) {
+  if (_askIsPhone()) { el.classList.add('phone'); return; }
+  el.classList.remove('phone');
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const b = el._big ? { w: Math.min(960, vw - 48), h: vh - 48, x: null, y: 24 } : (_askGetBox() || {});
+  const w = Math.min(Math.max(b.w || 420, 320), vw - 16);
+  const h = Math.min(Math.max(b.h || Math.min(640, vh - 96), 360), vh - 16);
+  const x = Math.min(Math.max(b.x !== null && b.x !== undefined ? b.x : (el._big ? (vw - w) / 2 : vw - w - 24), 8), vw - w - 8);
+  const y = Math.min(Math.max(b.y !== null && b.y !== undefined ? b.y : vh - h - 24, 8), vh - h - 8);
+  Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+}
+function askToggleBig() {
+  const el = document.getElementById('askChat'); if (!el) return;
+  el._big = !el._big;
+  _askPlace(el);
+  const b = document.getElementById('askBigBtn');
+  if (b) { b.title = el._big ? 'Make smaller' : 'Make bigger'; b.setAttribute('aria-label', b.title); }
+}
+function _askInitDrag(el) {
+  const head = el.querySelector('#askHead');
+  let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+  head.addEventListener('pointerdown', e => {
+    if (e.target.closest('button') || el.classList.contains('phone')) return;
+    dragging = true; sx = e.clientX; sy = e.clientY;
+    const r = el.getBoundingClientRect(); ox = r.left; oy = r.top;
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    el.style.transition = 'none';
+  });
+  head.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const r = el.getBoundingClientRect();
+    el.style.left = Math.min(Math.max(ox + e.clientX - sx, 8), window.innerWidth - r.width - 8) + 'px';
+    el.style.top  = Math.min(Math.max(oy + e.clientY - sy, 8), window.innerHeight - r.height - 8) + 'px';
+  });
+  const end = () => { if (!dragging) return; dragging = false; el.style.transition = ''; el._big = false; _askRememberBox(el); };
+  head.addEventListener('pointerup', end);
+  head.addEventListener('pointercancel', end);
+}
+
+// The window grows out of (and shrinks back into) the tray's Ask button.
+function _askOriginFor(el) {
+  const btn = document.querySelector('#floatingPill [aria-label="Ask"]');
+  if (!btn) return '100% 100%';
+  const r = el.getBoundingClientRect(), b = btn.getBoundingClientRect();
+  return `${Math.round(b.left + b.width / 2 - r.left)}px ${Math.round(b.top + b.height / 2 - r.top)}px`;
+}
+function _askIsOpen() { const el = document.getElementById('askChat'); return !!(el && el.classList.contains('open') && !el.classList.contains('morph')); }
+function askChatOpen() {
+  _askLoad();
+  const el = _askMount();
+  if (_askIsOpen()) { _askFocus(); return; }
+  clearTimeout(el._closeT);
+  el.classList.add('open', 'morph');
+  _askPlace(el);
+  el.style.transformOrigin = _askOriginFor(el);
+  _askRender();
+  void el.offsetWidth;          // apply the shrunken state before animating
+  el.classList.remove('morph');
+  _askFocus();
+}
+function askChatClose() {
+  const el = document.getElementById('askChat');
+  if (!el || !el.classList.contains('open')) return;
+  el.style.transformOrigin = _askOriginFor(el);
+  el.classList.add('morph');
+  el._closeT = setTimeout(() => { el.classList.remove('open', 'morph'); _askDestroyCharts(); }, 230);
+}
+function askChatToggle() { _askIsOpen() ? askChatClose() : askChatOpen(); }
+function _askFocus() {
+  if ('ontouchstart' in window) return;   // don't pop the phone keyboard over the answer
+  setTimeout(() => { const i = document.getElementById('askInput'); if (i) try { i.focus({ preventScroll: true }); } catch (_) { i.focus(); } }, 60);
+}
+function askNewChat() {
+  _askMsgs = []; _askSave(); _askRender();
+  _askFocus();
+}
+
+// ── Rendering ─────────────────────────────────────────────────
+function _askDestroyCharts() {
+  Object.values(_askCharts).forEach(c => { try { c.destroy(); } catch (_) {} });
+  _askCharts = {};
+}
+function _askRender() {
+  const box = document.getElementById('askMsgs');
+  if (!box) return;
+  _askDestroyCharts();
+  if (!_askMsgs.length && !_askBusy) {
+    box.innerHTML = `<div class="ask-empty">
+      <div style="font-weight:600;color:#0f172a;font-size:0.95rem;">Ask about your money</div>
+      <div style="margin-top:0.3rem;">I'll turn your question into a report. You can follow up, like "now just last year" or "show it as a pie". The numbers always come from your data, not from AI.</div>
+      <div class="ask-acts" style="justify-content:center;margin-top:0.85rem;">
+        ${RPT_ASK_EXAMPLES.map(q => `<button class="ask-chip" onclick="askSend(${_askJs(q)})">${escHtml(q)}</button>`).join('')}
+      </div></div>`;
     return;
   }
-  _rptAskBusy = true;
-  const btn = document.getElementById('rptAskBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Thinking…'; }
-  _rptAnswer = { loading: true }; _rptRenderAnswer();
-  try {
-    const plan = await _rptAskClaude(question);
-    if (plan.answerable === false) {
-      // Don't show a made-up "closest" report; just explain.
-      _rptAnswer = { question, cannot: String(plan.note || '').trim() || 'This can\'t be answered from your transactions.' };
-      return;
-    }
-    const { cfg, warnings } = _rptPlanToConfig(plan);
-    _rptConfig = cfg;
-    _rptSavedId = null; _rptSavedName = '';
-    _rptRenderZones();
-    _rptRunReport();
-    _rptRefreshSavedDropdown();
-    _rptAnswer = {
-      question, warnings,
-      note: String(plan.note || '').trim(),
-    };
-  } catch (e) {
-    _rptAnswer = { error: escHtml(e.message === 'NO_KEY' ? 'Ask needs your Anthropic API key. Add it in Settings.' : (e.message || 'Something went wrong. Try again.')) };
-  } finally {
-    _rptAskBusy = false;
-    if (btn) { btn.disabled = false; btn.textContent = 'Ask'; }
-    _rptRenderAnswer();
+  box.innerHTML = _askMsgs.map(m => m.role === 'user' ? `<div class="ask-u">${escHtml(m.text)}</div>` : _askCardHtml(m)).join('')
+    + (_askBusy ? '<div class="ask-typing" id="askTyping">Thinking…</div>' : '');
+  _askMsgs.forEach(m => { if (m.role === 'assistant' && m.type === 'report') _askDrawCard(m); });
+  box.scrollTop = box.scrollHeight;
+}
+
+function _askCardHtml(m) {
+  if (m.type === 'error') return `<div class="ask-a" style="color:#991b1b;">${m.html ? m.text : escHtml(m.text)}</div>`;
+  if (m.type === 'cannot') return `<div class="ask-a"><div style="color:#92400e;">${escHtml(m.text)}</div>
+    <div class="ask-small">Ask works with your transactions: spending, income, payments, categories, merchants and dates.</div></div>`;
+  if (m.type === 'clarify') return `<div class="ask-a"><div>${escHtml(m.text)}</div>
+    ${(m.options || []).length ? `<div class="ask-acts">${m.options.map(o => `<button class="ask-chip" onclick="askSend(${_askJs(o)})">${escHtml(o)}</button>`).join('')}</div>` : ''}</div>`;
+  let res;
+  try { res = m._res = _rptCompute(m.cfg); } catch (e) { res = { error: e.message }; }
+  if (!res || res.error) return `<div class="ask-a" id="askCard-${m.id}" style="color:#991b1b;">Couldn't run this report${res && res.error ? ': ' + escHtml(res.error) : ''}.</div>`;
+  const sentence = _rptWith(m.cfg, res, _rptAnswerSentence);
+  const empty = /^No transactions match/.test(sentence);
+  const hasRows = !res.list && (m.cfg.rows || []).length > 0;
+  const cur = m.cfg.view === 'table' ? 'table' : (m.cfg.chartType || 'auto');
+  const vizChoices = [['auto', 'Auto'], ['bar', 'Bar'], ['line', 'Line'], ['pie', 'Pie'], ['table', 'Table']];
+  return `<div class="ask-a" id="askCard-${m.id}">
+    <div class="ask-ans">${escHtml(sentence)}</div>
+    ${empty ? '' : _askVizHtml(m, res)}
+    <div class="ask-small"><span style="color:#94a3b8;">How I read it:</span> ${escHtml(_rptDescribeConfig(m.cfg))}</div>
+    ${m.note ? `<div class="ask-small">${escHtml(m.note)}</div>` : ''}
+    ${(m.warnings || []).map(w => `<div class="ask-warn">⚠ ${escHtml(w)}</div>`).join('')}
+    <div class="ask-acts">
+      ${hasRows && !empty ? `<div class="ask-seg" role="group" aria-label="Chart type">${vizChoices.map(([id, l]) => `<button class="${cur === id ? 'on' : ''}" onclick="askSetViz('${m.id}','${id}')">${l}</button>`).join('')}</div>` : ''}
+      <button class="ask-btn" onclick="askOpenInReports('${m.id}')">Open in Reports</button>
+      <button class="ask-btn" onclick="askSaveReport('${m.id}')">${m.savedAs ? 'Saved ✓' : 'Save as report'}</button>
+    </div>
+  </div>`;
+}
+
+function _askVizHtml(m, res) {
+  const money = v => fmtCurrency(+v || 0, 2);
+  if (res.list) {
+    const rows = res.list.slice(0, 6);
+    const more = res.count - rows.length;
+    return `<table class="ask-tbl"><thead><tr><th>Date</th><th>Description</th><th class="n">Amount</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td style="white-space:nowrap;">${escHtml(String(r.trxDate || '').slice(0, 10))}</td><td>${escHtml(r.description || r.dr_name || '')}</td><td class="n">${escHtml(money(r.amount))}</td></tr>`).join('')}
+      </tbody></table>${more > 0 ? `<div class="ask-small">${more.toLocaleString()} more. Open in Reports to see them all.</div>` : ''}`;
   }
+  if (!(m.cfg.rows || []).length) return '';
+  if (m.cfg.view === 'table') {
+    const fmt = v => _rptFmt(v, res.measure.format);
+    const val = rk => res.totalsValid ? (res.rowTotals[rk] || 0) : (+((res.matrix[rk] || {})[res.headerCols[0]]) || 0);
+    const keys = res.rowKeys.slice(0, 12);
+    const label = m.cfg.rows.map(r => _rptDim(r.dimensionId).label).join(' / ');
+    return `<table class="ask-tbl"><thead><tr><th>${escHtml(label)}</th><th class="n">${escHtml(res.totalsValid && (m.cfg.cols || []).length ? 'Total' : res.measure.label)}</th></tr></thead><tbody>
+      ${keys.map(rk => `<tr><td>${escHtml(rk)}</td><td class="n">${escHtml(fmt(val(rk)))}</td></tr>`).join('')}
+      </tbody></table>${res.rowKeys.length > keys.length ? `<div class="ask-small">${res.rowKeys.length - keys.length} more rows. Open in Reports to see them all.</div>` : ''}`;
+  }
+  return `<div style="position:relative;width:100%;height:220px;margin-top:0.5rem;"><canvas id="askCv-${m.id}" role="img" aria-label="Chart"></canvas></div>
+    <div class="ask-small" id="askCvNote-${m.id}"></div>`;
+}
+
+function _askDrawCard(m) {
+  const res = m._res;
+  if (!res || res.error || res.list || !(m.cfg.rows || []).length || m.cfg.view === 'table') return;
+  const cv = document.getElementById('askCv-' + m.id);
+  if (!cv || typeof Chart === 'undefined') return;
+  try {
+    const out = _rptWith(m.cfg, res, () => _rptDrawChart(cv, cv.parentElement, res, { compact: true, maxRows: 10 }));
+    _askCharts[m.id] = out.chart;
+    const n = document.getElementById('askCvNote-' + m.id);
+    if (n) n.textContent = (out.model.note || '').replace('Switch to Table to see them all.', 'Open in Reports to see them all.');
+  } catch (e) { console.warn('Ask chart:', e.message); }
+}
+
+function _askFind(id) { return _askMsgs.find(m => m.id === id); }
+function _askRerenderCard(m) {
+  const el = document.getElementById('askCard-' + m.id);
+  if (!el) { _askRender(); return; }
+  if (_askCharts[m.id]) { try { _askCharts[m.id].destroy(); } catch (_) {} delete _askCharts[m.id]; }
+  el.outerHTML = _askCardHtml(m);
+  _askDrawCard(m);
+}
+
+// ── Card actions ─────────────────────────────────────────────
+function askSetViz(id, t) {
+  const m = _askFind(id); if (!m || !m.cfg) return;
+  if (t === 'table') { m.cfg.view = 'table'; delete m.cfg.chartType; }
+  else { m.cfg.view = 'chart'; if (t === 'auto') delete m.cfg.chartType; else m.cfg.chartType = t; }
+  if (m.plan) m.plan.chart = t;   // so a follow-up keeps the chosen chart
+  _askSave();
+  _askRerenderCard(m);
+}
+function askOpenInReports(id) {
+  const m = _askFind(id); if (!m || !m.cfg) return;
+  _rptConfig = JSON.parse(JSON.stringify(m.cfg));
+  _rptSavedId = null; _rptSavedName = '';
+  _rptAnswer = { question: m.question, note: m.note || '', warnings: m.warnings || [], fromChat: true };
+  if (typeof currentPage !== 'undefined' && currentPage === 'reports' && document.getElementById('rptResult')) {
+    _rptRenderZones(); _rptRunReport(); _rptRefreshSavedDropdown();
+  } else navigate('reports');
+  if (_askIsPhone()) askChatClose();
+}
+function askSaveReport(id) {
+  const m = _askFind(id); if (!m || !m.cfg) return;
+  const name = prompt('Name this report:', m.savedAs || String(m.question || '').replace(/\?\s*$/, '').slice(0, 60));
+  if (!name || !name.trim()) return;
+  try {
+    const now = new Date().toISOString();
+    db.run(`INSERT INTO SavedReport (id, name, config, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`,
+      [genId(), name.trim(), JSON.stringify(m.cfg), now, now]);
+    syncAfterWrite();
+    m.savedAs = name.trim();
+    _askSave();
+    _rptRefreshSavedDropdown();
+    _askRerenderCard(m);
+    showToast('Saved "' + name.trim() + '". It\'s under Saved reports on the Reports page.');
+  } catch (e) { alert('Save failed: ' + e.message); }
+}
+
+// ── Sending ──────────────────────────────────────────────────
+// Conversation for Claude: the person's messages and the setups Claude
+// returned (as JSON). Turns that ended in an error are left out.
+function _askHistory() {
+  const msgs = [];
+  const all = _askMsgs.slice(-14);
+  all.forEach((m, i) => {
+    let role, text;
+    if (m.role === 'user') {
+      const next = all[i + 1];
+      if (next && next.role === 'assistant' && next.type === 'error') return;
+      role = 'user'; text = m.text;
+    } else {
+      if (!m.plan) return;
+      role = 'assistant'; text = JSON.stringify(m.plan);
+    }
+    const last = msgs[msgs.length - 1];
+    if (last && last.role === role) last.content += '\n\n' + text;
+    else msgs.push({ role, content: text });
+  });
+  while (msgs.length && msgs[0].role !== 'user') msgs.shift();
+  if (msgs.length) msgs[0].content = `${_rptAskContext()}\n\nQuestion: ${msgs[0].content}`;
+  return msgs;
+}
+function _askReplyFromPlan(plan, question) {
+  const note = String(plan.note || '').trim();
+  if (plan.reply_type === 'cannot') return { type: 'cannot', plan, text: note || 'This can\'t be answered from your transactions.' };
+  if (plan.reply_type === 'clarify') {
+    const options = (Array.isArray(plan.options) ? plan.options : []).map(o => String(o).trim()).filter(Boolean).slice(0, 4);
+    return { type: 'clarify', plan, text: note || 'Could you say a bit more about what you\'re after?', options };
+  }
+  const { cfg, warnings } = _rptPlanToConfig(plan);
+  return { type: 'report', plan, cfg, question, note, warnings };
+}
+function _askSetBusyUi(on) {
+  const b = document.getElementById('askSendBtn');
+  if (b) { b.disabled = on; b.textContent = on ? '…' : 'Send'; }
+}
+async function askSend(textArg) {
+  _askLoad();
+  const ta = document.getElementById('askInput');
+  const fromBox = textArg === undefined || textArg === null;
+  const text = String(fromBox ? (ta ? ta.value : '') : textArg).trim();
+  if (!text || _askBusy) return;
+  if (!_askIsOpen()) askChatOpen();
+  const input = document.getElementById('askInput');
+  if (fromBox && input) { input.value = ''; input.style.height = 'auto'; }
+  _askMsgs.push({ id: genId(), role: 'user', text });
+  if (!_itHasApiKey()) {
+    _askMsgs.push({ id: genId(), role: 'assistant', type: 'error', html: true,
+      text: 'Ask needs your Anthropic API key. Add it in <a href="#" onclick="navigate(\'settings\');return false;">Settings</a> (the same key Dictate uses).' });
+    _askSave(); _askRender();
+    return;
+  }
+  _askBusy = true; _askSetBusyUi(true); _askRender();
+  let reply;
+  try {
+    const plan = await _rptAskClaude(_askHistory());
+    reply = _askReplyFromPlan(plan, text);
+  } catch (e) {
+    reply = { type: 'error', text: e.message === 'NO_KEY' ? 'Ask needs your Anthropic API key. Add it in Settings.' : (e.message || 'Something went wrong. Try again.') };
+  } finally {
+    _askBusy = false; _askSetBusyUi(false);
+  }
+  reply.id = genId(); reply.role = 'assistant';
+  _askMsgs.push(reply);
+  _askSave();
+  _askRender();
 }
 
 // ── Main render ──────────────────────────────────────────────
@@ -17563,7 +17973,7 @@ function renderReports(container) {
   _rptRefreshSavedDropdown();
   _rptWireDragDrop();
   const ai = document.getElementById('rptAskInput');
-  if (ai && _rptAnswer && _rptAnswer.question) ai.value = _rptAnswer.question;
+  if (ai && _rptAnswer && _rptAnswer.question && !_rptAnswer.fromChat) ai.value = _rptAnswer.question;
 }
 
 function rptToggleLibrary() {
@@ -17640,6 +18050,7 @@ function _rptFilterValueLabel(f) {
     if (f.dimensionId === 'period' && /^\d{6}$/.test(v)) return _rptYmLabel(v);
     return v;
   };
+  if (f.op === 'in') return _rptInValues(f).join(', ') || '?';
   return f.op === 'between' ? `${show(f.value)} – ${show(f.value2)}` : show(f.value);
 }
 
@@ -17809,12 +18220,15 @@ function rptEditFilter(idx, isNew) {
           ${_rptOpsFor(dim).map(k => `<option value="${k}" ${f.op === k ? 'selected' : ''}>${escHtml(RPT_FILTER_OPS[k].label)}</option>`).join('')}
         </select>
       </label>
-      <div id="rptFilterVal1Wrap">${_rptFilterInputHtml(dim, 'rptFilterVal1', f.value)}</div>
+      <div id="rptFilterVal1Wrap" style="display:${f.op === 'in' ? 'none' : 'block'};">${_rptFilterInputHtml(dim, 'rptFilterVal1', f.op === 'in' ? '' : f.value)}</div>
+      <div id="rptFilterManyWrap" style="display:${f.op === 'in' ? 'flex' : 'none'};flex-direction:column;gap:0.125rem;max-height:14rem;overflow-y:auto;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.375rem 0.5rem;">
+        ${values.length ? values.map(v => `<label style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;color:#334155;padding:0.2rem 0;"><input type="checkbox" class="rpt-many-cb" value="${escHtml(v)}" ${f.op === 'in' && _rptInValues(f).includes(v) ? 'checked' : ''}> ${escHtml(v)}</label>`).join('') : '<div style="font-size:0.75rem;color:#94a3b8;">No values found.</div>'}
+      </div>
       <div id="rptFilterVal2Wrap" style="display:${f.op === 'between' ? 'flex' : 'none'};flex-direction:column;gap:0.25rem;font-size:0.75rem;color:#475569;">and
         ${_rptFilterInputHtml(dim, 'rptFilterVal2', f.value2)}
       </div>
       <datalist id="rptFilterValues">${values.map(v => `<option value="${escHtml(v)}"></option>`).join('')}</datalist>
-      ${values.length ? `<div style="font-size:0.7rem;color:#94a3b8;">${values.length} value${values.length === 1 ? '' : 's'} found in your data. Start typing to see them.</div>` : ''}
+      ${values.length && f.op !== 'in' ? `<div id="rptFilterHint" style="font-size:0.7rem;color:#94a3b8;">${values.length} value${values.length === 1 ? '' : 's'} found in your data. Start typing to see them.</div>` : ''}
       <div style="display:flex;justify-content:flex-end;gap:0.375rem;">
         <button onclick="rptFilterCancel()" class="rpt-btn">Cancel</button>
         <button onclick="rptFilterApply()" class="rpt-btn rpt-btn-dark">Apply</button>
@@ -17826,6 +18240,9 @@ function rptEditFilter(idx, isNew) {
 function _rptFilterOpChanged() {
   const op = document.getElementById('rptFilterOp').value;
   document.getElementById('rptFilterVal2Wrap').style.display = op === 'between' ? 'flex' : 'none';
+  document.getElementById('rptFilterVal1Wrap').style.display = op === 'in' ? 'none' : 'block';
+  const many = document.getElementById('rptFilterManyWrap'); if (many) many.style.display = op === 'in' ? 'flex' : 'none';
+  const hint = document.getElementById('rptFilterHint'); if (hint) hint.style.display = op === 'in' ? 'none' : 'block';
 }
 function _rptCloseFilterModal() {
   const m = document.getElementById('rptFilterModal');
@@ -17841,10 +18258,17 @@ function rptFilterApply() {
   const f = _rptConfig.filters[m._idx]; if (!f) { _rptCloseFilterModal(); return; }
   const dim = _rptDim(f.dimensionId);
   const op = document.getElementById('rptFilterOp').value;
+  if (op === 'in') {
+    const picked = [...document.querySelectorAll('#rptFilterManyWrap .rpt-many-cb:checked')].map(c => c.value);
+    if (!picked.length) { showToast('Tick at least one value'); return; }
+    f.op = 'in'; f.values = picked; f.value = picked.join(' | '); delete f.value2;
+    _rptCloseFilterModal(); _rptRenderZones(); _rptRunReport();
+    return;
+  }
   const v1 = _rptFilterReadInput(dim, 'rptFilterVal1');
   const v2 = op === 'between' ? _rptFilterReadInput(dim, 'rptFilterVal2') : '';
   if (!v1 || (op === 'between' && !v2)) { showToast('Enter a value first'); return; }
-  f.op = op; f.value = v1; if (op === 'between') f.value2 = v2; else delete f.value2;
+  f.op = op; f.value = v1; delete f.values; if (op === 'between') f.value2 = v2; else delete f.value2;
   _rptCloseFilterModal();
   _rptRenderZones();
   _rptRunReport();
@@ -17922,6 +18346,28 @@ function _rptRunReport() {
   _rptRenderResult();
 }
 
+// Runs a config without touching the Reports page (used by the Ask chat).
+// The engine reads the _rptConfig/_rptResult globals, so swap them in and out.
+function _rptWith(cfg, result, fn) {
+  const sc = _rptConfig, sr = _rptResult;
+  _rptConfig = cfg; _rptResult = result;
+  try { return fn(); } finally { _rptConfig = sc; _rptResult = sr; }
+}
+function _rptCompute(cfg) {
+  return _rptWith(cfg, null, () => {
+    if (_rptView() === 'list') { _rptRunList(); return _rptResult; }
+    if (!cfg.values || !cfg.values.length) return null;
+    let sql;
+    try { sql = _rptBuildQuery(cfg); } catch (e) { return { error: e.message }; }
+    try {
+      const res  = db.exec(sql);
+      const cols = res && res[0] ? res[0].columns : [];
+      const flat = res && res[0] ? res[0].values.map(r => Object.fromEntries(cols.map((c, i) => [c, r[i]]))) : [];
+      const out = _rptPivot(flat, cfg); out.sql = sql; return out;
+    } catch (e) { return { error: e.message, sql }; }
+  });
+}
+
 // ── Charts ───────────────────────────────────────────────────
 // Categorical palette, fixed order (validated for colour-blind separation).
 // More than 8 series fold into "Other" rather than inventing new colours.
@@ -17938,6 +18384,10 @@ function rptSetView(v) {
   const wasList = _rptView() === 'list';
   _rptConfig.view = v;
   if (wasList || v === 'list') _rptRunReport(); else _rptRenderResult();
+}
+function rptSetChartType(t) {
+  if (t === 'auto') delete _rptConfig.chartType; else _rptConfig.chartType = t;
+  _rptRenderResult();
 }
 function rptClearTopN() { delete _rptConfig.sort; delete _rptConfig.limit; _rptRunReport(); }
 
@@ -18010,7 +18460,12 @@ function _rptShortMoney(v) {
 
 // Builds the chart data from the pivot result. Returns
 // { kind: 'line'|'bar'|'hbar', stacked, labels, rowKeys, series:[{label,colKey,data,color}], note }
-function _rptChartModel(p) {
+const RPT_CHART_TYPES = [
+  { id: 'auto', label: 'Auto' }, { id: 'bar', label: 'Bar' }, { id: 'line', label: 'Line' }, { id: 'pie', label: 'Pie' },
+];
+function _rptChartModel(p, maxRows) {
+  maxRows = maxRows || 25;
+  const want = _rptConfig.chartType || 'auto';
   const rows = _rptConfig.rows || [];
   const isTime = rows.length === 1 && RPT_TIME_DIMS.includes(rows[0].dimensionId);
   const additive = p.totalsValid;
@@ -18027,7 +18482,7 @@ function _rptChartModel(p) {
   if (!isTime) {
     const rowVal = rk => additive ? (p.rowTotals[rk] || 0) : (+((p.matrix[rk] || {})[seriesKeys[0]]) || 0);
     if (rows.length && rows[0].dimensionId !== 'day_of_week' && _rptConfig.sort !== 'value_asc') rowKeys.sort((a, b) => rowVal(b) - rowVal(a));
-    if (rowKeys.length > 25) { note = `Showing the top 25 of ${rowKeys.length}. Switch to Table to see them all.`; rowKeys = rowKeys.slice(0, 25); }
+    if (rowKeys.length > maxRows && want !== 'pie') { note = `Showing the top ${maxRows} of ${rowKeys.length}. Switch to Table to see them all.`; rowKeys = rowKeys.slice(0, maxRows); }
   } else if (rowKeys.length > 120) {
     note = `Showing the latest 120 of ${rowKeys.length}. Switch to Table to see them all.`;
     rowKeys = rowKeys.slice(-120);
@@ -18046,7 +18501,28 @@ function _rptChartModel(p) {
   const allPositive = series.every(s => s.data.every(v => v === null || v >= 0));
   const multi = series.length > 1;
   let kind, stacked = false;
-  if (isTime) {
+  if (want === 'pie') {
+    if (!multi && additive && allPositive && rowKeys.length > 1) {
+      // One slice per row; past 8 slices the smallest fold into "Other".
+      let keys = p.rowKeys.slice();
+      const v = rk => +((p.matrix[rk] || {})[seriesKeys[0]]) || 0;
+      keys.sort((a, b) => v(b) - v(a));
+      const top = keys.slice(0, keys.length > 8 ? 7 : 8), rest = keys.slice(top.length);
+      const data = top.map(v), colors = top.map((_, i) => RPT_SERIES_COLORS[i]);
+      const rd0 = rows.length === 1 ? rows[0].dimensionId : '';
+      const labels = top.map(k => { k = String(k);
+        if (rd0 === 'month_name' && /^\d{4}-\d{2}$/.test(k)) return _rptYmLabel(k.replace('-', ''));
+        if (rd0 === 'period' && /^\d{6}$/.test(k)) return _rptYmLabel(k);
+        return k; });
+      if (rest.length) { data.push(rest.reduce((t, rk) => t + v(rk), 0)); labels.push(`Other (${rest.length})`); colors.push(RPT_OTHER_COLOR); }
+      return { kind: 'pie', stacked: false, labels, rowKeys: top.concat(rest.length ? [null] : []), colors,
+        series: [{ label: p.measure.label, colKey: seriesKeys[0], color: null, data }], note: '' };
+    }
+    note = multi ? 'A pie needs a single set of values, so this is shown as bars.' : 'A pie needs positive totals in two or more groups, so this is shown as bars.';
+  }
+  if (want === 'line' && rowKeys.length > 1) kind = 'line';
+  else if (want === 'bar' || want === 'pie') { kind = isTime ? 'bar' : 'hbar'; stacked = multi && additive && allPositive; }
+  else if (isTime) {
     if (multi && additive && allPositive) { kind = 'bar'; stacked = true; }
     else kind = (rowKeys.length <= 3 ? 'bar' : 'line');
   } else {
@@ -18068,14 +18544,50 @@ function _rptRenderChart(p) {
   const holder = document.getElementById('rptChartHolder');
   const canvas = document.getElementById('rptChartCanvas');
   if (!holder || !canvas || typeof Chart === 'undefined') return;
-  const m = _rptChartModel(p);
+  _rptDestroyChart();
+  const out = _rptDrawChart(canvas, holder, p, {
+    onPick: (rk, ck) => rptDrillDown(rk, ck),
+  });
+  const noteEl = document.getElementById('rptChartNote');
+  if (noteEl) noteEl.textContent = out.model.note;
+  _rptChart = out.chart;
+  activeCharts.push(_rptChart);
+}
+
+// Draws a chart for result p using the current _rptConfig into canvas.
+// opts: { compact (smaller, for the Ask chat), maxRows, onPick(rowKey, colKey) }.
+// Returns { chart, model }. The caller owns (and destroys) the chart.
+function _rptDrawChart(canvas, holder, p, opts) {
+  opts = opts || {};
+  const m = _rptChartModel(p, opts.maxRows);
   const fmt = v => _rptFmt(v, p.measure.format);
   const short = v => p.measure.format === 'currency' ? _rptShortMoney(v) : (+v).toLocaleString();
-  const narrow = window.innerWidth < 640;
-  if (m.kind === 'hbar') holder.style.height = Math.max(180, m.labels.length * (m.series.length > 1 && !m.stacked ? 14 * m.series.length + 10 : 30) + 70) + 'px';
-  else holder.style.height = narrow ? '260px' : '340px';
-  const noteEl = document.getElementById('rptChartNote');
-  if (noteEl) noteEl.textContent = m.note;
+  const narrow = opts.compact || window.innerWidth < 640;
+  if (m.kind === 'pie') {
+    holder.style.height = opts.compact ? '240px' : (narrow ? '300px' : '340px');
+    const total = m.series[0].data.reduce((t, v) => t + (+v || 0), 0);
+    const chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: { labels: m.labels, datasets: [{ data: m.series[0].data, backgroundColor: m.colors, borderColor: '#ffffff', borderWidth: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false, cutout: '55%',
+        plugins: {
+          legend: { display: true, position: narrow ? 'bottom' : 'right',
+            labels: { color: '#475569', boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'rectRounded', font: { size: 11 } } },
+          tooltip: { backgroundColor: '#0f172a', titleColor: '#f8fafc', bodyColor: '#e2e8f0', padding: 8,
+            callbacks: { label: item => ` ${fmt(item.raw)} (${total ? Math.round(item.raw / total * 100) : 0}%)` } },
+        },
+        onClick: (evt, els) => {
+          if (!opts.onPick || !els.length) return;
+          const rk = m.rowKeys[els[0].index];
+          if (rk !== null && rk !== undefined) opts.onPick(rk, m.series[0].colKey);
+        },
+      },
+    });
+    return { chart, model: m };
+  }
+  if (m.kind === 'hbar') holder.style.height = Math.max(opts.compact ? 140 : 180, m.labels.length * (m.series.length > 1 && !m.stacked ? 14 * m.series.length + 10 : (opts.compact ? 24 : 30)) + 70) + 'px';
+  else holder.style.height = opts.compact ? '220px' : (narrow ? '260px' : '340px');
 
   const datasets = m.series.map(s => {
     const base = { label: s.label, data: s.data, backgroundColor: s.color, borderColor: s.color, _colKey: s.colKey };
@@ -18102,8 +18614,7 @@ function _rptRenderChart(p) {
       callback: function(v) { const l = String(this.getLabelForValue(v)); return l.length > (narrow ? 16 : 28) ? l.slice(0, narrow ? 15 : 27) + '…' : l; } },
   };
   const horizontal = m.kind === 'hbar';
-  _rptDestroyChart();
-  _rptChart = new Chart(canvas, {
+  const chart = new Chart(canvas, {
     type: m.kind === 'line' ? 'line' : 'bar',
     data: { labels: m.labels, datasets },
     options: {
@@ -18124,18 +18635,19 @@ function _rptRenderChart(p) {
           },
         },
       },
-      onHover: (evt, els) => { evt.native && (evt.native.target.style.cursor = els.length ? 'pointer' : 'default'); },
+      onHover: (evt, els) => { evt.native && (evt.native.target.style.cursor = (els.length && opts.onPick) ? 'pointer' : 'default'); },
       onClick: (evt, els) => {
-        const pts = _rptChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+        if (!opts.onPick) return;
+        const pts = chart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
         const el = pts[0] || null;
         if (!el) return;
-        const ds = _rptChart.data.datasets[el.datasetIndex];
+        const ds = chart.data.datasets[el.datasetIndex];
         if (!ds || ds._colKey === null) return;
-        rptDrillDown(m.rowKeys[el.index], ds._colKey);
+        opts.onPick(m.rowKeys[el.index], ds._colKey);
       },
     },
   });
-  activeCharts.push(_rptChart);
+  return { chart, model: m };
 }
 
 function _rptRenderResult() {
@@ -18169,6 +18681,7 @@ function _rptRenderResult() {
           <button class="${view === 'table' ? 'on' : ''}" onclick="rptSetView('table')">Table</button>
           <button class="${view === 'list' ? 'on' : ''}" onclick="rptSetView('list')" title="The transactions behind this report">Transactions</button>
         </div>
+        ${(!p.list && view === 'chart' && !single) ? `<div class="rpt-seg" role="group" aria-label="Chart type">${RPT_CHART_TYPES.map(t => `<button class="${(_rptConfig.chartType || 'auto') === t.id ? 'on' : ''}" onclick="rptSetChartType('${t.id}')">${t.label}</button>`).join('')}</div>` : ''}
         ${p.list ? '' : `<div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>`}
         ${(_rptConfig.limit || _rptConfig.sort === 'value_asc' || _rptConfig.sort === 'value_desc') ? `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#f1f5f9;color:#334155;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">${_rptConfig.limit ? 'Top ' + escHtml(String(_rptConfig.limit)) : 'Sorted'} · ${_rptConfig.sort === 'value_asc' ? 'smallest first' : 'largest first'}<button onclick="rptClearTopN()" title="Show all" style="background:none;border:none;color:#64748b;cursor:pointer;padding:0;font-size:0.9rem;line-height:1;">×</button></span>` : ''}
       </div>
