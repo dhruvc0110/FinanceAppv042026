@@ -4,6 +4,20 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 
 ---
 
+## 2026-11-22 — Scheduled posting time + device local time (Claude project thread)
+
+### Decided: Scheduled (future) transactions post at a set time on their date — End (11:59 PM, default) or Start (12:01 AM).
+- **What:** One app-wide setting, Settings › Configuration › Scheduled Posting (AppSettings key `scheduledPostingRun` = `end` | `start`, missing = `end`). Stored in the database so it follows the data across devices. `migrateFutureTransactions()` now posts only items whose posting moment (date + 00:01 or 23:59, device local time) has passed, and returns how many it posted. A 30-second timer (`startPostingTimer()`, started at the end of `startApp`) runs it while the app is open; it also runs on open, so overdue items post on the next open. Toast on post; the dashboard refreshes if in view and the user is not typing.
+- **Why:** Dhruv asked for it. Before this, "today" was the UTC date, so in Central time scheduled items posted at 6 PM (7 PM in summer) the evening BEFORE their date, and only when the Transactions page was opened.
+- **Rejected:** a per-transaction setting (more UI on every form; Dhruv's wording reads as one setting). Easy to add later as an override column on FutureTransaction.
+- **Not changed:** entering a transaction dated today from the normal Transactions form still posts immediately (it records something that happened); only Future Transactions wait for the posting time.
+
+### Decided: All dates and times use the device's local time zone.
+- Helpers next to `fmtDate`: `localYmd()`, `localStampDay()`, `fmtStamp()`, `localDayStartIso()`, `ymdFromAnyDate()`. Replaced every `toISOString().slice(0,10)` used as "today" (posting, recurring Play, Excel import, usage API range, CSV file names). "Created" columns and note/batch/import/split dates now show the local day; Created-date filters compare against local-day boundaries.
+- **Kept:** stored timestamps (`createdAt`/`updatedAt`) stay ISO UTC instants (unambiguous; converted for display). `trxDate` keeps the `YYYY-MM-DDT12:00:00.000Z` format: only its date part is ever used, and noon UTC is the same calendar day everywhere from UTC-12 to UTC+11.
+
+---
+
 ## 2026-11-22 — Conversational analytics, step 1 (Claude project thread)
 
 ### Decided: Conversational analytics = "Claude picks the report, the app does the maths".
