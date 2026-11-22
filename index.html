@@ -4787,10 +4787,18 @@ function txSaveForm() {
 
 // ── On-load background tasks ───────────────────────────────
 function migrateFutureTransactions() {
-  // Post every scheduled item whose posting time (12:01 AM or 11:59 PM on its
-  // date, device local time — see Settings › Scheduled Posting) has passed.
+  // Scheduled transactions and future-dated dividends (importSource 'Scheduled'
+  // / 'Equity', or legacy NULL which has always posted as 'Scheduled') follow
+  // the posting-run setting: 12:01 AM or 11:59 PM on their date (Settings ›
+  // Scheduled Posting). Everything else (Recurring, Repeatable, Dictate, excel)
+  // keeps the original rule: posts once its date arrives. All in device local time.
   const cutoff = postingCutoffYmd();
-  const futures = query(`SELECT * FROM FutureTransaction WHERE substr(trxDate,1,10) <= '${cutoff}'`);
+  const today  = localYmd();
+  const futures = query(`SELECT * FROM FutureTransaction WHERE
+      (  (importSource IS NULL OR importSource IN ('Scheduled','Equity'))
+         AND substr(trxDate,1,10) <= '${cutoff}')
+   OR (  importSource IS NOT NULL AND importSource NOT IN ('Scheduled','Equity')
+         AND substr(trxDate,1,10) <= '${today}')`);
   if (!futures.length) return 0;
   const now = new Date().toISOString();
   for (const ft of futures) {
@@ -7770,7 +7778,7 @@ function _renderSettingsPage(container) {
     return `<div class="space-y-4 max-w-md">
       <div>
         <h3 class="text-sm font-semibold text-slate-700 mb-1">When scheduled transactions post</h3>
-        <p class="text-xs text-slate-500 mb-3">Applies to everything in Future Transactions (scheduled, recurring, dividends). Times use this device's own clock and time zone (${escHtml(tz)}).</p>
+        <p class="text-xs text-slate-500 mb-3">Applies to scheduled transactions and future-dated dividends. Other future items (recurring, repeatable, dictated, imported) still post as soon as their date arrives. Times use this device's own clock and time zone (${escHtml(tz)}).</p>
         <div class="space-y-2">${opt('end')}${opt('start')}</div>
       </div>
       <p class="text-xs text-slate-400">The app checks every 30 seconds while it is open, and again each time it is opened, so anything that came due while it was closed posts on the next open.</p>
@@ -10337,7 +10345,7 @@ function _renderFTPage(container) {
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-xl font-bold text-slate-900">Future Transactions</h1>
-          <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'} &middot; post at ${POSTING_RUNS[getPostingRun()].label} on their date <button onclick="navigate('settings');settingsGoTab('postingrun')" class="text-blue-600 hover:underline text-xs ml-1">Change</button></p>
+          <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'} &middot; scheduled items and dividends post at ${POSTING_RUNS[getPostingRun()].label} on their date <button onclick="navigate('settings');settingsGoTab('postingrun')" class="text-blue-600 hover:underline text-xs ml-1">Change</button></p>
         </div>
         <div class="flex items-center gap-2">
           <button onclick="ftToggleFilters()"
