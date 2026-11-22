@@ -346,6 +346,11 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Documents</span>
       </button>
 
+      <button onclick="navigate('reports')" data-page="reports" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span class="nav-label">Reports</span>
+      </button>
+
       <!-- ── TRANSACT ── -->
       <div class="group-label text-xs font-semibold text-slate-500 uppercase tracking-wider px-2 pt-4 pb-1">Transact</div>
 
@@ -2420,9 +2425,9 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
-    <button onclick="navigate('reports')" title="Reports (work in progress — design not yet hardened)"
-      style="width:3rem;height:3rem;background:#94a3b8;color:white;opacity:0.7;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:opacity 0.15s, background 0.15s;"
-      onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.7'">
+    <button onclick="navigate('reports')" title="Reports"
+      style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
+      onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="7" height="7"/>
         <rect x="14" y="3" width="7" height="7"/>
@@ -8481,14 +8486,15 @@ function aboutTab() {
         <tbody class="text-slate-700">
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">A</td><td class="py-1 pr-2">Reports page in sidebar. Drag-and-drop (or click) field library, Filters / Rows / Cols / Values zones. 15 dimensions across When / Where / What. 5 measures. Live pivot result with totals + Export CSV + Show SQL. Deterministic — no LLM.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">B</td><td class="py-1 pr-2">Saved reports: SavedReport DB table (Drive-synced). Save / Save as / Load / Delete. Click any cell to drill down into the underlying transactions in a modal with its own CSV export.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">C</td><td class="py-1 pr-2">Auto-rendered charts based on result shape (line for time series, bar for categories, stacked bar for row×col). Toggle table vs chart. Reuses the existing Chart.js bundle.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">D</td><td class="py-1 pr-2">Date presets (YTD / MTD / This quarter / Last quarter), side-by-side period comparison, % of grand total, conditional row highlighting on threshold.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
-          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">E</td><td class="py-1 pr-2">Mobile / responsive polish: stacked layout under narrow viewports, touch-friendly drop zones, inline filter editor that replaces the prompt() dialogs.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
-          <tr><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Earlier LLM-driven "conversational reporting" feature (single-shot, then agent + KB). Reliability was uneven; pivoted to deterministic Reports. Ask code remains in the file but the pill button now opens Reports instead.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">Superseded</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">C</td><td class="py-1 pr-2">Charts picked from the result's shape (line for one series over time, stacked bars for categories over time, horizontal bars for categories). Chart / Table toggle saved with the report. Tap a bar or point to drill down.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">D</td><td class="py-1 pr-2">Date shortcuts (This month, Last month, This/Last quarter, This/Last year, Last 12 months, Custom). Saved reports keep the shortcut, so "This year" stays current. Quick-start reports. Still later: side-by-side period comparison, % of grand total, highlighting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">E</td><td class="py-1 pr-2">Phone layout: result first, setup below, tap a field to choose where it goes (no drag needed). Inline filter editor with a pick-list of real values, replacing the prompt() dialogs. Reports back in the sidebar and on the floating pill.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Ask box on the Reports page. Claude only turns the question into a report setup using the fixed fields above; the app runs it, so the numbers come from the same deterministic engine. The old Ask FinApp (Claude writing its own SQL) was removed.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-medium">Planned</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Follow-ups</td><td class="py-1 pr-2">Follow-up questions ("now just restaurants", "compare to last year") and saved questions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Later</span></td></tr>
         </tbody>
       </table>
       <p class="text-xs text-slate-400 leading-relaxed">
-        Status keys: <strong>Shipped</strong> · <strong>Later</strong> · <strong>Superseded</strong>.
+        Status keys: <strong>Shipped</strong> · <strong>Planned</strong> · <strong>Later</strong>.
       </p>
     </div>
 
@@ -16750,7 +16756,7 @@ function _rptBuildQuery(cfg) {
     return `${m.sql} AS "${m.id}"`;
   });
   const selects = [...dimSelects, ...valSelects].join(', ');
-  const whereParts = (cfg.filters || []).map(_rptFilterSql).filter(Boolean);
+  const whereParts = _rptWhereParts(cfg);
   const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
   const groupClause = allDims.length
     ? `GROUP BY ${allDims.map((_, i) => i + 1).join(', ')}`
@@ -16795,8 +16801,11 @@ function _rptPivot(flatRows, cfg) {
     matrix[rk][ck] = r[valueDef.measureId];
   }
 
-  const rowKeys    = [...rowKeySet].sort();
-  const headerCols = [...colKeySet].sort();
+  const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const dowSort = (dims) => dims.length === 1 && dims[0].dimensionId === 'day_of_week'
+    ? (a, b) => DOW.indexOf(a) - DOW.indexOf(b) : undefined;
+  const rowKeys    = [...rowKeySet].sort(dowSort(rowDims));
+  const headerCols = [...colKeySet].sort(dowSort(colDims));
   // Totals
   const rowTotals  = {};
   const colTotals  = {};
@@ -16819,10 +16828,134 @@ function _rptPivot(flatRows, cfg) {
   return { headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal, measure, totalsValid: sumOk };
 }
 
+// ── Page styles (scoped to .rpt-*) ───────────────────────────
+// One place for layout rules so the phone layout can be handled with a
+// media query instead of inline styles.
+const RPT_CSS = `
+  .rpt-btn { background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.3rem 0.625rem;font-size:0.75rem;cursor:pointer;white-space:nowrap; }
+  .rpt-btn:hover { background:#f8fafc; }
+  .rpt-btn-dark { background:#0f172a;color:white;border-color:#0f172a; }
+  .rpt-btn-dark:hover { background:#334155; }
+  .rpt-card { background:white;border:1px solid #e2e8f0;border-radius:0.5rem; }
+  .rpt-zone { background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:3.5rem; }
+  .rpt-zone-title { font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem; }
+  .rpt-empty { font-size:0.7rem;color:#94a3b8;font-style:italic; }
+  .rpt-chips { display:flex;flex-wrap:wrap;gap:0.25rem; }
+  .rpt-datebar { display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;padding:0.45rem 0.6rem; }
+  .rpt-datechips { display:flex;gap:0.25rem;flex-wrap:wrap; }
+  .rpt-datechip { font-size:0.72rem;padding:0.25rem 0.6rem;border-radius:9999px;border:1px solid #cbd5e1;background:white;color:#475569;cursor:pointer;white-space:nowrap; }
+  .rpt-datechip.on { background:#0f172a;border-color:#0f172a;color:white; }
+  .rpt-layout { display:flex;gap:0.75rem;flex:1;min-height:0; }
+  .rpt-lib { width:12rem;flex-shrink:0;padding:0.5rem;overflow-y:auto;max-height:80vh; }
+  .rpt-lib-items { display:flex;flex-direction:column;gap:0.125rem; }
+  .rpt-field { text-align:left;font-size:0.75rem;padding:0.25rem 0.5rem;border-radius:0.25rem;border:none;background:white;color:#1e293b;cursor:grab; }
+  .rpt-field:hover { background:#f1f5f9; }
+  .rpt-lib-toggle { display:none; }
+  .rpt-zones { display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:0.5rem; }
+  .rpt-seg { display:inline-flex;border:1px solid #cbd5e1;border-radius:0.375rem;overflow:hidden; }
+  .rpt-seg button { font-size:0.7rem;padding:0.25rem 0.6rem;border:none;background:white;color:#475569;cursor:pointer; }
+  .rpt-seg button.on { background:#0f172a;color:white; }
+  .rpt-quick { display:flex;flex-wrap:wrap;gap:0.375rem;justify-content:center;margin-top:0.75rem; }
+  .rpt-menu { position:fixed;z-index:320;background:white;border:1px solid #e2e8f0;border-radius:0.5rem;box-shadow:0 10px 30px rgba(15,23,42,0.18);padding:0.25rem;min-width:10rem; }
+  .rpt-menu button { display:block;width:100%;text-align:left;font-size:0.8rem;padding:0.45rem 0.6rem;border:none;background:none;color:#1e293b;border-radius:0.25rem;cursor:pointer; }
+  .rpt-menu button:hover { background:#f1f5f9; }
+  .rpt-modal-bg { position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;display:flex;align-items:center;justify-content:center;padding:1rem; }
+  .rpt-modal { background:white;border-radius:0.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.3);width:100%;max-width:26rem;padding:1rem;display:flex;flex-direction:column;gap:0.75rem; }
+  .rpt-input { width:100%;border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.45rem 0.5rem;font-size:0.85rem;background:white; }
+`;
+// Phone layout rules: applied on narrow screens, and whenever Settings → Display → Layout is set to Phone (html.use-cards).
+const RPT_PHONE_RULES = [
+  `.rpt-layout { flex-direction:column; }`,
+  `.rpt-lib { width:auto;max-height:none;display:none; }`,
+  `.rpt-lib.open { display:block; }`,
+  `.rpt-lib-items { flex-direction:row;flex-wrap:wrap;gap:0.375rem; }`,
+  `.rpt-field { border:1px solid #e2e8f0;border-radius:9999px;padding:0.35rem 0.7rem;font-size:0.8rem; }`,
+  `.rpt-lib-toggle { display:flex; }`,
+  `#rptResult { order:-1; }`,
+  `.rpt-lib { order:1; }`,
+  `.rpt-zones { grid-template-columns:1fr; }`,
+  `.rpt-hide-phone { display:none !important; }`,
+  `.rpt-datechips { flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;padding-bottom:2px; }`,
+  `.rpt-datebar { flex-wrap:wrap; }`,
+  `#rptSavedDropdown { max-width:100%;flex:1 1 100%; }`,
+];
+const RPT_CSS_ALL = RPT_CSS
+  + '@media (max-width: 768px) {' + RPT_PHONE_RULES.join('\n') + '}'
+  + RPT_PHONE_RULES.map(r => 'html.use-cards ' + r.replace(/, /g, ', html.use-cards ')).join('\n');
+
+// ── Date shortcuts ───────────────────────────────────────────
+// Stored on the config as `datePreset` so a saved "This year" report
+// stays relative (it shows the current year whenever it is opened).
+// Shortcuts work on the accounting month (tx.period), like the P&L.
+const RPT_DATE_PRESETS = [
+  { id: 'all',          label: 'All time' },
+  { id: 'this_month',   label: 'This month' },
+  { id: 'last_month',   label: 'Last month' },
+  { id: 'this_quarter', label: 'This quarter' },
+  { id: 'last_quarter', label: 'Last quarter' },
+  { id: 'this_year',    label: 'This year' },
+  { id: 'last_year',    label: 'Last year' },
+  { id: 'last_12',      label: 'Last 12 months' },
+  { id: 'custom',       label: 'Custom…' },
+];
+function _rptYm(y, m) { // m is 0-based and may overflow
+  const d = new Date(y, m, 1);
+  return String(d.getFullYear()) + String(d.getMonth() + 1).padStart(2, '0');
+}
+function _rptYmLabel(ym) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[+ym.slice(4, 6) - 1] + ' ' + ym.slice(0, 4);
+}
+// Returns { from, to } as YYYYMM strings, or null for "all" / "custom".
+function _rptPresetRange(id, today) {
+  const t = today || new Date();
+  const y = t.getFullYear(), m = t.getMonth();
+  const q0 = Math.floor(m / 3) * 3;
+  switch (id) {
+    case 'this_month':   return { from: _rptYm(y, m),      to: _rptYm(y, m) };
+    case 'last_month':   return { from: _rptYm(y, m - 1),  to: _rptYm(y, m - 1) };
+    case 'this_quarter': return { from: _rptYm(y, q0),     to: _rptYm(y, q0 + 2) };
+    case 'last_quarter': return { from: _rptYm(y, q0 - 3), to: _rptYm(y, q0 - 1) };
+    case 'this_year':    return { from: _rptYm(y, 0),      to: _rptYm(y, 11) };
+    case 'last_year':    return { from: _rptYm(y - 1, 0),  to: _rptYm(y - 1, 11) };
+    case 'last_12':      return { from: _rptYm(y, m - 11), to: _rptYm(y, m) };
+    default:             return null;
+  }
+}
+function _rptCurrentPreset() {
+  if (_rptConfig.datePreset) return _rptConfig.datePreset;
+  return _rptDateFilterIdx() >= 0 ? 'custom' : 'all';
+}
+// All WHERE conditions for a config: user filters + the date shortcut.
+function _rptWhereParts(cfg) {
+  const parts = (cfg.filters || []).map(_rptFilterSql).filter(Boolean);
+  const r = _rptPresetRange(cfg.datePreset);
+  if (r) parts.push(`tx.period >= '${r.from}' AND tx.period <= '${r.to}'`);
+  return parts;
+}
+
+// ── Quick starts (one tap → a useful report) ─────────────────
+const RPT_QUICK_STARTS = [
+  { label: 'Spending by category', cfg: { filters: [{ dimensionId: 'dr_type', op: 'eq', value: 'EXPENSE' }], rows: [{ dimensionId: 'dr_name' }], cols: [], values: [{ measureId: 'amount_sum' }], datePreset: 'this_year' } },
+  { label: 'Spending by month',    cfg: { filters: [{ dimensionId: 'dr_type', op: 'eq', value: 'EXPENSE' }], rows: [{ dimensionId: 'month_name' }], cols: [], values: [{ measureId: 'amount_sum' }], datePreset: 'last_12' } },
+  { label: 'Category by month',    cfg: { filters: [{ dimensionId: 'dr_type', op: 'eq', value: 'EXPENSE' }], rows: [{ dimensionId: 'month_name' }], cols: [{ dimensionId: 'dr_name' }], values: [{ measureId: 'amount_sum' }], datePreset: 'last_12' } },
+  { label: 'Income by month',      cfg: { filters: [{ dimensionId: 'cr_type', op: 'eq', value: 'INCOME' }], rows: [{ dimensionId: 'month_name' }], cols: [], values: [{ measureId: 'amount_sum' }], datePreset: 'last_12' } },
+];
+function rptQuickStart(i) {
+  const q = RPT_QUICK_STARTS[i]; if (!q) return;
+  _rptConfig = JSON.parse(JSON.stringify(q.cfg));
+  _rptConfig.view = 'chart';
+  _rptSavedId = null; _rptSavedName = '';
+  _rptRenderZones();
+  _rptRunReport();
+  _rptRefreshSavedDropdown();
+}
+
 // ── Main render ──────────────────────────────────────────────
 function renderReports(container) {
   if (!container) container = document.getElementById('pageContent');
   container.innerHTML = `
+    <style>${RPT_CSS_ALL}</style>
     <div style="display:flex;flex-direction:column;gap:0.75rem;min-height:70vh;">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
         <div style="display:flex;align-items:center;gap:0.5rem;">
@@ -16831,45 +16964,51 @@ function renderReports(container) {
         </div>
         <div style="display:flex;align-items:center;gap:0.375rem;flex-wrap:wrap;">
           <select id="rptSavedDropdown" onchange="rptLoad(this.value)"
-            style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.25rem 0.5rem;font-size:0.75rem;background:white;">
+            style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.3rem 0.5rem;font-size:0.75rem;background:white;">
             <option value="">— Saved reports —</option>
           </select>
-          <button onclick="rptSave()"   style="background:#0f172a;color:white;border:none;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Save</button>
-          <button onclick="rptSaveAs()" style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Save as…</button>
-          <button id="rptDeleteBtn" onclick="rptDeleteSaved()" style="display:none;background:white;border:1px solid #fecaca;color:#991b1b;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Delete</button>
-          <button onclick="rptReset()"  style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.25rem 0.625rem;font-size:0.75rem;cursor:pointer;">Reset</button>
+          <button onclick="rptSave()" class="rpt-btn rpt-btn-dark">Save</button>
+          <button onclick="rptSaveAs()" class="rpt-btn">Save as…</button>
+          <button id="rptDeleteBtn" onclick="rptDeleteSaved()" class="rpt-btn" style="display:none;border-color:#fecaca;color:#991b1b;">Delete</button>
+          <button onclick="rptReset()" class="rpt-btn">Reset</button>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;background:white;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.4rem 0.6rem;">
-        <span style="font-size:0.72rem;font-weight:600;color:#475569;">Date range</span>
-        <input type="date" id="rptDateFrom" onchange="rptSetDateRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;">
-        <span style="font-size:0.72rem;color:#94a3b8;">to</span>
-        <input type="date" id="rptDateTo" onchange="rptSetDateRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;">
-        <button onclick="rptClearDateRange()" style="background:white;border:1px solid #cbd5e1;color:#475569;border-radius:0.375rem;padding:0.2rem 0.5rem;font-size:0.72rem;cursor:pointer;">Clear</button>
-        <span style="font-size:0.68rem;color:#94a3b8;">limits the report to transactions in this range</span>
+      <div class="rpt-card rpt-datebar">
+        <span style="font-size:0.72rem;font-weight:600;color:#475569;">Dates</span>
+        <div id="rptDateChips" class="rpt-datechips"></div>
+        <div id="rptCustomDates" style="display:none;align-items:center;gap:0.375rem;flex-wrap:wrap;">
+          <input type="date" id="rptDateFrom" onchange="rptSetDateRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;">
+          <span style="font-size:0.72rem;color:#94a3b8;">to</span>
+          <input type="date" id="rptDateTo" onchange="rptSetDateRange()" style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.2rem 0.4rem;font-size:0.75rem;">
+        </div>
+        <span id="rptDateHint" style="font-size:0.7rem;color:#64748b;"></span>
       </div>
-      <div style="display:flex;gap:0.75rem;flex:1;min-height:0;">
-        <aside id="rptFieldLibrary" style="width:12rem;flex-shrink:0;background:white;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.5rem;overflow-y:auto;max-height:80vh;"></aside>
+      <div class="rpt-layout">
+        <aside id="rptFieldLibrary" class="rpt-card rpt-lib"></aside>
         <main style="flex:1;display:flex;flex-direction:column;gap:0.5rem;min-width:0;">
-          <div id="rptFiltersZone" data-zone="filters" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:3.5rem;">
-            <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Filters</div>
-            <div id="rptFiltersChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+          <div class="rpt-lib-toggle" style="align-items:center;justify-content:space-between;gap:0.5rem;margin-top:0.25rem;">
+            <span style="font-size:0.75rem;font-weight:600;color:#475569;">Report setup</span>
+            <button class="rpt-btn" onclick="rptToggleLibrary()" id="rptLibToggle">+ Add a field</button>
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3, minmax(0,1fr));gap:0.5rem;">
-            <div id="rptRowsZone" data-zone="rows" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
-              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Rows</div>
-              <div id="rptRowsChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+          <div id="rptFiltersZone" data-zone="filters" class="rpt-zone">
+            <div class="rpt-zone-title">Filters</div>
+            <div id="rptFiltersChips" class="rpt-chips"></div>
+          </div>
+          <div class="rpt-zones">
+            <div id="rptRowsZone" data-zone="rows" class="rpt-zone">
+              <div class="rpt-zone-title">Rows</div>
+              <div id="rptRowsChips" class="rpt-chips"></div>
             </div>
-            <div id="rptColsZone" data-zone="cols" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
-              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Columns</div>
-              <div id="rptColsChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+            <div id="rptColsZone" data-zone="cols" class="rpt-zone">
+              <div class="rpt-zone-title">Columns</div>
+              <div id="rptColsChips" class="rpt-chips"></div>
             </div>
-            <div id="rptValuesZone" data-zone="values" style="background:white;border:1px dashed #cbd5e1;border-radius:0.5rem;padding:0.5rem;min-height:4rem;">
-              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">Values</div>
-              <div id="rptValuesChips" style="display:flex;flex-wrap:wrap;gap:0.25rem;"></div>
+            <div id="rptValuesZone" data-zone="values" class="rpt-zone">
+              <div class="rpt-zone-title">Values</div>
+              <div id="rptValuesChips" class="rpt-chips"></div>
             </div>
           </div>
-          <div id="rptResult" style="background:white;border:1px solid #e2e8f0;border-radius:0.5rem;padding:0.75rem;min-height:12rem;"></div>
+          <div id="rptResult" class="rpt-card" style="padding:0.75rem;min-height:12rem;"></div>
         </main>
       </div>
     </div>`;
@@ -16878,6 +17017,15 @@ function renderReports(container) {
   _rptRunReport();
   _rptRefreshSavedDropdown();
   _rptWireDragDrop();
+}
+
+function rptToggleLibrary() {
+  const lib = document.getElementById('rptFieldLibrary');
+  const btn = document.getElementById('rptLibToggle');
+  if (!lib) return;
+  const open = lib.classList.toggle('open');
+  if (btn) btn.textContent = open ? 'Hide fields' : '+ Add a field';
+  if (open) try { lib.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_) {}
 }
 
 function _rptRenderFieldLibrary() {
@@ -16890,14 +17038,12 @@ function _rptRenderFieldLibrary() {
   document.getElementById('rptFieldLibrary').innerHTML = cats.map(c => `
     <div style="margin-bottom:0.625rem;">
       <div style="font-size:0.65rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:0 0.25rem 0.25rem;">${escHtml(c.label)}</div>
-      <div style="display:flex;flex-direction:column;gap:0.125rem;">
+      <div class="rpt-lib-items">
         ${c.items.map(it => `
-          <button draggable="true"
+          <button draggable="true" class="rpt-field"
             ondragstart="_rptDragStart(event, '${escHtml(it.id)}', '${c.type}')"
-            onclick="_rptFieldClick('${escHtml(it.id)}', '${c.type}')"
-            title="Drag to a zone, or click to add to ${c.type === 'measure' ? 'Values' : 'Rows'}"
-            style="text-align:left;font-size:0.75rem;padding:0.25rem 0.5rem;border-radius:0.25rem;border:none;background:white;color:#1e293b;cursor:grab;"
-            onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">
+            onclick="_rptFieldClick(event, '${escHtml(it.id)}', '${c.type}')"
+            title="${c.type === 'measure' ? 'Click to add to Values' : 'Drag to a box, or click to choose where it goes'}">
             ${escHtml(it.label)}
           </button>
         `).join('')}
@@ -16908,49 +17054,59 @@ function _rptRenderFieldLibrary() {
 function _rptRenderZones() {
   document.getElementById('rptFiltersChips').innerHTML = _rptConfig.filters.length
     ? _rptConfig.filters.map((f, i) => _rptFilterChipHtml(f, i)).join('')
-    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here to filter (optional)</div>`;
+    : `<div class="rpt-empty">Optional. Add a field here to narrow the report (for example Debit type is EXPENSE).</div>`;
   document.getElementById('rptRowsChips').innerHTML = _rptConfig.rows.length
     ? _rptConfig.rows.map((r, i) => _rptDimChipHtml(r.dimensionId, 'rows', i)).join('')
-    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here</div>`;
+    : `<div class="rpt-empty">What to list down the side</div>`;
   document.getElementById('rptColsChips').innerHTML = _rptConfig.cols.length
     ? _rptConfig.cols.map((r, i) => _rptDimChipHtml(r.dimensionId, 'cols', i)).join('')
-    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a dimension here (optional)</div>`;
+    : `<div class="rpt-empty">Optional. What to split across the top</div>`;
   document.getElementById('rptValuesChips').innerHTML = _rptConfig.values.length
     ? _rptConfig.values.map((v, i) => _rptValueChipHtml(v.measureId, i)).join('')
-    : `<div style="font-size:0.7rem;color:#94a3b8;font-style:italic;">Drop a measure here (required)</div>`;
+    : `<div class="rpt-empty">Required. What to add up (Sum of amount, Count…)</div>`;
   _rptSyncDateInputs();
 }
 
 function _rptDimChipHtml(dimId, zone, idx) {
   const dim = _rptDim(dimId);
   if (!dim) return '';
-  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#dbeafe;color:#1e40af;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">
+  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#dbeafe;color:#1e40af;font-size:0.75rem;padding:0.2rem 0.55rem;border-radius:9999px;">
     ${escHtml(dim.label)}
-    <button onclick="rptRemove('${zone}', ${idx})" title="Remove"
-      style="background:none;border:none;color:#1e40af;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+    <button onclick="rptRemove('${zone}', ${idx})" title="Remove" aria-label="Remove ${escHtml(dim.label)}"
+      style="background:none;border:none;color:#1e40af;cursor:pointer;padding:0 0.125rem;margin-left:0.125rem;font-size:1rem;line-height:1;">×</button>
   </span>`;
 }
 
 function _rptValueChipHtml(mid, idx) {
   const m = _rptMeasure(mid);
   if (!m) return '';
-  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#fef3c7;color:#92400e;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;">
+  return `<span style="display:inline-flex;align-items:center;gap:0.25rem;background:#fef3c7;color:#92400e;font-size:0.75rem;padding:0.2rem 0.55rem;border-radius:9999px;">
     ${escHtml(m.label)}
-    <button onclick="rptRemove('values', ${idx})" title="Remove"
-      style="background:none;border:none;color:#92400e;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+    <button onclick="rptRemove('values', ${idx})" title="Remove" aria-label="Remove ${escHtml(m.label)}"
+      style="background:none;border:none;color:#92400e;cursor:pointer;padding:0 0.125rem;margin-left:0.125rem;font-size:1rem;line-height:1;">×</button>
   </span>`;
+}
+
+function _rptFilterValueLabel(f) {
+  const show = v => {
+    if (v === '' || v === undefined || v === null) return '?';
+    if (f.dimensionId === 'period' && /^\d{6}$/.test(v)) return _rptYmLabel(v);
+    return v;
+  };
+  return f.op === 'between' ? `${show(f.value)} – ${show(f.value2)}` : show(f.value);
 }
 
 function _rptFilterChipHtml(f, idx) {
   const dim = _rptDim(f.dimensionId);
   if (!dim) return '';
+  // The custom date range is shown in the Dates bar, not as a chip.
+  if (idx === _rptDateFilterIdx()) return '';
   const op = RPT_FILTER_OPS[f.op] || RPT_FILTER_OPS.eq;
-  const valLabel = f.op === 'between' ? `${f.value || '?'} – ${f.value2 || '?'}` : (f.value === '' || f.value === undefined ? '?' : f.value);
   return `<span onclick="rptEditFilter(${idx})" title="Click to edit"
-    style="display:inline-flex;align-items:center;gap:0.25rem;background:#ede9fe;color:#5b21b6;font-size:0.7rem;padding:0.15rem 0.5rem;border-radius:9999px;cursor:pointer;">
-    ${escHtml(dim.label)} ${escHtml(op.label)} ${escHtml(valLabel)}
-    <button onclick="event.stopPropagation(); rptRemove('filters', ${idx})" title="Remove"
-      style="background:none;border:none;color:#5b21b6;cursor:pointer;padding:0;margin-left:0.125rem;font-size:0.85rem;line-height:1;">×</button>
+    style="display:inline-flex;align-items:center;gap:0.25rem;background:#ede9fe;color:#5b21b6;font-size:0.75rem;padding:0.2rem 0.55rem;border-radius:9999px;cursor:pointer;">
+    ${escHtml(dim.label)} ${escHtml(op.label)} ${escHtml(_rptFilterValueLabel(f))}
+    <button onclick="event.stopPropagation(); rptRemove('filters', ${idx})" title="Remove" aria-label="Remove filter"
+      style="background:none;border:none;color:#5b21b6;cursor:pointer;padding:0 0.125rem;margin-left:0.125rem;font-size:1rem;line-height:1;">×</button>
   </span>`;
 }
 
@@ -16974,8 +17130,42 @@ function _rptWireDragDrop() {
   });
 }
 
-function _rptFieldClick(fieldId, fieldType) {
-  _rptAddField(fieldType === 'measure' ? 'values' : 'rows', { id: fieldId, type: fieldType });
+// Click on a field: measures go straight to Values; dimensions open a
+// small "Add to…" menu (works with touch, where drag-and-drop doesn't).
+function _rptFieldClick(event, fieldId, fieldType) {
+  if (fieldType === 'measure') { _rptAddField('values', { id: fieldId, type: fieldType }); return; }
+  const btn = event && event.currentTarget;
+  _rptCloseMenu();
+  const menu = document.createElement('div');
+  menu.className = 'rpt-menu';
+  menu.id = 'rptAddMenu';
+  const dim = _rptDim(fieldId);
+  menu.innerHTML = `
+    <div style="font-size:0.65rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;padding:0.3rem 0.6rem 0.2rem;">Add ${escHtml(dim ? dim.label : '')} to</div>
+    <button onclick="_rptMenuPick('rows', '${escHtml(fieldId)}')">Rows (down the side)</button>
+    <button onclick="_rptMenuPick('cols', '${escHtml(fieldId)}')">Columns (across the top)</button>
+    <button onclick="_rptMenuPick('filters', '${escHtml(fieldId)}')">Filters (narrow it down)</button>`;
+  document.body.appendChild(menu);
+  const r = btn ? btn.getBoundingClientRect() : { left: 20, bottom: 100, right: 20, top: 100 };
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  let left = r.right + 6, top = r.top;
+  if (left + mw > window.innerWidth - 8) { left = Math.max(8, Math.min(r.left, window.innerWidth - mw - 8)); top = r.bottom + 4; }
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 4);
+  menu.style.left = left + 'px'; menu.style.top = top + 'px';
+  setTimeout(() => document.addEventListener('click', _rptMenuOutside, true), 0);
+}
+function _rptMenuOutside(e) {
+  const m = document.getElementById('rptAddMenu');
+  if (m && !m.contains(e.target)) _rptCloseMenu();
+}
+function _rptCloseMenu() {
+  const m = document.getElementById('rptAddMenu');
+  if (m) m.remove();
+  document.removeEventListener('click', _rptMenuOutside, true);
+}
+function _rptMenuPick(zone, fieldId) {
+  _rptCloseMenu();
+  _rptAddField(zone, { id: fieldId, type: 'dim' });
 }
 
 function _rptAddField(zone, field) {
@@ -16988,7 +17178,7 @@ function _rptAddField(zone, field) {
     if (zone === 'filters') {
       _rptConfig.filters.push({ dimensionId: field.id, op: 'eq', value: '' });
       _rptRenderZones();
-      rptEditFilter(_rptConfig.filters.length - 1);
+      rptEditFilter(_rptConfig.filters.length - 1, true);
       return;
     }
     if (_rptConfig[zone].some(d => d.dimensionId === field.id)) { showToast('Already added'); return; }
@@ -17017,25 +17207,108 @@ function rptReset() {
   _rptUpdateSavedLabel();
 }
 
-function rptEditFilter(idx) {
+// ── Inline filter editor (replaces the old prompt() dialogs) ──
+// Text fields get a pick-list of the values that actually exist in the
+// data, so "EXPENSE" or an account name doesn't have to be typed exactly.
+function _rptDistinctValues(dim) {
+  try {
+    const res = db.exec(`SELECT DISTINCT ${dim.sql} AS v
+FROM "Transaction" tx
+LEFT JOIN Account dra ON dra.id = tx.drAccountId
+LEFT JOIN Account cra ON cra.id = tx.crAccountId
+WHERE ${dim.sql} IS NOT NULL AND ${dim.sql} <> ''
+ORDER BY 1 LIMIT 400`);
+    return res && res[0] ? res[0].values.map(r => String(r[0])) : [];
+  } catch (_) { return []; }
+}
+function _rptFilterInputHtml(dim, id, value) {
+  if (dim.id === 'period') {
+    const v = /^\d{6}$/.test(value || '') ? value.slice(0, 4) + '-' + value.slice(4, 6) : '';
+    return `<input type="month" id="${id}" class="rpt-input" value="${escHtml(v)}">`;
+  }
+  if (dim.id === 'date') return `<input type="date" id="${id}" class="rpt-input" value="${escHtml(value || '')}">`;
+  return `<input type="text" id="${id}" class="rpt-input" list="rptFilterValues" autocomplete="off" value="${escHtml(value || '')}" placeholder="Type or pick a value">`;
+}
+function _rptFilterReadInput(dim, id) {
+  const el = document.getElementById(id);
+  const v = el ? el.value.trim() : '';
+  if (dim.id === 'period') return v.replace('-', '');
+  return v;
+}
+function rptEditFilter(idx, isNew) {
   const f = _rptConfig.filters[idx]; if (!f) return;
   const dim = _rptDim(f.dimensionId); if (!dim) return;
-  let hint = '';
-  if (dim.kind === 'period') hint = ' (format: YYYYMM, e.g. 202605)';
-  else if (dim.kind === 'date') hint = ' (format: YYYY-MM-DD)';
-  const ops = ['eq', 'ne', 'contains', 'between'];
-  const opChoice = prompt('Filter: ' + dim.label + '\n\nOperator (eq, ne, contains, between):', f.op || 'eq');
-  if (opChoice === null) return;
-  if (!ops.includes(opChoice)) { alert('Invalid operator. Use one of: ' + ops.join(', ')); return; }
-  f.op = opChoice;
-  if (opChoice === 'between') {
-    const v1 = prompt('From value' + hint + ':', f.value || ''); if (v1 === null) return;
-    const v2 = prompt('To value'   + hint + ':', f.value2 || ''); if (v2 === null) return;
-    f.value = v1; f.value2 = v2;
-  } else {
-    const v = prompt('Value' + hint + ':', f.value || ''); if (v === null) return;
-    f.value = v;
+  const values = (dim.id === 'period' || dim.id === 'date') ? [] : _rptDistinctValues(dim);
+  _rptCloseFilterModal();
+  const bg = document.createElement('div');
+  bg.className = 'rpt-modal-bg';
+  bg.id = 'rptFilterModal';
+  bg.onclick = e => { if (e.target === bg) rptFilterCancel(); };
+  bg._idx = idx; bg._isNew = !!isNew;
+  bg.innerHTML = `
+    <div class="rpt-modal" role="dialog" aria-label="Edit filter">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">Filter: ${escHtml(dim.label)}</h3>
+        <button onclick="rptFilterCancel()" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;">&times;</button>
+      </div>
+      <label style="display:flex;flex-direction:column;gap:0.25rem;font-size:0.75rem;color:#475569;">Show transactions where ${escHtml(dim.label)}
+        <select id="rptFilterOp" class="rpt-input" onchange="_rptFilterOpChanged()">
+          ${Object.entries(RPT_FILTER_OPS).map(([k, o]) => `<option value="${k}" ${f.op === k ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('')}
+        </select>
+      </label>
+      <div id="rptFilterVal1Wrap">${_rptFilterInputHtml(dim, 'rptFilterVal1', f.value)}</div>
+      <div id="rptFilterVal2Wrap" style="display:${f.op === 'between' ? 'flex' : 'none'};flex-direction:column;gap:0.25rem;font-size:0.75rem;color:#475569;">and
+        ${_rptFilterInputHtml(dim, 'rptFilterVal2', f.value2)}
+      </div>
+      <datalist id="rptFilterValues">${values.map(v => `<option value="${escHtml(v)}"></option>`).join('')}</datalist>
+      ${values.length ? `<div style="font-size:0.7rem;color:#94a3b8;">${values.length} value${values.length === 1 ? '' : 's'} found in your data. Start typing to see them.</div>` : ''}
+      <div style="display:flex;justify-content:flex-end;gap:0.375rem;">
+        <button onclick="rptFilterCancel()" class="rpt-btn">Cancel</button>
+        <button onclick="rptFilterApply()" class="rpt-btn rpt-btn-dark">Apply</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  setTimeout(() => { const i = document.getElementById('rptFilterVal1'); if (i && !('ontouchstart' in window)) i.focus(); }, 30);
+}
+function _rptFilterOpChanged() {
+  const op = document.getElementById('rptFilterOp').value;
+  document.getElementById('rptFilterVal2Wrap').style.display = op === 'between' ? 'flex' : 'none';
+}
+function _rptCloseFilterModal() {
+  const m = document.getElementById('rptFilterModal');
+  if (m) m.remove();
+}
+function rptFilterCancel() {
+  const m = document.getElementById('rptFilterModal');
+  if (m && m._isNew) { _rptConfig.filters.splice(m._idx, 1); _rptRenderZones(); }
+  _rptCloseFilterModal();
+}
+function rptFilterApply() {
+  const m = document.getElementById('rptFilterModal'); if (!m) return;
+  const f = _rptConfig.filters[m._idx]; if (!f) { _rptCloseFilterModal(); return; }
+  const dim = _rptDim(f.dimensionId);
+  const op = document.getElementById('rptFilterOp').value;
+  const v1 = _rptFilterReadInput(dim, 'rptFilterVal1');
+  const v2 = op === 'between' ? _rptFilterReadInput(dim, 'rptFilterVal2') : '';
+  if (!v1 || (op === 'between' && !v2)) { showToast('Enter a value first'); return; }
+  f.op = op; f.value = v1; if (op === 'between') f.value2 = v2; else delete f.value2;
+  _rptCloseFilterModal();
+  _rptRenderZones();
+  _rptRunReport();
+}
+
+// ── Dates bar ────────────────────────────────────────────────
+function rptSetDatePreset(id) {
+  const idx = _rptDateFilterIdx();
+  if (id === 'custom') {
+    _rptConfig.datePreset = 'custom';
+    _rptRenderZones();
+    _rptRunReport();
+    const f = document.getElementById('rptDateFrom'); if (f && !f.value) try { f.focus(); } catch(_) {}
+    return;
   }
+  if (idx >= 0) _rptConfig.filters.splice(idx, 1);
+  if (id === 'all') delete _rptConfig.datePreset; else _rptConfig.datePreset = id;
   _rptRenderZones();
   _rptRunReport();
 }
@@ -17047,6 +17320,7 @@ function rptSetDateRange() {
   const from = (document.getElementById('rptDateFrom') || {}).value || '';
   const to = (document.getElementById('rptDateTo') || {}).value || '';
   const idx = _rptDateFilterIdx();
+  _rptConfig.datePreset = 'custom';
   if (!from && !to) { if (idx >= 0) _rptConfig.filters.splice(idx, 1); }
   else {
     const filter = { dimensionId: 'date', op: 'between', value: from || '0000-01-01', value2: to || '9999-12-31' };
@@ -17055,13 +17329,20 @@ function rptSetDateRange() {
   _rptRenderZones();
   _rptRunReport();
 }
-function rptClearDateRange() {
-  const idx = _rptDateFilterIdx();
-  if (idx >= 0) _rptConfig.filters.splice(idx, 1);
-  _rptRenderZones();
-  _rptRunReport();
-}
+function rptClearDateRange() { rptSetDatePreset('all'); }
 function _rptSyncDateInputs() {
+  const preset = _rptCurrentPreset();
+  const chips = document.getElementById('rptDateChips');
+  if (chips) chips.innerHTML = RPT_DATE_PRESETS.map(p =>
+    `<button class="rpt-datechip ${p.id === preset ? 'on' : ''}" onclick="rptSetDatePreset('${p.id}')">${escHtml(p.label)}</button>`).join('');
+  if (chips) { const on = chips.querySelector('.on'); if (on && chips.scrollWidth > chips.clientWidth) chips.scrollLeft = Math.max(0, on.offsetLeft - chips.offsetLeft - 8); }
+  const custom = document.getElementById('rptCustomDates');
+  if (custom) custom.style.display = preset === 'custom' ? 'flex' : 'none';
+  const hint = document.getElementById('rptDateHint');
+  if (hint) {
+    const r = _rptPresetRange(preset);
+    hint.textContent = r ? (r.from === r.to ? _rptYmLabel(r.from) : _rptYmLabel(r.from) + ' – ' + _rptYmLabel(r.to)) : '';
+  }
   const f = document.getElementById('rptDateFrom'), t = document.getElementById('rptDateTo');
   if (!f || !t) return;
   const idx = _rptDateFilterIdx();
@@ -17087,11 +17368,168 @@ function _rptRunReport() {
   _rptRenderResult();
 }
 
+// ── Charts ───────────────────────────────────────────────────
+// Categorical palette, fixed order (validated for colour-blind separation).
+// More than 8 series fold into "Other" rather than inventing new colours.
+const RPT_SERIES_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+const RPT_OTHER_COLOR   = '#94a3b8';
+const RPT_TIME_DIMS     = ['date', 'year', 'quarter', 'period', 'month_name'];
+let _rptChart = null;
+
+function _rptDestroyChart() {
+  if (_rptChart) { try { _rptChart.destroy(); } catch(_) {} _rptChart = null; }
+}
+function _rptView() { return _rptConfig.view === 'table' ? 'table' : 'chart'; }
+function rptSetView(v) { _rptConfig.view = v; _rptRenderResult(); }
+
+function _rptShortMoney(v) {
+  const a = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if (a >= 1e6) return sign + '$' + (a / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'k';
+  return sign + '$' + Math.round(a);
+}
+
+// Builds the chart data from the pivot result. Returns
+// { kind: 'line'|'bar'|'hbar', stacked, labels, rowKeys, series:[{label,colKey,data,color}], note }
+function _rptChartModel(p) {
+  const rows = _rptConfig.rows || [];
+  const isTime = rows.length === 1 && RPT_TIME_DIMS.includes(rows[0].dimensionId);
+  const additive = p.totalsValid;
+  let seriesKeys = p.headerCols.slice();
+  let otherKeys = [];
+  if (seriesKeys.length > 8) {
+    const tot = ck => p.rowKeys.reduce((s, rk) => s + Math.abs(+((p.matrix[rk] || {})[ck]) || 0), 0);
+    seriesKeys.sort((a, b) => tot(b) - tot(a));
+    if (additive) { otherKeys = seriesKeys.slice(7); seriesKeys = seriesKeys.slice(0, 7); }
+    else seriesKeys = seriesKeys.slice(0, 8);
+  }
+  let rowKeys = p.rowKeys.slice();
+  let note = '';
+  if (!isTime) {
+    const rowVal = rk => additive ? (p.rowTotals[rk] || 0) : (+((p.matrix[rk] || {})[seriesKeys[0]]) || 0);
+    if (rows.length && rows[0].dimensionId !== 'day_of_week') rowKeys.sort((a, b) => rowVal(b) - rowVal(a));
+    if (rowKeys.length > 25) { note = `Showing the top 25 of ${rowKeys.length}. Switch to Table to see them all.`; rowKeys = rowKeys.slice(0, 25); }
+  } else if (rowKeys.length > 120) {
+    note = `Showing the latest 120 of ${rowKeys.length}. Switch to Table to see them all.`;
+    rowKeys = rowKeys.slice(-120);
+  }
+  const val = (rk, ck) => { const v = (p.matrix[rk] || {})[ck]; return v === null || v === undefined ? null : +v; };
+  const series = seriesKeys.map((ck, i) => ({
+    label: (_rptConfig.cols || []).length ? ck : p.measure.label,
+    colKey: ck,
+    color: RPT_SERIES_COLORS[i],
+    data: rowKeys.map(rk => val(rk, ck)),
+  }));
+  if (otherKeys.length) series.push({
+    label: `Other (${otherKeys.length})`, colKey: null, color: RPT_OTHER_COLOR,
+    data: rowKeys.map(rk => otherKeys.reduce((s, ck) => s + (val(rk, ck) || 0), 0)),
+  });
+  const allPositive = series.every(s => s.data.every(v => v === null || v >= 0));
+  const multi = series.length > 1;
+  let kind, stacked = false;
+  if (isTime) {
+    if (multi && additive && allPositive) { kind = 'bar'; stacked = true; }
+    else kind = (rowKeys.length <= 3 ? 'bar' : 'line');
+  } else {
+    kind = 'hbar';
+    stacked = multi && additive && allPositive;
+  }
+  // Friendlier month labels on the chart axis ("2026-03" / "202603" → "Mar 2026").
+  const rd = rows.length === 1 ? rows[0].dimensionId : '';
+  const labels = rowKeys.map(rk => {
+    const k = String(rk);
+    if (rd === 'month_name' && /^\d{4}-\d{2}$/.test(k)) return _rptYmLabel(k.replace('-', ''));
+    if (rd === 'period' && /^\d{6}$/.test(k)) return _rptYmLabel(k);
+    return k;
+  });
+  return { kind, stacked, labels, rowKeys, series, note };
+}
+
+function _rptRenderChart(p) {
+  const holder = document.getElementById('rptChartHolder');
+  const canvas = document.getElementById('rptChartCanvas');
+  if (!holder || !canvas || typeof Chart === 'undefined') return;
+  const m = _rptChartModel(p);
+  const fmt = v => _rptFmt(v, p.measure.format);
+  const short = v => p.measure.format === 'currency' ? _rptShortMoney(v) : (+v).toLocaleString();
+  const narrow = window.innerWidth < 640;
+  if (m.kind === 'hbar') holder.style.height = Math.max(180, m.labels.length * (m.series.length > 1 && !m.stacked ? 14 * m.series.length + 10 : 30) + 70) + 'px';
+  else holder.style.height = narrow ? '260px' : '340px';
+  const noteEl = document.getElementById('rptChartNote');
+  if (noteEl) noteEl.textContent = m.note;
+
+  const datasets = m.series.map(s => {
+    const base = { label: s.label, data: s.data, backgroundColor: s.color, borderColor: s.color, _colKey: s.colKey };
+    if (m.kind === 'line') return Object.assign(base, {
+      type: 'line', borderWidth: 2, pointRadius: m.labels.length > 40 ? 0 : 3, pointHoverRadius: 5,
+      pointBackgroundColor: s.color, pointBorderColor: '#ffffff', pointBorderWidth: 2, tension: 0, spanGaps: true, fill: false,
+    });
+    return Object.assign(base, {
+      borderRadius: m.stacked ? 0 : 4, borderSkipped: 'start',
+      borderWidth: m.stacked ? { top: 0, bottom: 0, left: 0, right: 0 } : 0,
+      maxBarThickness: 28, categoryPercentage: 0.8, barPercentage: 0.9,
+    });
+  });
+  if (m.stacked) datasets.forEach(d => { d.borderColor = '#ffffff'; d.borderWidth = m.kind === 'hbar' ? { right: 2 } : { top: 2 }; });
+
+  const valueAxis = {
+    stacked: m.stacked, beginAtZero: true,
+    grid: { color: '#f1f5f9' }, border: { display: false },
+    ticks: { color: '#64748b', font: { size: 11 }, callback: v => short(v), maxTicksLimit: narrow ? 4 : 6 },
+  };
+  const catAxis = {
+    stacked: m.stacked, grid: { display: false }, border: { color: '#cbd5e1' },
+    ticks: { color: '#475569', font: { size: 11 }, autoSkip: m.kind !== 'hbar', maxRotation: 0,
+      callback: function(v) { const l = String(this.getLabelForValue(v)); return l.length > (narrow ? 16 : 28) ? l.slice(0, narrow ? 15 : 27) + '…' : l; } },
+  };
+  const horizontal = m.kind === 'hbar';
+  _rptDestroyChart();
+  _rptChart = new Chart(canvas, {
+    type: m.kind === 'line' ? 'line' : 'bar',
+    data: { labels: m.labels, datasets },
+    options: {
+      indexAxis: horizontal ? 'y' : 'x',
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false, axis: horizontal ? 'y' : 'x' },
+      scales: horizontal ? { x: valueAxis, y: catAxis } : { x: catAxis, y: valueAxis },
+      plugins: {
+        legend: { display: m.series.length > 1, position: 'top', align: 'start',
+          labels: { color: '#475569', boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'rectRounded', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#0f172a', titleColor: '#f8fafc', bodyColor: '#e2e8f0', padding: 8, boxPadding: 4,
+          filter: item => item.raw !== null && item.raw !== undefined,
+          itemSort: (a, b) => (b.raw || 0) - (a.raw || 0),
+          callbacks: {
+            label: item => ` ${m.series.length > 1 ? item.dataset.label + ': ' : ''}${fmt(item.raw)}`,
+            footer: items => (m.stacked && items.length > 1) ? 'Total: ' + fmt(items.reduce((s, i) => s + (+i.raw || 0), 0)) : '',
+          },
+        },
+      },
+      onHover: (evt, els) => { evt.native && (evt.native.target.style.cursor = els.length ? 'pointer' : 'default'); },
+      onClick: (evt, els) => {
+        const pts = _rptChart.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, false);
+        const el = pts[0] || null;
+        if (!el) return;
+        const ds = _rptChart.data.datasets[el.datasetIndex];
+        if (!ds || ds._colKey === null) return;
+        rptDrillDown(m.rowKeys[el.index], ds._colKey);
+      },
+    },
+  });
+  activeCharts.push(_rptChart);
+}
+
 function _rptRenderResult() {
   const el = document.getElementById('rptResult');
   if (!el) return;
+  _rptDestroyChart();
   if (!_rptResult) {
-    el.innerHTML = `<div style="font-size:0.875rem;color:#94a3b8;font-style:italic;text-align:center;padding:2rem;">Add fields to Rows / Columns / Values to build a report.<br><span style="font-size:0.75rem;">Drag from the left, or click a field.</span></div>`;
+    el.innerHTML = `<div style="text-align:center;padding:1.5rem 0.5rem;">
+      <div style="font-size:0.875rem;color:#64748b;">Start with a ready-made report, or build your own.</div>
+      <div class="rpt-quick">${RPT_QUICK_STARTS.map((q, i) => `<button class="rpt-btn" onclick="rptQuickStart(${i})">${escHtml(q.label)}</button>`).join('')}</div>
+      <div style="font-size:0.75rem;color:#94a3b8;margin-top:0.75rem;">To build your own: choose what to list in Rows and what to add up in Values.</div>
+    </div>`;
     return;
   }
   if (_rptResult.error) {
@@ -17100,40 +17538,80 @@ function _rptRenderResult() {
   }
   const p = _rptResult;
   const fmt = v => _rptFmt(v, p.measure.format);
-  const rowLabelHeader = _rptConfig.rows.map(r => _rptDim(r.dimensionId).label).join(' / ');
+  const view = _rptView();
+  const isEmpty = !p.rowKeys.length || (p.rowKeys.length === 1 && p.headerCols.every(ck => { const v = (p.matrix[p.rowKeys[0]] || {})[ck]; return v === null || v === undefined || +v === 0; }));
+  const single = !(_rptConfig.rows || []).length && !(_rptConfig.cols || []).length;
 
+  const toolbar = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem;">
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+        <div class="rpt-seg" role="group" aria-label="View">
+          <button class="${view === 'chart' ? 'on' : ''}" onclick="rptSetView('chart')">Chart</button>
+          <button class="${view === 'table' ? 'on' : ''}" onclick="rptSetView('table')">Table</button>
+        </div>
+        <div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>
+      </div>
+      <div style="display:flex;gap:0.25rem;">
+        <button onclick="rptExportCsv()" class="rpt-btn" style="font-size:0.7rem;">Export CSV</button>
+        <button onclick="rptShowSql()" class="rpt-btn rpt-hide-phone" style="font-size:0.7rem;">Show SQL</button>
+      </div>
+    </div>`;
+
+  if (isEmpty) {
+    el.innerHTML = toolbar + `<div style="text-align:center;padding:2rem 0.5rem;color:#64748b;font-size:0.875rem;">
+      No transactions match this report.<br><span style="font-size:0.75rem;color:#94a3b8;">Try a wider date range or remove a filter.</span></div>`;
+    return;
+  }
+
+  if (view === 'chart' && single) {
+    const v = p.matrix[p.rowKeys[0]] && p.matrix[p.rowKeys[0]][p.headerCols[0]];
+    el.innerHTML = toolbar + `<div style="text-align:center;padding:2rem 0.5rem;">
+      <div style="font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">${escHtml(p.measure.label)}</div>
+      <div onclick="rptDrillDown('(All)', ${JSON.stringify(p.headerCols[0]).replace(/"/g, '&quot;')})" style="font-size:2.25rem;font-weight:700;color:#0f172a;cursor:pointer;margin-top:0.25rem;" title="See the transactions">${escHtml(fmt(v))}</div>
+      <div style="font-size:0.75rem;color:#94a3b8;margin-top:0.25rem;">Add a field to Rows to break this down.</div>
+    </div>`;
+    return;
+  }
+
+  if (view === 'chart') {
+    el.innerHTML = toolbar + `
+      <div id="rptChartHolder" style="position:relative;width:100%;height:340px;"><canvas id="rptChartCanvas" role="img" aria-label="Report chart"></canvas></div>
+      <div style="display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-top:0.375rem;">
+        <span id="rptChartNote" style="font-size:0.7rem;color:#94a3b8;"></span>
+        <span style="font-size:0.7rem;color:#94a3b8;">Tap a bar or point to see its transactions.</span>
+      </div>`;
+    _rptRenderChart(p);
+    return;
+  }
+
+  const rowLabelHeader = _rptConfig.rows.map(r => _rptDim(r.dimensionId).label).join(' / ');
+  const th = 'padding:0.375rem 0.5rem;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;white-space:nowrap;';
   const headerRow = `<tr>
-    <th style="padding:0.375rem 0.5rem;text-align:left;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;">${escHtml(rowLabelHeader || '')}</th>
-    ${p.headerCols.map(c => `<th style="padding:0.375rem 0.5rem;text-align:right;font-size:0.7rem;font-weight:600;color:#475569;border-bottom:1px solid #e2e8f0;background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;">${escHtml(c)}</th>`).join('')}
-    ${p.totalsValid ? `<th style="padding:0.375rem 0.5rem;text-align:right;font-size:0.7rem;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;background:#f1f5f9;text-transform:uppercase;letter-spacing:0.03em;">Total</th>` : ''}
+    <th style="${th}text-align:left;position:sticky;left:0;z-index:1;">${escHtml(rowLabelHeader || '')}</th>
+    ${p.headerCols.map(c => `<th style="${th}text-align:right;">${escHtml(c)}</th>`).join('')}
+    ${p.totalsValid ? `<th style="${th}text-align:right;font-weight:700;color:#1e293b;background:#f1f5f9;">Total</th>` : ''}
   </tr>`;
 
   const bodyRows = p.rowKeys.map(rk => `<tr>
-    <td style="padding:0.375rem 0.5rem;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;">${escHtml(rk)}</td>
+    <td style="padding:0.375rem 0.5rem;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;background:white;position:sticky;left:0;">${escHtml(rk)}</td>
     ${p.headerCols.map(ck => {
       const v = p.matrix[rk] && p.matrix[rk][ck];
       const has = v !== null && v !== undefined;
       const click = has ? `onclick="rptDrillDown(${JSON.stringify(rk).replace(/"/g, '&quot;')}, ${JSON.stringify(ck).replace(/"/g, '&quot;')})"` : '';
-      return `<td ${click} style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;${has ? 'cursor:pointer;' : ''}">${has ? escHtml(fmt(v)) : ''}</td>`;
+      return `<td ${click} style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;color:#1e293b;border-bottom:1px solid #f1f5f9;white-space:nowrap;${has ? 'cursor:pointer;' : ''}">${has ? escHtml(fmt(v)) : ''}</td>`;
     }).join('')}
-    ${p.totalsValid ? `<td style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;background:#f8fafc;">${escHtml(fmt(p.rowTotals[rk] || 0))}</td>` : ''}
+    ${p.totalsValid ? `<td style="padding:0.375rem 0.5rem;text-align:right;font-size:0.8125rem;font-weight:600;color:#0f172a;border-bottom:1px solid #f1f5f9;background:#f8fafc;white-space:nowrap;">${escHtml(fmt(p.rowTotals[rk] || 0))}</td>` : ''}
   </tr>`).join('');
 
+  const tf = 'padding:0.5rem;text-align:right;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#f1f5f9;white-space:nowrap;';
   const footerRow = p.totalsValid ? `<tr>
-    <td style="padding:0.5rem;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#f1f5f9;">Total</td>
-    ${p.headerCols.map(ck => `<td style="padding:0.5rem;text-align:right;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#f1f5f9;">${escHtml(fmt(p.colTotals[ck] || 0))}</td>`).join('')}
-    <td style="padding:0.5rem;text-align:right;font-size:0.8125rem;font-weight:700;color:#0f172a;border-top:2px solid #cbd5e1;background:#e2e8f0;">${escHtml(fmt(p.grandTotal))}</td>
+    <td style="${tf}text-align:left;position:sticky;left:0;">Total</td>
+    ${p.headerCols.map(ck => `<td style="${tf}">${escHtml(fmt(p.colTotals[ck] || 0))}</td>`).join('')}
+    <td style="${tf}background:#e2e8f0;">${escHtml(fmt(p.grandTotal))}</td>
   </tr>` : '';
 
-  el.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem;">
-      <div style="font-size:0.75rem;color:#64748b;">${p.rowKeys.length} row${p.rowKeys.length===1?'':'s'} · ${p.headerCols.length} column${p.headerCols.length===1?'':'s'} · ${escHtml(p.measure.label)}</div>
-      <div style="display:flex;gap:0.25rem;">
-        <button onclick="rptExportCsv()" style="font-size:0.7rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Export CSV</button>
-        <button onclick="rptShowSql()" style="font-size:0.7rem;color:#475569;border:1px solid #cbd5e1;background:white;padding:0.25rem 0.5rem;border-radius:0.375rem;cursor:pointer;">Show SQL</button>
-      </div>
-    </div>
-    <div style="overflow:auto;max-height:50vh;border:1px solid #e2e8f0;border-radius:0.375rem;">
+  el.innerHTML = toolbar + `
+    <div style="overflow:auto;max-height:60vh;border:1px solid #e2e8f0;border-radius:0.375rem;-webkit-overflow-scrolling:touch;">
       <table style="width:100%;border-collapse:collapse;background:white;">
         <thead>${headerRow}</thead>
         <tbody>${bodyRows}${footerRow}</tbody>
@@ -17146,7 +17624,7 @@ function rptDrillDown(rowKey, colKey) {
   const rowParts = rowKey === '(All)' ? [] : rowKey.split(' | ');
   const colParts = colKey === _rptResult.measure.label ? [] : colKey.split(' | ');
   const conds = [];
-  for (const f of (_rptConfig.filters || [])) { const sql = _rptFilterSql(f); if (sql) conds.push(sql); }
+  conds.push(..._rptWhereParts(_rptConfig));
   _rptConfig.rows.forEach((r, i) => {
     if (rowParts[i] !== undefined) {
       const d = _rptDim(r.dimensionId);
@@ -17179,13 +17657,13 @@ function _rptShowDrillModal(rows, rowKey, colKey) {
   if (!m) {
     m = document.createElement('div');
     m.id = 'rptDrillModal';
-    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:1rem;';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:300;align-items:center;justify-content:center;padding:0.5rem;';
     m.onclick = e => { if (e.target === m) m.style.display = 'none'; };
     document.body.appendChild(m);
   }
   m._drillRows = rows;
   m.innerHTML = `
-    <div style="background:white;border-radius:0.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.3);width:90vw;max-width:1000px;height:80vh;display:flex;flex-direction:column;overflow:hidden;">
+    <div style="background:white;border-radius:0.75rem;box-shadow:0 20px 50px rgba(0,0,0,0.3);width:100%;max-width:1000px;height:85vh;display:flex;flex-direction:column;overflow:hidden;">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:0.75rem 1rem;border-bottom:1px solid #e2e8f0;">
         <div>
           <h3 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">Drill-down</h3>
@@ -17276,7 +17754,17 @@ function rptExportCsv() {
 
 function rptShowSql() {
   if (!_rptResult || !_rptResult.sql) return;
-  prompt('Generated SQL (read-only — copy if needed):', _rptResult.sql);
+  const bg = document.createElement('div');
+  bg.className = 'rpt-modal-bg';
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  bg.innerHTML = `<div class="rpt-modal" style="max-width:40rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <h3 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">The query behind this report</h3>
+      <button onclick="this.closest('.rpt-modal-bg').remove()" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;">&times;</button>
+    </div>
+    <pre style="font-size:0.75rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.375rem;padding:0.6rem;overflow:auto;max-height:50vh;white-space:pre-wrap;margin:0;">${escHtml(_rptResult.sql)}</pre>
+  </div>`;
+  document.body.appendChild(bg);
 }
 
 function _rptRefreshSavedDropdown() {

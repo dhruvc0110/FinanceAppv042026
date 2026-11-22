@@ -516,7 +516,7 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - One `_floatingPillHtml()` returns a two-half pill (red Dictate mic + slate Ask button + thin separator).
 - Mounted ONCE in `startApp()`, appended to `document.body`. `position:fixed` so DOM placement is irrelevant.
 - Dictate context derived at click time via `_dtCtxFromPage()` (Future Transactions → 'ft', otherwise 'tx').
-- **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → now paused (slate-400, opacity 0.7, tooltip "Reports (work in progress — design not yet hardened)"). Still clickable, navigates to `renderReports`.
+- **Session 3 evolution:** right half was Ask (LLM) → became Reports (deterministic) → paused → **restored Nov 2026** (dark like the other halves, tooltip "Reports"). Navigates to `renderReports`.
 
 ### Ask FinApp (paused, code intact)
 - **Architecture:** Single Chat mode. KB-first routing: HIGH → cached SQL single-shot; MEDIUM → cached SQL with visible "inferred params" assumptions; LOW → tool-using agent (`describe_table`, `distinct_values`, `sample_rows`, `run_query`) that iterates until it has enough grounding to answer.
@@ -526,8 +526,16 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - **Why paused:** Despite many targeted fixes, NL-to-SQL against opinionated finance data kept producing partially-correct answers. User pivoted to deterministic Reports. See `ERRORS.md` → "LLM-SQL whack-a-mole."
 - **Reviving:** Pill no longer routes to `askOpen`. The function still works if called directly. Modal HTML is built lazily on first call.
 
-### Reports — self-service pivot builder (paused after Phase A+B)
-- **Surface:** Currently no sidebar entry; pill's right half (slate-400, dimmed) opens it. To revive as a primary surface, re-add the nav button in `<div id="sidebar">`.
+### Reports — self-service pivot builder (live again, Nov 2026)
+- **Surface:** Sidebar entry under Review (after Documents) + the pill's right half.
+- **Nov 2026 hardening (step 1 of conversational analytics):**
+  - **Date shortcuts:** `RPT_DATE_PRESETS` + `_rptPresetRange()`. Stored as `config.datePreset` (`this_month`, `last_month`, `this_quarter`, `last_quarter`, `this_year`, `last_year`, `last_12`, `custom`; absent = all time). Resolved at query time on `tx.period`, so saved reports stay relative. `custom` keeps the old managed `date between` filter (hidden from the Filters chips). All WHERE building goes through `_rptWhereParts(cfg)` (used by `_rptBuildQuery` and `rptDrillDown`).
+  - **Charts:** `_rptChartModel()` picks the form from the pivot shape: time rows + one series → line; time rows + several additive positive series → stacked bars; category rows → horizontal bars sorted by size (top 25). >8 series fold into "Other". Fixed 8-colour palette `RPT_SERIES_COLORS`. Clicking a mark drills down. `config.view` = `chart` (default) | `table`. Chart instance `_rptChart`, also pushed to `activeCharts`.
+  - **Quick starts:** `RPT_QUICK_STARTS` shown on the empty state.
+  - **Phone layout:** `RPT_CSS` + `RPT_PHONE_RULES`, applied under `@media (max-width:768px)` and under `html.use-cards` (Phone view mode). Result first, setup below, field library behind "+ Add a field".
+  - **Click a field:** measures → Values; dimensions open an "Add to Rows / Columns / Filters" menu (`_rptFieldClick`, works with touch).
+  - **Filter editor:** modal (`rptEditFilter`, `rptFilterApply`, `rptFilterCancel`) with a datalist of real values (`_rptDistinctValues`), month picker for Period, date picker for Date. Cancelling a just-added filter removes it.
+  - **Honest empty:** a report whose only row is all null/0 says "No transactions match" instead of showing $0.
 - **Semantic model** (hand-curated JS arrays at the top of the Reports module):
   - `RPT_DIMENSIONS`: 15 fields in 3 categories — `When` (Date, Year, Quarter, Period YYYYMM, Month name, Day of week), `Where` (Debit/Credit account name/type/grouping), `What` (Description, Source, Reconciled). Each carries an SQL expression that drops into SELECT and GROUP BY.
   - `RPT_MEASURES`: 5 fields — Sum / Avg / Max / Min of Amount, Transaction count.
@@ -535,11 +543,10 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
 - **Query compiler** (`_rptBuildQuery`): composes `SELECT … FROM "Transaction" tx LEFT JOIN Account dra LEFT JOIN Account cra WHERE … GROUP BY … ORDER BY … LIMIT 5000`.
 - **Pivot transformer** (`_rptPivot`): flat group-by rows → `{headerCols, rowKeys, matrix, rowTotals, colTotals, grandTotal}`. Totals are only computed for additive measures (SUM, COUNT) — AVG/MIN/MAX get blank totals.
 - **UI:** Left field library (When / Where / What / How much), drop zones (Filters / Rows / Columns / Values), live result table with totals + Export CSV + Show SQL.
-- **Drag-and-drop:** HTML5 API. Click-to-add fallback routes dims → Rows, measures → Values. Mobile/touch polish deferred to Phase E.
-- **Filter editor:** `prompt()`-based for MVP. Inline editor on Phase E.
+- **Drag-and-drop:** HTML5 API on desktop; click/tap menu everywhere.
 - **Drill-down:** Click any value cell → modal lists underlying transactions for that row × col × filters intersection. Independent Export CSV.
 - **Save/Load/Delete:** `SavedReport` table. Top-bar dropdown for browsing.
-- **Roadmap:** Settings → About → "Roadmap — Reports". A+B Shipped, C (charts) / D (date presets + comparison + %) / E (mobile + inline filter editor) listed as Later.
+- **Roadmap:** Settings → About → "Roadmap — Reports". A–E Shipped (D partly: comparison / % of total still later). "Ask" (Claude fills the report setup; the app does the maths) Planned.
 
 ---
 

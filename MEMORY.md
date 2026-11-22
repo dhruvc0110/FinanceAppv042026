@@ -4,6 +4,19 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 
 ---
 
+## 2026-11-22 — Conversational analytics, step 1 (Claude project thread)
+
+### Decided: Conversational analytics = "Claude picks the report, the app does the maths".
+- **What:** Plain-language questions will be turned by Claude into a Reports config (fixed fields from `RPT_DIMENSIONS` / `RPT_MEASURES` / date presets only), then run by the deterministic Reports engine. Claude never writes SQL. Every answer shows how the question was read and opens in the builder.
+- **Why:** Dhruv wants to ask questions in plain language. The earlier Ask FinApp failed because Claude wrote SQL (ERRORS.md "LLM-SQL whack-a-mole"). This route was rejected in Session 3, but Dhruv approved it on 2026-11-22 now that Reports exists as the engine.
+- **Steps:** (1) restore Reports with date shortcuts, charts, phone layout; (2) Ask box, one small Claude call per question; (3) follow-ups + saved questions. One PR each.
+
+### Done: Step 1 — Reports restored and hardened.
+- Back in the sidebar and pill. Date shortcuts saved as relative (`config.datePreset`). Auto charts with Chart/Table toggle. Phone layout. Inline filter editor with real-value pick-list. Quick-start reports. See HANDOFF.md → Reports.
+- **Rejected:** a separate Ask page. The Ask box will live on the Reports page so every answer can be tweaked in the builder.
+
+---
+
 ## 2026-11-22 — Nov 2026 clean-up (Claude project thread)
 
 ### Decided: GitHub `main` is the master copy; snapshots before every release.
