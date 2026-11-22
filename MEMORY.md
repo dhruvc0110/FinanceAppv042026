@@ -15,6 +15,11 @@ Read at the start of every session. Append, don't rewrite. Each entry: what / wh
 - Back in the sidebar and pill. Date shortcuts saved as relative (`config.datePreset`). Auto charts with Chart/Table toggle. Phone layout. Inline filter editor with real-value pick-list. Quick-start reports. See HANDOFF.md → Reports.
 - **Rejected:** a separate Ask page. The Ask box will live on the Reports page so every answer can be tweaked in the builder.
 
+### Done: Step 2 — Ask box.
+- Claude returns only a report setup (JSON schema, enums for everything); code validates, runs it and writes the answer sentence. Unanswerable questions (balances, net worth, budgets, advice) get a plain explanation and no report.
+- **Model:** Claude Opus 5.5 at low effort for Ask (accuracy of the reading matters, and it is one short call per question). Dictate / import keep their own tiers.
+- **Rejected:** letting Claude write the answer sentence (it could state numbers not in the data); sending transactions to Claude (not needed, privacy). Only account names and today's date are sent.
+
 ---
 
 ## 2026-11-22 — Nov 2026 clean-up (Claude project thread)

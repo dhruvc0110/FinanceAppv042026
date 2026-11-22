@@ -536,6 +536,13 @@ const uploaded = await driveUploadFile(uint8Array, existingFileId || null, drive
   - **Click a field:** measures → Values; dimensions open an "Add to Rows / Columns / Filters" menu (`_rptFieldClick`, works with touch).
   - **Filter editor:** modal (`rptEditFilter`, `rptFilterApply`, `rptFilterCancel`) with a datalist of real values (`_rptDistinctValues`), month picker for Period, date picker for Date. Cancelling a just-added filter removes it.
   - **Honest empty:** a report whose only row is all null/0 says "No transactions match" instead of showing $0.
+- **Ask (step 2, Nov 2026):** Ask box at the top of the Reports page (`rptAsk`).
+  - `_rptAskClaude` calls `claude-opus-5-5` (effort `low`, `fallbacks: "default"` + beta `server-side-fallback-2026-07-01`) with **structured output** (`output_config.format` json_schema from `_rptAskSchema()`): enums for every field, measure, preset and operator. System prompt `_rptAskSystemPrompt()` is static (cached); the user turn carries today's date + the account list (`_rptAskContext`). No transactions are sent.
+  - `_rptPlanToConfig` validates and drops anything unknown, matches eq/ne text values against real values (`_rptResolveValue`, case/spacing-insensitive) and warns when a name isn't found.
+  - `answerable: false` → no report, just Claude's one-sentence reason.
+  - The answer sentence (`_rptAnswerSentence`) and "How I read it" (`_rptDescribeConfig`) are computed by code from the result/config, never by the model. Both refresh when the builder is edited.
+  - Same API key as Dictate (`AppSettings.anthropicApiKey`).
+- **Also added for Ask:** `view: 'list'` (Transactions list, `_rptRunList`, honours filters/dates/`sort`/`limit`), `amount` filter-only dimension with ops `gt`/`lt` (`_rptOpsFor`), and `config.sort` (`value_desc`/`value_asc`) + `config.limit` applied in `_rptPivot` (`allRowCount` keeps the pre-limit count).
 - **Semantic model** (hand-curated JS arrays at the top of the Reports module):
   - `RPT_DIMENSIONS`: 15 fields in 3 categories — `When` (Date, Year, Quarter, Period YYYYMM, Month name, Day of week), `Where` (Debit/Credit account name/type/grouping), `What` (Description, Source, Reconciled). Each carries an SQL expression that drops into SELECT and GROUP BY.
   - `RPT_MEASURES`: 5 fields — Sum / Avg / Max / Min of Amount, Transaction count.

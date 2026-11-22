@@ -10,6 +10,7 @@ so you don't have to hunt through the history to find them.
 |---|---|
 | `snapshot/2026-09-26` | Live version from 26 Sep 2026 (Sensitivity Analysis page added) |
 | `snapshot/2026-11-21` | Live version from 21 Nov 2026, 9:48 PM CT ("Pending" checkbox). Last version before the Nov 2026 clean-up. |
+| `snapshot/2026-11-22` | Live version from 22 Nov 2026 (clean-up + Reports with date shortcuts, charts and phone layout). Last version before the Ask box. |
 
 Before each new change goes live, a new snapshot of the current live version
 is made first and added to this table.
