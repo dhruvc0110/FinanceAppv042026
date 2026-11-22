@@ -2259,6 +2259,9 @@ function startApp() {
     document.body.appendChild(_pillWrap.firstElementChild);
     _pillInitDrag();
   }
+  // Scheduled transactions: post anything due now (before the first page
+  // renders, so the dashboard is current), then keep checking every 30s.
+  startPostingTimer();
   _historyReady = true;
   // PWA shortcut deep-link: ?startPage=...&sub=... lets long-press
   // shortcuts (declared in manifest.webmanifest) jump straight to a page.
@@ -3628,6 +3631,98 @@ function fmtDate(d) {
 
 function isoDate(d) { return String(d || '').slice(0, 10); }
 
+// ── Local time helpers ───────────────────────────────────────
+// Every "today", posting time and timestamp shown in the app uses the
+// time zone of the device running it (laptop or phone), never UTC.
+// Stored timestamps (createdAt/updatedAt) stay as standard ISO instants;
+// these helpers convert them to the device's local calendar day for display.
+function localYmd(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function localStampDay(iso) {
+  if (!iso) return '';
+  const s = String(iso);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  return isNaN(d) ? s.slice(0, 10) : localYmd(d);
+}
+function _localFileStamp() { const d = new Date(); return localYmd(d) + '-' + [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join('-'); }
+function fmtStamp(iso) { return fmtDate(localStampDay(iso)); }
+// ISO instant for local midnight at the start of a YYYY-MM-DD day (offset 0)
+// or of the following day (offset 1). Used to filter stored timestamps by local day.
+function localDayStartIso(ymd, offset) {
+  const [y, m, d] = String(ymd).split('-').map(Number);
+  return new Date(y, m - 1, d + (offset || 0)).toISOString();
+}
+// Spreadsheet dates: Excel serials and date-only strings arrive as UTC midnight;
+// SheetJS Date cells arrive as local midnight. Pick the calendar day either way.
+function ymdFromAnyDate(d) {
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0)
+    return d.toISOString().slice(0, 10);
+  return localYmd(d);
+}
+
+// ── Scheduled transaction posting run ────────────────────────
+// Setting (AppSettings key 'scheduledPostingRun'): 'start' posts a scheduled
+// (future) transaction at 12:01 AM on its date, 'end' (default) at 11:59 PM,
+// both in the device's local time.
+const POSTING_RUNS = {
+  start: { h: 0,  m: 1,  label: '12:01 AM', name: 'Start of day' },
+  end:   { h: 23, m: 59, label: '11:59 PM', name: 'End of day' },
+};
+function getPostingRun() {
+  try {
+    const r = query("SELECT value FROM AppSettings WHERE key='scheduledPostingRun'")[0];
+    return r && r.value === 'start' ? 'start' : 'end';
+  } catch (e) { return 'end'; }
+}
+function postingMomentFor(ymd) {
+  const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
+  const pr = POSTING_RUNS[getPostingRun()];
+  return new Date(y, m - 1, d, pr.h, pr.m, 0, 0);
+}
+// Latest scheduled date that is due to post right now (YYYY-MM-DD).
+function postingCutoffYmd(now) {
+  now = now || new Date();
+  const today = localYmd(now);
+  if (now >= postingMomentFor(today)) return today;
+  const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  return localYmd(y);
+}
+function setPostingRun(val) {
+  val = val === 'start' ? 'start' : 'end';
+  try {
+    db.run("INSERT INTO AppSettings (key,value,updatedAt) VALUES ('scheduledPostingRun',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updatedAt=excluded.updatedAt",
+      [val, new Date().toISOString()]);
+    syncAfterWrite();
+    const moved = migrateFutureTransactions();
+    showToast('Scheduled transactions now post at ' + POSTING_RUNS[val].label + ' on their date'
+      + (moved ? ' (' + moved + ' posted just now)' : ''), 3200);
+  } catch (e) { alert('Could not save setting: ' + e.message); }
+  _renderSettingsPage();
+}
+// Check every 30 seconds while the app is open, so items post at their
+// posting time even if nobody refreshes or opens the Transactions page.
+let _postingTimerId = null;
+function startPostingTimer() {
+  if (_postingTimerId) return;
+  const tick = () => {
+    if (!db) return;
+    let moved = 0;
+    try { moved = migrateFutureTransactions(); } catch (e) { console.warn('posting run:', e.message); return; }
+    if (!moved) return;
+    showToast(moved + ' scheduled transaction' + (moved === 1 ? '' : 's') + ' posted', 3200);
+    // Refresh the dashboard if it is in view and the user isn't typing.
+    // Other pages pick the change up the next time they are opened.
+    const ae = document.activeElement;
+    const typing = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+    if (!typing && currentPage === 'dashboard') { try { navigate('dashboard'); } catch (e) {} }
+  };
+  tick();
+  _postingTimerId = setInterval(tick, 30000);
+}
+
 function _txSourceBadge(src) {
   const s = src || 'Manual';
   const map = {
@@ -3650,8 +3745,8 @@ function buildTxWhere(f) {
   if (f.crId)        parts.push(`t.crAccountId = '${f.crId}'`);
   if (f.desc)        parts.push(`t.description LIKE '%${f.desc.replace(/'/g, "''")}%'`);
   if (f.source)      parts.push(`t.importSource = '${f.source.replace(/'/g,"''")}'`);
-  if (f.createdFrom) parts.push(`substr(t.createdAt,1,10) >= '${f.createdFrom}'`);
-  if (f.createdTo)   parts.push(`substr(t.createdAt,1,10) <= '${f.createdTo}'`);
+  if (f.createdFrom) parts.push(`t.createdAt >= '${localDayStartIso(f.createdFrom)}'`);
+  if (f.createdTo)   parts.push(`t.createdAt < '${localDayStartIso(f.createdTo, 1)}'`);
   if (f.pending === 'yes') parts.push(`COALESCE(t.isPending,0) = 1`);
   if (f.pending === 'no')  parts.push(`COALESCE(t.isPending,0) = 0`);
   return parts.length ? 'WHERE ' + parts.join(' AND ') : '';
@@ -3795,7 +3890,7 @@ function _renderTxPage(container) {
       <tr class="border-t border-slate-100 hover:bg-slate-50 group">
         <td data-label="Select" class="px-3 py-2 text-center"><input type="checkbox" ${_txBulkSel.has(r.id) ? 'checked' : ''} onchange="txBulkToggle('${r.id}', this.checked)" class="w-4 h-4 cursor-pointer accent-slate-700"></td>
         <td data-label="Date" class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-        <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
+        <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtStamp(r.createdAt)}</td>
         <td data-label="Description" class="px-3 py-2 text-sm text-slate-800 max-w-xs">
           <div class="flex items-center gap-1">
             ${isDup ? `<span onclick="navigate('duplicates')" title="Possible duplicate" class="text-orange-400 cursor-pointer flex-shrink-0">&#9873;</span>` : ''}
@@ -4664,7 +4759,7 @@ function txSaveForm() {
       if (!isFTEdit) db.run('UPDATE "Transaction" SET isPending=? WHERE id=?', [isPend, editId]);
     } else {
       // _txSaveToFuture is set by ftShowNewForm() for the Future Transactions page
-      const isFuture = (typeof _txSaveToFuture !== 'undefined' && _txSaveToFuture) || date > now.slice(0,10);
+      const isFuture = (typeof _txSaveToFuture !== 'undefined' && _txSaveToFuture) || date > localYmd();
       const id       = genId();
       if (isFuture) {
         db.run(
@@ -4692,9 +4787,19 @@ function txSaveForm() {
 
 // ── On-load background tasks ───────────────────────────────
 function migrateFutureTransactions() {
-  const today = new Date().toISOString().slice(0,10);
-  const futures = query(`SELECT * FROM FutureTransaction WHERE substr(trxDate,1,10) <= '${today}'`);
-  if (!futures.length) return;
+  // Scheduled transactions and future-dated dividends (importSource 'Scheduled'
+  // / 'Equity', or legacy NULL which has always posted as 'Scheduled') follow
+  // the posting-run setting: 12:01 AM or 11:59 PM on their date (Settings ›
+  // Scheduled Posting). Everything else (Recurring, Repeatable, Dictate, excel)
+  // keeps the original rule: posts once its date arrives. All in device local time.
+  const cutoff = postingCutoffYmd();
+  const today  = localYmd();
+  const futures = query(`SELECT * FROM FutureTransaction WHERE
+      (  (importSource IS NULL OR importSource IN ('Scheduled','Equity'))
+         AND substr(trxDate,1,10) <= '${cutoff}')
+   OR (  importSource IS NOT NULL AND importSource NOT IN ('Scheduled','Equity')
+         AND substr(trxDate,1,10) <= '${today}')`);
+  if (!futures.length) return 0;
   const now = new Date().toISOString();
   for (const ft of futures) {
     // Preserve the FT row's importSource so the badge on the Transaction
@@ -4714,6 +4819,7 @@ function migrateFutureTransactions() {
     db.run('DELETE FROM FutureTransaction WHERE id=?', [ft.id]);
   }
   syncAfterWrite();
+  return futures.length;
 }
 
 function generateRepeatables() {
@@ -4721,7 +4827,7 @@ function generateRepeatables() {
   const year    = parseInt(cp.slice(0,4));
   const month   = parseInt(cp.slice(4,6));
   const now     = new Date().toISOString();
-  const today   = now.slice(0,10);
+  const today   = localYmd();
   const reps    = query(`SELECT * FROM RepeatableTransaction WHERE status='ACTIVE' AND isAutoGenerate=1 AND dayOfMonth IS NOT NULL`);
   let didWrite  = false;
 
@@ -7117,6 +7223,7 @@ function _renderSettingsPage(container) {
       { id:'cctemplates',   label:'Credit Card Templates' },
       { id:'notifications', label:'Notifications' },
       { id:'defaultaccounts', label:'Default Accounts' },
+      { id:'postingrun',    label:'Scheduled Posting' },
     ]},
     { id:'viewsettings',    label:'View Settings',   tabs:[
       { id:'display',    label:'Display' },
@@ -7544,7 +7651,7 @@ function _renderSettingsPage(container) {
       <tr class="border-t border-slate-100 hover:bg-slate-50">
         <td class="px-3 py-2 text-sm font-medium text-slate-800 align-top w-48">${escHtml(n.title||'(untitled)')}</td>
         <td class="px-3 py-2 text-sm text-slate-500 whitespace-pre-wrap">${escHtml(n.body||'')}</td>
-        <td class="px-3 py-2 text-xs text-slate-400 whitespace-nowrap align-top">${fmtDate(n.updatedAt)}</td>
+        <td class="px-3 py-2 text-xs text-slate-400 whitespace-nowrap align-top">${fmtStamp(n.updatedAt)}</td>
         <td class="px-3 py-2 text-right align-top whitespace-nowrap">
           <button onclick="noteShowEdit('${n.id}')" class="text-xs text-slate-400 hover:text-slate-800 mr-2">Edit</button>
           <button onclick="noteDelete('${n.id}')" class="text-xs text-red-400 hover:text-red-600">Del</button>
@@ -7655,6 +7762,29 @@ function _renderSettingsPage(container) {
 
   // ── Render ────────────────────────────────────────────────
   // ── DISPLAY TAB ───────────────────────────────────────────
+  function postingRunTab() {
+    const cur = getPostingRun();
+    const tz  = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'this device').replace(/_/g, ' ');
+    const opt = (id) => {
+      const pr = POSTING_RUNS[id], on = cur === id;
+      return `<label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer ${on ? 'border-slate-800 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'}">
+        <input type="radio" name="postingRun" value="${id}" ${on ? 'checked' : ''} onchange="setPostingRun('${id}')" class="mt-1 accent-slate-800">
+        <span><span class="text-sm font-medium text-slate-800">${pr.name} &middot; ${pr.label}</span>${id === 'end' ? ' <span class="text-xs text-slate-400">(default)</span>' : ''}<br>
+        <span class="text-xs text-slate-500">${id === 'start'
+          ? 'A scheduled transaction posts at 12:01 AM on its date, so it counts for the whole day.'
+          : 'A scheduled transaction posts at 11:59 PM on its date, so it stays in Future Transactions until the day is over.'}</span></span>
+      </label>`;
+    };
+    return `<div class="space-y-4 max-w-md">
+      <div>
+        <h3 class="text-sm font-semibold text-slate-700 mb-1">When scheduled transactions post</h3>
+        <p class="text-xs text-slate-500 mb-3">Applies to scheduled transactions and future-dated dividends. Other future items (recurring, repeatable, dictated, imported) still post as soon as their date arrives. Times use this device's own clock and time zone (${escHtml(tz)}).</p>
+        <div class="space-y-2">${opt('end')}${opt('start')}</div>
+      </div>
+      <p class="text-xs text-slate-400">The app checks every 30 seconds while it is open, and again each time it is opened, so anything that came due while it was closed posts on the next open.</p>
+    </div>`;
+  }
+
   function displayTab() {
     const viewDesc = {
       auto:    'Adapts to screen size: cards on phone (<768px), compact on tablet (768–1023px), full table on desktop (≥1024px).',
@@ -8007,6 +8137,7 @@ function _renderSettingsPage(container) {
   else if (settingsTab==='cctemplates')   tabContent = ccTemplatesTab();
   else if (settingsTab==='notifications') tabContent = notificationsTab();
   else if (settingsTab==='defaultaccounts') tabContent = _defAcctTab();
+  else if (settingsTab==='postingrun')    tabContent = postingRunTab();
   else if (settingsTab==='about')         tabContent = aboutTab();
 
   container.innerHTML = `
@@ -8565,8 +8696,8 @@ async function aboutFetchApiUsage() {
 
   // Build date range: first day of current month to today
   const now   = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-  const end   = now.toISOString().slice(0,10);
+  const start = localYmd(new Date(now.getFullYear(), now.getMonth(), 1));
+  const end   = localYmd(now);
 
   try {
     const res = await fetch(`https://api.anthropic.com/v1/usage?start_date=${start}&end_date=${end}`, {
@@ -9540,7 +9671,7 @@ function xlValidate(id, headers, rows) {
       d = new Date(String(val).trim());
     }
     if (isNaN(d.getTime())) { errors.push({row:rowNum, field, msg:`Invalid date "${val}"`}); return ''; }
-    return d.toISOString().slice(0,10);
+    return ymdFromAnyDate(d);
   };
 
   // Helper: strip display portion — user may select "FOOD · Groceries" from dropdown
@@ -10159,8 +10290,8 @@ function _renderFTPage(container) {
     if (f.drId)        p.push(`t.drAccountId='${f.drId}'`);
     if (f.crId)        p.push(`t.crAccountId='${f.crId}'`);
     if (f.desc)        p.push(`t.description LIKE '%${f.desc.replace(/'/g,"''")}%'`);
-    if (f.createdFrom) p.push(`substr(t.createdAt,1,10)>='${f.createdFrom}'`);
-    if (f.createdTo)   p.push(`substr(t.createdAt,1,10)<='${f.createdTo}'`);
+    if (f.createdFrom) p.push(`t.createdAt>='${localDayStartIso(f.createdFrom)}'`);
+    if (f.createdTo)   p.push(`t.createdAt<'${localDayStartIso(f.createdTo, 1)}'`);
     return p.length ? 'WHERE '+p.join(' AND ') : '';
   }
 
@@ -10193,7 +10324,7 @@ function _renderFTPage(container) {
     const crLabel = escHtml((r.crName||'')+(r.crSubName?' · '+r.crSubName:''));
     return `<tr class="border-t border-slate-100 hover:bg-slate-50 group">
       <td data-label="Date" class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(r.trxDate)}</td>
-      <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtDate((r.createdAt||'').slice(0,10))}</td>
+      <td data-label="Created" class="tablet-hide px-3 py-2 text-sm text-slate-400 whitespace-nowrap">${fmtStamp(r.createdAt)}</td>
       <td data-label="Description" class="px-3 py-2 text-sm text-slate-800 max-w-xs truncate">${escHtml(r.description)}</td>
       <td data-label="Amount" class="px-3 py-2 text-sm font-medium text-slate-800 text-right whitespace-nowrap">${fmtCurrency(r.amount,2)}</td>
       <td data-label="DR Account" class="px-3 py-2 text-sm text-slate-600 max-w-[150px] truncate" title="${drLabel}">${drLabel}</td>
@@ -10214,7 +10345,7 @@ function _renderFTPage(container) {
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-xl font-bold text-slate-900">Future Transactions</h1>
-          <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'}</p>
+          <p class="text-sm text-slate-500">${total.toLocaleString()} record${total===1?'':'s'} &middot; scheduled items and dividends post at ${POSTING_RUNS[getPostingRun()].label} on their date <button onclick="navigate('settings');settingsGoTab('postingrun')" class="text-blue-600 hover:underline text-xs ml-1">Change</button></p>
         </div>
         <div class="flex items-center gap-2">
           <button onclick="ftToggleFilters()"
@@ -10914,7 +11045,7 @@ function _renderITPage(container) {
           <div class="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
             <div>
               <span class="text-sm font-semibold text-slate-800">${escHtml(batch.detectedCardName||batch.tplName||'Unknown Card')}</span>
-              <span class="text-xs text-slate-400 ml-2">${fmtDate(batch.createdAt)} · ${batch.rowCount} transactions</span>
+              <span class="text-xs text-slate-400 ml-2">${fmtStamp(batch.createdAt)} · ${batch.rowCount} transactions</span>
             </div>
             <button onclick="itApproveAll('${batch.id}')" ${(allHaveDr && drafts.every(d=>d.crAccountId))?'':'disabled title="All rows need DR and CR accounts"'}
               class="text-xs font-medium px-3 py-1.5 rounded bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -10946,7 +11077,7 @@ function _renderITPage(container) {
   } else if (_itTab === 'log') {
     const logRows = logs.map(l => `
       <tr class="border-t border-slate-100">
-        <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtDate(l.importedAt)}</td>
+        <td class="px-3 py-2 text-sm text-slate-600 whitespace-nowrap">${fmtStamp(l.importedAt)}</td>
         <td class="px-3 py-2 text-sm text-slate-700 font-medium">${escHtml(l.cardName||'Unknown')}</td>
         <td class="px-3 py-2 text-sm text-slate-500 text-center">${l.rowCount}</td>
         <td class="px-3 py-2 text-sm text-green-700 text-center font-medium">${l.approvedCount}</td>
@@ -14681,7 +14812,7 @@ function _eqRenderSplitHistory(ticker) {
   const rows = query('SELECT id, num, den, createdAt FROM EquitySplit WHERE ticker=? ORDER BY createdAt DESC', [ticker]);
   box.innerHTML = (rows.length
     ? '<div class="font-medium text-slate-700 mb-1">Recorded splits</div>' + rows.map(r =>
-        `<div class="flex items-center justify-between py-0.5"><span>${+r.num}:${+r.den} on ${fmtDate(r.createdAt)}</span>
+        `<div class="flex items-center justify-between py-0.5"><span>${+r.num}:${+r.den} on ${fmtStamp(r.createdAt)}</span>
           <button onclick="eqReverseSplit('${escHtml(r.id)}')" class="border border-red-200 hover:border-red-400 rounded px-2 py-0.5 text-red-500 hover:text-red-700">Reverse</button></div>`).join('')
     : '<div>No recorded splits for this ticker.</div>')
     + '<div class="mt-1 text-slate-400">Splits made before this update weren\'t recorded. To undo one, enter the inverse ratio above (for example 1:2 to undo a 2:1).</div>';
@@ -15074,13 +15205,13 @@ function importHandleFile(input) {
 
         function parseImportDate(val) {
           if (!val && val !== 0) return null;
-          if (val instanceof Date) return val.toISOString().slice(0,10);
+          if (val instanceof Date) return ymdFromAnyDate(val);
           const s = String(val).trim();
           if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
           const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
           if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
           const d = new Date(s);
-          return isNaN(d) ? null : d.toISOString().slice(0,10);
+          return isNaN(d) ? null : ymdFromAnyDate(d);
         }
 
         let goodCount=0, warnRows=[];
@@ -15177,15 +15308,15 @@ function importRun() {
 
   function parseImportDate(val) {
     if (!val && val !== 0) return null;
-    if (val instanceof Date) return val.toISOString().slice(0,10);
+    if (val instanceof Date) return ymdFromAnyDate(val);
     const s = String(val).trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
-    const d = new Date(s); return isNaN(d) ? null : d.toISOString().slice(0,10);
+    const d = new Date(s); return isNaN(d) ? null : ymdFromAnyDate(d);
   }
 
-  const today = new Date().toISOString().slice(0,10);
+  const today = localYmd();
   let inserted=0, skipped=0;
   const now = new Date().toISOString();
 
@@ -18208,7 +18339,7 @@ function rptDrillExportCsv() {
   const blob  = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url   = URL.createObjectURL(blob);
   const a     = document.createElement('a');
-  a.href = url; a.download = 'finapp-drilldown-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
+  a.href = url; a.download = 'finapp-drilldown-' + _localFileStamp() + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -18245,7 +18376,7 @@ function rptExportCsv() {
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = 'finapp-report-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
+  a.href = url; a.download = 'finapp-report-' + _localFileStamp() + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
