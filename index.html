@@ -346,9 +346,9 @@ body.dark-mode .bn-dot { background:#60a5fa; }
         <span class="nav-label">Documents</span>
       </button>
 
-      <button onclick="navigate('reports')" data-page="reports" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
-        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        <span class="nav-label">Reports</span>
+      <button onclick="navigate('ask')" data-page="ask" class="nav-btn w-full flex items-center gap-3 px-2 py-2 rounded-md text-sm text-slate-300 hover:bg-slate-700 hover:text-white">
+        <svg class="flex-shrink-0" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="nav-label">Ask</span>
       </button>
 
       <!-- ── TRANSACT ── -->
@@ -2439,7 +2439,7 @@ function _floatingPillHtml() {
       </svg>
     </button>
     <div style="width:1px;background:rgba(255,255,255,0.35);"></div>
-    <button onclick="navigate('reports')" title="Reports"
+    <button onclick="navigate('ask')" title="Pinned answers"
       style="width:3rem;height:3rem;background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;outline:none;transition:background 0.15s;"
       onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2555,6 +2555,8 @@ function buildBalanceMap(periods) {
 // NAVIGATION
 // ════════════════════════════════════════════════════════════
 function navigate(page) {
+  if (page === 'reports') page = 'ask';   // Reports now lives inside Ask
+  if (typeof _askUndock === 'function') _askUndock();
   currentPage = page;
   activeCharts.forEach(c => { try { c.destroy(); } catch(e){} });
   activeCharts = [];
@@ -2569,7 +2571,7 @@ function navigate(page) {
   else if (page === 'review-equity')        renderReviewEquity(container);
   else if (page === 'manual-assets')        renderManualAssets(container);
   else if (page === 'documents')            renderDocuments(container);
-  else if (page === 'reports')              renderReports(container);
+  else if (page === 'ask')                  renderAskPage(container);
   // ── Transact pages ───────────────────────────────────────
   else if (page === 'transactions')         renderTransactions(container);
   else if (page === 'budget')               renderBudget(container);
@@ -8642,6 +8644,7 @@ function aboutTab() {
           <tr class="border-b border-slate-100"><td class="py-1 pr-2 font-semibold">Ask</td><td class="py-1 pr-2">Ask box at the top of Reports. Claude only fills in a report setup from the fixed fields via a JSON schema; the app validates it, matches names against real values, runs it, and writes the one-line answer itself. Shows "How I read it". Also added: Transactions list view, Amount filter (more than / less than), top-N sorting.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Ask chat</td><td class="py-1 pr-2">The Ask button opens a chat window (move, resize, minimize; full screen on phone). Follow-ups ("now just restaurants", "show it as a pie"), clarifying questions with tap-to-answer options, chart type per answer (bar / line / pie / table), Open in Reports, Save as report. Chart type picker on the Reports page too.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Ask as an analyst (phase 1)</td><td class="py-1 pr-2">Ask works out answers step by step: it runs the app's calculations (reports, period comparisons, monthly averages, transaction look-ups, name look-ups), checks the results, and writes a short answer with what it assumed, how it worked it out, and suggested follow-ups. Every number in the answer is checked against the calculations.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Reports folded into Ask</td><td class="py-1 pr-2">The Reports page is retired. Ask is now a page in the sidebar (same conversation as the pop-up). Saved reports became Pinned answers (rerun on the latest data; rename, remove). Each answer has Edit: the full report builder (dates, filters, rows, columns, values), chart / table / transactions, tap a bar or row for its transactions, Export CSV.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Ask as an analyst (phase 2)</td><td class="py-1 pr-2">Balances and net worth, budget vs actual, cash flow, investments vs a benchmark (for example QQQ vs the S&amp;P 500), and remembered definitions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">Planned</span></td></tr>
         </tbody>
       </table>
@@ -17403,16 +17406,6 @@ function _rptRenderAnswer() {
     <div style="font-size:0.7rem;color:#94a3b8;margin-top:0.35rem;">Not quite right? Change the fields below, or rephrase. The numbers always come from your data, not from AI.</div>`;
 }
 
-// The tray's Ask button and the Reports page's Ask box both go to the Ask chat.
-function rptOpenAsk() { askChatToggle(); }
-function rptAsk(questionArg) {
-  const input = document.getElementById('rptAskInput');
-  const question = String(questionArg || (input ? input.value : '') || '').trim();
-  if (!question) { askChatOpen(); return; }
-  if (input) input.value = '';
-  askSend(question);
-}
-
 // ════════════════════════════════════════════════════════════
 // ASK CHAT — floating, resizable conversation window
 // ════════════════════════════════════════════════════════════
@@ -17444,6 +17437,31 @@ const ASK_CSS = `
   .ask-head .ask-title { font-size:0.9rem;font-weight:600;flex:1;display:flex;align-items:center;gap:0.45rem; }
   .ask-hbtn { background:none;border:none;color:rgba(255,255,255,0.75);cursor:pointer;padding:0.35rem;border-radius:6px;display:flex; }
   .ask-hbtn:hover { background:rgba(255,255,255,0.12);color:#fff; }
+  .ask-body { flex:1;display:flex;min-height:0;position:relative; }
+  .ask-main { flex:1;display:flex;flex-direction:column;min-width:0;min-height:0; }
+  .ask-pins { display:none;position:absolute;inset:0;z-index:2;background:#fff;flex-direction:column;overflow:hidden; }
+  #askChat.pins-open .ask-pins { display:flex; }
+  #askChat.wide .ask-pins { display:flex;position:static;width:250px;flex-shrink:0;border-right:1px solid #e2e8f0; }
+  #askChat.wide .ask-pins-x { display:none; }
+  .ask-pins-head { display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.75rem;font-size:0.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #f1f5f9; }
+  .ask-pins-x { background:none;border:none;font-size:1.4rem;line-height:1;color:#94a3b8;cursor:pointer;padding:0 0.2rem; }
+  .ask-pins-list { overflow-y:auto;padding:0.35rem;flex:1; }
+  .ask-pin { display:flex;align-items:center;gap:0.1rem;border-radius:8px; }
+  .ask-pin:hover { background:#f1f5f9; }
+  .ask-pin-name { flex:1;min-width:0;text-align:left;background:none;border:none;padding:0.5rem 0.5rem;font-size:0.84rem;color:#0f172a;cursor:pointer;overflow-wrap:anywhere; }
+  .ask-pin-act { background:none;border:none;color:#94a3b8;cursor:pointer;padding:0.4rem;border-radius:6px;display:flex; }
+  .ask-pin-act:hover { color:#0f172a;background:#e2e8f0; }
+  .ask-pins-empty { padding:1rem 0.85rem;font-size:0.8rem;color:#64748b;line-height:1.45; }
+  .ask-pinbtn { position:relative; }
+  .ask-pincount { position:absolute;top:0;right:-2px;font-size:0.6rem;font-weight:700;color:#fff;min-width:0.9rem; }
+  .ask-pincount:empty { display:none; }
+  #askChat.wide .ask-pinbtn { display:none; }
+  #askChat.docked { position:relative;left:auto !important;top:auto !important;width:100% !important;height:calc(100vh - 7.5rem);height:calc(100dvh - 7.5rem);min-height:460px;
+    resize:none;max-width:none;max-height:none;box-shadow:0 1px 3px rgba(15,23,42,0.08);transform:none;z-index:auto;transition:none; }
+  #askChat.docked .ask-head { cursor:default; }
+  #askChat.docked .ask-only-desk, #askChat.docked .ask-only-float { display:none; }
+  .ask-page-host { max-width:1200px;margin:0 auto; }
+  @media (max-width: 640px) { #askChat.docked { height:calc(100vh - 10rem);height:calc(100dvh - 10rem);min-height:380px; } }
   .ask-msgs { flex:1;overflow-y:auto;padding:0.75rem;display:flex;flex-direction:column;gap:0.6rem;background:#f8fafc;-webkit-overflow-scrolling:touch; }
   .ask-u { align-self:flex-end;max-width:85%;background:#0f172a;color:#fff;padding:0.5rem 0.75rem;border-radius:14px 14px 4px 14px;font-size:0.85rem;white-space:pre-wrap;overflow-wrap:anywhere; }
   .ask-a { align-self:stretch;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:0.65rem 0.75rem;font-size:0.85rem;color:#1e293b; }
@@ -17518,21 +17536,30 @@ function _askMount() {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Ask
       </span>
+      <button class="ask-hbtn ask-pinbtn" onclick="askTogglePins()" title="Pinned answers" aria-label="Pinned answers">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V6h6v4.76l2 3.24H7z"/><path d="M8 2h8"/></svg>
+        <span class="ask-pincount" id="askPinCount"></span>
+      </button>
       <button class="ask-hbtn" onclick="askNewChat()" title="New chat" aria-label="New chat">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
       </button>
       <button class="ask-hbtn ask-only-desk" id="askBigBtn" onclick="askToggleBig()" title="Make bigger" aria-label="Make bigger">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
-      <button class="ask-hbtn" onclick="askChatClose()" title="Minimize" aria-label="Minimize">
+      <button class="ask-hbtn ask-only-float" onclick="askChatClose()" title="Minimize" aria-label="Minimize">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
       </button>
     </div>
-    <div class="ask-msgs" id="askMsgs"></div>
-    <form class="ask-foot" onsubmit="event.preventDefault(); askSend();">
-      <textarea id="askInput" rows="1" placeholder="Ask about your money…" enterkeyhint="send" aria-label="Your question"></textarea>
-      <button class="ask-send" id="askSendBtn" type="submit">Send</button>
-    </form>`;
+    <div class="ask-body">
+      <aside class="ask-pins" id="askPins" aria-label="Pinned answers"></aside>
+      <div class="ask-main">
+        <div class="ask-msgs" id="askMsgs"></div>
+        <form class="ask-foot" onsubmit="event.preventDefault(); askSend();">
+          <textarea id="askInput" rows="1" placeholder="Ask about your money…" enterkeyhint="send" aria-label="Your question"></textarea>
+          <button class="ask-send" id="askSendBtn" type="submit">Send</button>
+        </form>
+      </div>
+    </div>`;
   document.body.appendChild(el);
   const ta = el.querySelector('#askInput');
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); askSend(); } });
@@ -17540,7 +17567,8 @@ function _askMount() {
   _askInitDrag(el);
   if (window.ResizeObserver) {
     new ResizeObserver(() => {
-      if (el.classList.contains('open') && !el.classList.contains('phone') && !el.classList.contains('morph') && !el._big) _askRememberBox(el);
+      if (el.classList.contains('open') && !el.classList.contains('phone') && !el.classList.contains('morph') && !el.classList.contains('docked') && !el._big) _askRememberBox(el);
+      if (el.classList.contains('docked')) _askSetWide(el);
     }).observe(el);
   }
   window.addEventListener('resize', () => { if (el.classList.contains('open')) _askPlace(el); });
@@ -17555,6 +17583,7 @@ function _askRememberBox(el) {
 }
 // Size and position: phone = full screen; otherwise the remembered box, kept on screen.
 function _askPlace(el) {
+  if (el.classList.contains('docked')) { _askSetWide(el); return; }
   if (_askIsPhone()) { el.classList.add('phone'); return; }
   el.classList.remove('phone');
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -17576,7 +17605,7 @@ function _askInitDrag(el) {
   const head = el.querySelector('#askHead');
   let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
   head.addEventListener('pointerdown', e => {
-    if (e.target.closest('button') || el.classList.contains('phone')) return;
+    if (e.target.closest('button') || el.classList.contains('phone') || el.classList.contains('docked')) return;
     dragging = true; sx = e.clientX; sy = e.clientY;
     const r = el.getBoundingClientRect(); ox = r.left; oy = r.top;
     try { head.setPointerCapture(e.pointerId); } catch (_) {}
@@ -17609,6 +17638,7 @@ function askChatOpen() {
   el.classList.add('open', 'morph');
   _askPlace(el);
   el.style.transformOrigin = _askOriginFor(el);
+  _askRenderPins();
   _askRender();
   void el.offsetWidth;          // apply the shrunken state before animating
   el.classList.remove('morph');
@@ -17616,12 +17646,16 @@ function askChatOpen() {
 }
 function askChatClose() {
   const el = document.getElementById('askChat');
-  if (!el || !el.classList.contains('open')) return;
+  if (!el || !el.classList.contains('open') || el.classList.contains('docked')) return;
   el.style.transformOrigin = _askOriginFor(el);
   el.classList.add('morph');
   el._closeT = setTimeout(() => { el.classList.remove('open', 'morph'); _askDestroyCharts(); }, 230);
 }
-function askChatToggle() { _askIsOpen() ? askChatClose() : askChatOpen(); }
+function askChatToggle() {
+  const el = document.getElementById('askChat');
+  if (el && el.classList.contains('docked')) { _askFocus(); return; }
+  _askIsOpen() ? askChatClose() : askChatOpen();
+}
 function _askFocus() {
   if ('ontouchstart' in window) return;   // don't pop the phone keyboard over the answer
   setTimeout(() => { const i = document.getElementById('askInput'); if (i) try { i.focus({ preventScroll: true }); } catch (_) { i.focus(); } }, 60);
@@ -17693,8 +17727,8 @@ function _askAnalystCardHtml(m) {
         tools += `<div class="ask-seg" role="group" aria-label="Chart type">${choices.map(([id, l]) => `<button class="${cur === id ? 'on' : ''}" onclick="askSetViz('${m.id}','${id}')">${l}</button>`).join('')}</div>`;
       }
     }
-    tools += `<button class="ask-btn" onclick="askOpenInReports('${m.id}')">Open in Reports</button>
-      <button class="ask-btn" onclick="askSaveReport('${m.id}')">${m.savedAs ? 'Saved ✓' : 'Save as report'}</button>`;
+    tools += `<button class="ask-btn" onclick="askEdit('${m.id}')" title="Change dates, filters and breakdown, see it full size, export">Edit</button>
+      ${_askPinBtnHtml(m)}`;
   } else if (m.cmp) viz = _askCmpHtml(m.cmp);
   const steps = m.steps || [];
   return `<div class="ask-a" id="askCard-${m.id}">
@@ -17733,8 +17767,8 @@ function _askCardHtml(m) {
     ${(m.warnings || []).map(w => `<div class="ask-warn">⚠ ${escHtml(w)}</div>`).join('')}
     <div class="ask-acts">
       ${hasRows && !empty ? `<div class="ask-seg" role="group" aria-label="Chart type">${vizChoices.map(([id, l]) => `<button class="${cur === id ? 'on' : ''}" onclick="askSetViz('${m.id}','${id}')">${l}</button>`).join('')}</div>` : ''}
-      <button class="ask-btn" onclick="askOpenInReports('${m.id}')">Open in Reports</button>
-      <button class="ask-btn" onclick="askSaveReport('${m.id}')">${m.savedAs ? 'Saved ✓' : 'Save as report'}</button>
+      <button class="ask-btn" onclick="askEdit('${m.id}')" title="Change dates, filters and breakdown, see it full size, export">Edit</button>
+      ${_askPinBtnHtml(m)}
     </div>
   </div>`;
 }
@@ -17746,7 +17780,7 @@ function _askVizHtml(m, res) {
     const more = res.count - rows.length;
     return `<table class="ask-tbl"><thead><tr><th>Date</th><th>Description</th><th class="n">Amount</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td style="white-space:nowrap;">${escHtml(String(r.trxDate || '').slice(0, 10))}</td><td>${escHtml(r.description || r.dr_name || '')}</td><td class="n">${escHtml(money(r.amount))}</td></tr>`).join('')}
-      </tbody></table>${more > 0 ? `<div class="ask-small">${more.toLocaleString()} more. Open in Reports to see them all.</div>` : ''}`;
+      </tbody></table>${more > 0 ? `<div class="ask-small">${more.toLocaleString()} more. Tap Edit to see them all.</div>` : ''}`;
   }
   if (!(m.cfg.rows || []).length) return '';
   if (m.cfg.view === 'table') {
@@ -17756,7 +17790,7 @@ function _askVizHtml(m, res) {
     const label = m.cfg.rows.map(r => _rptDim(r.dimensionId).label).join(' / ');
     return `<table class="ask-tbl"><thead><tr><th>${escHtml(label)}</th><th class="n">${escHtml(res.totalsValid && (m.cfg.cols || []).length ? 'Total' : res.measure.label)}</th></tr></thead><tbody>
       ${keys.map(rk => `<tr><td>${escHtml(rk)}</td><td class="n">${escHtml(fmt(val(rk)))}</td></tr>`).join('')}
-      </tbody></table>${res.rowKeys.length > keys.length ? `<div class="ask-small">${res.rowKeys.length - keys.length} more rows. Open in Reports to see them all.</div>` : ''}`;
+      </tbody></table>${res.rowKeys.length > keys.length ? `<div class="ask-small">${res.rowKeys.length - keys.length} more rows. Tap Edit to see them all.</div>` : ''}`;
   }
   return `<div style="position:relative;width:100%;height:220px;margin-top:0.5rem;"><canvas id="askCv-${m.id}" role="img" aria-label="Chart"></canvas></div>
     <div class="ask-small" id="askCvNote-${m.id}"></div>`;
@@ -17771,7 +17805,7 @@ function _askDrawCard(m) {
     const out = _rptWith(m.cfg, res, () => _rptDrawChart(cv, cv.parentElement, res, { compact: true, maxRows: 10 }));
     _askCharts[m.id] = out.chart;
     const n = document.getElementById('askCvNote-' + m.id);
-    if (n) n.textContent = (out.model.note || '').replace('Switch to Table to see them all.', 'Open in Reports to see them all.');
+    if (n) n.textContent = (out.model.note || '').replace('Switch to Table to see them all.', 'Tap Edit to see them all.');
   } catch (e) { console.warn('Ask chart:', e.message); }
 }
 
@@ -17793,31 +17827,189 @@ function askSetViz(id, t) {
   _askSave();
   _askRerenderCard(m);
 }
-function askOpenInReports(id) {
-  const m = _askFind(id); if (!m || !m.cfg) return;
-  _rptConfig = JSON.parse(JSON.stringify(m.cfg));
-  _rptSavedId = null; _rptSavedName = '';
-  _rptAnswer = { question: m.question, note: m.note || (m.assumptions || []).join(' '), warnings: m.warnings || [], fromChat: true };
-  if (typeof currentPage !== 'undefined' && currentPage === 'reports' && document.getElementById('rptResult')) {
-    _rptRenderZones(); _rptRunReport(); _rptRefreshSavedDropdown();
-  } else navigate('reports');
-  if (_askIsPhone()) askChatClose();
+// ── Pinned answers ───────────────────────────────────────────
+// Pins are rows in the SavedReport table (the same table the old Reports
+// page saved to, so earlier saved reports show up as pins). A pin keeps
+// the calculation, not the numbers: opening it reruns on today's data.
+function _askPinList() {
+  try { return query(`SELECT id, name, config, updatedAt FROM SavedReport ORDER BY updatedAt DESC LIMIT 200`); } catch (_) { return []; }
+}
+function _askPinBtnHtml(m) {
+  const changed = m.pinnedId && m.pinnedCfg && m.pinnedCfg !== JSON.stringify(m.cfg);
+  if (changed) return `<button class="ask-btn" onclick="askPinUpdate('${m.id}')" title="Save these changes to the pin">Update pin</button>`;
+  return `<button class="ask-btn" onclick="askSaveReport('${m.id}')" ${m.pinnedId ? 'title="Pinned. Tap to pin a copy under another name."' : ''}>${m.pinnedId ? 'Pinned ✓' : 'Pin'}</button>`;
 }
 function askSaveReport(id) {
   const m = _askFind(id); if (!m || !m.cfg) return;
-  const name = prompt('Name this report:', m.savedAs || String(m.question || '').replace(/\?\s*$/, '').slice(0, 60));
+  const name = prompt('Name this pin:', m.pinnedId ? (m.savedAs || '') + ' (copy)' : String(m.question || '').replace(/\?\s*$/, '').slice(0, 60));
   if (!name || !name.trim()) return;
   try {
-    const now = new Date().toISOString();
+    const now = new Date().toISOString(), pid = genId();
     db.run(`INSERT INTO SavedReport (id, name, config, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`,
-      [genId(), name.trim(), JSON.stringify(m.cfg), now, now]);
+      [pid, name.trim(), JSON.stringify(m.cfg), now, now]);
     syncAfterWrite();
-    m.savedAs = name.trim();
+    m.savedAs = name.trim(); m.pinnedId = pid; m.pinnedCfg = JSON.stringify(m.cfg);
     _askSave();
-    _rptRefreshSavedDropdown();
     _askRerenderCard(m);
-    showToast('Saved "' + name.trim() + '". It\'s under Saved reports on the Reports page.');
-  } catch (e) { alert('Save failed: ' + e.message); }
+    _askRenderPins();
+    showToast('Pinned "' + name.trim() + '". Find it under the pin button in Ask.');
+  } catch (e) { alert('Pin failed: ' + e.message); }
+}
+function askPinUpdate(id) {
+  const m = _askFind(id); if (!m || !m.cfg || !m.pinnedId) return;
+  try {
+    db.run(`UPDATE SavedReport SET config = ?, updatedAt = ? WHERE id = ?`, [JSON.stringify(m.cfg), new Date().toISOString(), m.pinnedId]);
+    syncAfterWrite();
+    m.pinnedCfg = JSON.stringify(m.cfg);
+    _askSave(); _askRerenderCard(m); _askRenderPins();
+    showToast('Updated "' + (m.savedAs || 'pin') + '"');
+  } catch (e) { alert('Update failed: ' + e.message); }
+}
+function _askNormCfg(cfg) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  ['filters', 'rows', 'cols', 'values'].forEach(k => { if (!Array.isArray(c[k])) c[k] = []; });
+  if (!c.values.length) c.values = [{ measureId: 'amount_sum' }];
+  return c;
+}
+function askOpenPin(pid) {
+  const row = _askPinList().find(r => r.id === pid);
+  if (!row) { showToast('That pin no longer exists'); _askRenderPins(); return; }
+  let cfg;
+  try { cfg = _askNormCfg(JSON.parse(row.config)); } catch (_) { alert('This pin could not be read.'); return; }
+  if (!_askIsOpen()) askChatOpen();
+  _askMsgs.push({ id: genId(), role: 'user', text: '📌 ' + row.name });
+  _askMsgs.push({ id: genId(), role: 'assistant', type: 'report', question: row.name, cfg, note: '', warnings: [],
+    savedAs: row.name, pinnedId: pid, pinnedCfg: JSON.stringify(cfg), fromPin: true });
+  _askSave();
+  const el = document.getElementById('askChat');
+  if (el && !el.classList.contains('wide')) el.classList.remove('pins-open');
+  _askRender();
+}
+function askRenamePin(pid) {
+  const row = _askPinList().find(r => r.id === pid); if (!row) return;
+  const name = prompt('Rename this pin:', row.name);
+  if (!name || !name.trim() || name.trim() === row.name) return;
+  try {
+    db.run(`UPDATE SavedReport SET name = ?, updatedAt = ? WHERE id = ?`, [name.trim(), new Date().toISOString(), pid]);
+    syncAfterWrite();
+    _askMsgs.forEach(m => { if (m.pinnedId === pid) m.savedAs = name.trim(); });
+    _askSave(); _askRenderPins();
+  } catch (e) { alert('Rename failed: ' + e.message); }
+}
+function askDeletePin(pid) {
+  const row = _askPinList().find(r => r.id === pid); if (!row) return;
+  if (!confirm('Remove the pin "' + row.name + '"?')) return;
+  try {
+    db.run(`DELETE FROM SavedReport WHERE id = ?`, [pid]);
+    syncAfterWrite();
+    _askMsgs.forEach(m => { if (m.pinnedId === pid) { delete m.pinnedId; delete m.pinnedCfg; delete m.savedAs; } });
+    _askSave(); _askRenderPins(); _askRender();
+  } catch (e) { alert('Delete failed: ' + e.message); }
+}
+function _askRenderPins() {
+  const box = document.getElementById('askPins');
+  const pins = _askPinList();
+  const cnt = document.getElementById('askPinCount');
+  if (cnt) cnt.textContent = pins.length ? String(pins.length) : '';
+  if (!box) return;
+  const ico = (d, t) => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  box.innerHTML = `<div class="ask-pins-head"><span>Pinned</span><button class="ask-pins-x" onclick="askTogglePins(false)" aria-label="Close pinned answers">×</button></div>
+    ${pins.length ? `<div class="ask-pins-list">${pins.map(r => `<div class="ask-pin">
+        <button class="ask-pin-name" onclick="askOpenPin('${r.id}')">${escHtml(r.name)}</button>
+        <button class="ask-pin-act" onclick="askRenamePin('${r.id}')" title="Rename" aria-label="Rename ${escHtml(r.name)}">${ico('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>')}</button>
+        <button class="ask-pin-act" onclick="askDeletePin('${r.id}')" title="Remove" aria-label="Remove ${escHtml(r.name)}">${ico('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>')}</button>
+      </div>`).join('')}</div>`
+    : `<div class="ask-pins-empty">Pin an answer to keep it here. Pinned answers rerun on your latest data each time you open them.</div>`}`;
+}
+function askTogglePins(force) {
+  const el = document.getElementById('askChat'); if (!el) return;
+  if (el.classList.contains('wide')) return;     // always shown on the wide Ask page
+  const on = typeof force === 'boolean' ? force : !el.classList.contains('pins-open');
+  el.classList.toggle('pins-open', on);
+  if (on) _askRenderPins();
+}
+
+// ── Ask page (sidebar → Ask) ─────────────────────────────────
+// The same chat element, docked into the page instead of floating, so
+// the page and the pop-up always show the same conversation.
+function _askSetWide(el) {
+  const w = el.getBoundingClientRect().width;
+  el.classList.toggle('wide', w >= 860);
+  if (el.classList.contains('wide')) el.classList.remove('pins-open');
+}
+function renderAskPage(container) {
+  if (!container) container = document.getElementById('pageContent');
+  container.innerHTML = '<div id="askPageHost" class="ask-page-host"></div>';
+  _askLoad();
+  const el = _askMount();
+  clearTimeout(el._closeT);
+  el.classList.remove('morph', 'phone');
+  el.classList.add('open', 'docked');
+  el.style.cssText = '';
+  document.getElementById('askPageHost').appendChild(el);
+  _askSetWide(el);
+  _askRenderPins();
+  _askRender();
+  _askFocus();
+}
+function _askUndock() {
+  const el = document.getElementById('askChat');
+  if (!el || !el.classList.contains('docked')) return;
+  el.classList.remove('docked', 'open', 'wide', 'pins-open');
+  _askDestroyCharts();
+  document.body.appendChild(el);
+}
+
+// ── Edit sheet (the report builder, full size) ───────────────
+// Opens an answer's calculation in the report builder: dates, filters,
+// rows, columns, values, chart / table / transactions, tap-through to
+// transactions, Export CSV. Done copies the changes back to the answer.
+let _askEditId = null;
+const ASK_EDIT_CSS = `
+  #askEdit { position:fixed;inset:0;z-index:280;background:#f8fafc;display:flex;flex-direction:column; }
+  @media (min-width: 900px) { #askEdit { inset:24px;border-radius:14px;box-shadow:0 0 0 100vmax rgba(15,23,42,0.45),0 24px 60px rgba(15,23,42,0.3);overflow:hidden; } }
+  .ask-edit-head { display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.85rem;background:#0f172a;color:#fff;padding-top:max(0.6rem, env(safe-area-inset-top)); }
+  .ask-edit-title { flex:1;min-width:0;font-size:0.9rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .ask-edit-head button { font-size:0.8rem;padding:0.35rem 0.8rem;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,0.35);background:transparent;color:#fff; }
+  .ask-edit-head button.primary { background:#fff;color:#0f172a;border-color:#fff;font-weight:600; }
+  .ask-edit-body { flex:1;overflow:auto;padding:0.75rem;-webkit-overflow-scrolling:touch;padding-bottom:max(0.75rem, env(safe-area-inset-bottom)); }
+  .ask-edit-body > div { max-width:1100px;margin:0 auto; }
+  @media (min-width: 900px) { #askEdit .rpt-zones { grid-template-columns:repeat(3, minmax(0,1fr)) !important; } }
+` + RPT_PHONE_RULES.filter(r => !r.startsWith('#rptSavedDropdown')).map(r => '#askEdit ' + r.replace(/, /g, ', #askEdit ')).join('\n');
+
+function askEdit(id) {
+  const m = _askFind(id); if (!m || !m.cfg) return;
+  _askEditId = id;
+  _rptConfig = _askNormCfg(JSON.parse(JSON.stringify(m.cfg)));
+  _rptAnswer = null; _rptSavedId = null; _rptSavedName = '';
+  let sh = document.getElementById('askEdit');
+  if (!sh) { sh = document.createElement('div'); sh.id = 'askEdit'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-label', 'Edit answer'); document.body.appendChild(sh); }
+  sh.innerHTML = `<style>${RPT_CSS_ALL}${ASK_EDIT_CSS}</style>
+    <div class="ask-edit-head">
+      <span class="ask-edit-title">Edit: ${escHtml(m.savedAs || m.question || 'answer')}</span>
+      <button onclick="askEditClose(false)">Cancel</button>
+      <button class="primary" onclick="askEditClose(true)">Done</button>
+    </div>
+    <div class="ask-edit-body">${_rptBuilderHtml()}</div>`;
+  sh.style.display = 'flex';
+  _rptRenderFieldLibrary();
+  _rptRenderZones();
+  _rptRunReport();
+  _rptWireDragDrop();
+}
+function askEditClose(apply) {
+  const sh = document.getElementById('askEdit');
+  const m = _askFind(_askEditId);
+  if (apply && m) {
+    m.cfg = JSON.parse(JSON.stringify(_rptConfig));
+    m.edited = true;
+    _askSave();
+  }
+  _rptDestroyChart();
+  _rptResult = null;
+  if (sh) { sh.style.display = 'none'; sh.innerHTML = ''; }
+  _askEditId = null;
+  if (apply && m) _askRerenderCard(m);
 }
 
 // ── The analyst ──────────────────────────────────────────────
@@ -17971,7 +18163,7 @@ function _askToConfig(inp, extra) {
   return { cfg, warnings: warnings.concat(w2) };
 }
 // Whole-month ranges that match a date shortcut (This year, Last month…)
-// use the shortcut, so Open in Reports shows the familiar chip.
+// use the shortcut, so the Edit sheet shows the familiar chip.
 function _askTidyDates(cfg) {
   if (cfg.datePreset !== 'custom') return;
   const f = cfg.filters[cfg.filters.length - 1];
@@ -18212,8 +18404,9 @@ function _askTurnText(m) {
   if (m.type === 'analyst') {
     const steps = (m.steps || []).map(s => `${s.n}. ${s.label}`).join('\n');
     const facts = (m.stepOuts || []).length ? '\nResults: ' + JSON.stringify(m.stepOuts).slice(0, 2500) : '';
+    const edited = m.edited && m.cfg ? `\nThe person then edited the chart's calculation to: ${_rptDescribeConfig(m.cfg)}` : '';
     const shown = m.cfg ? `\nShown as: ${m.cfg.view === 'list' ? 'transaction list' : m.cfg.view === 'table' ? 'table' : (m.cfg.chartType || 'auto') + ' chart'} of step ${m.showStep}` : '';
-    return m.text + ((m.assumptions || []).length ? '\nAssumptions: ' + m.assumptions.join(' ') : '') + (steps ? '\nCalculations:\n' + steps : '') + shown + facts;
+    return m.text + ((m.assumptions || []).length ? '\nAssumptions: ' + m.assumptions.join(' ') : '') + (steps ? '\nCalculations:\n' + steps : '') + shown + edited + facts;
   }
   if (m.type === 'ask') return m.text + ((m.options || []).length ? '\nOptions: ' + m.options.join(' / ') : '');
   if (m.type === 'report') {   // older answers (before the analyst)
@@ -18395,38 +18588,11 @@ async function askSend(textArg) {
 }
 
 // ── Main render ──────────────────────────────────────────────
-function renderReports(container) {
-  if (!container) container = document.getElementById('pageContent');
-  container.innerHTML = `
-    <style>${RPT_CSS_ALL}</style>
-    <div style="display:flex;flex-direction:column;gap:0.75rem;min-height:70vh;">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
-        <div style="display:flex;align-items:center;gap:0.5rem;">
-          <h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0;">Reports</h2>
-          <span id="rptSavedLabel" style="font-size:0.75rem;color:#64748b;"></span>
-        </div>
-        <div style="display:flex;align-items:center;gap:0.375rem;flex-wrap:wrap;">
-          <select id="rptSavedDropdown" onchange="rptLoad(this.value)"
-            style="border:1px solid #cbd5e1;border-radius:0.375rem;padding:0.3rem 0.5rem;font-size:0.75rem;background:white;">
-            <option value="">— Saved reports —</option>
-          </select>
-          <button onclick="rptSave()" class="rpt-btn rpt-btn-dark">Save</button>
-          <button onclick="rptSaveAs()" class="rpt-btn">Save as…</button>
-          <button id="rptDeleteBtn" onclick="rptDeleteSaved()" class="rpt-btn" style="display:none;border-color:#fecaca;color:#991b1b;">Delete</button>
-          <button onclick="rptReset()" class="rpt-btn">Reset</button>
-        </div>
-      </div>
-      <div class="rpt-card" style="padding:0.6rem;display:flex;flex-direction:column;gap:0.5rem;">
-        <form onsubmit="event.preventDefault(); rptAsk();" style="display:flex;gap:0.375rem;">
-          <input id="rptAskInput" type="text" class="rpt-input" autocomplete="off" enterkeyhint="go"
-            placeholder="Ask about your money, e.g. How much did we spend on dining last month?" style="flex:1;min-width:0;font-size:0.9rem;">
-          <button id="rptAskBtn" type="submit" class="rpt-btn rpt-btn-dark" style="font-size:0.85rem;padding:0.4rem 0.9rem;">Ask</button>
-        </form>
-        <div class="rpt-datechips" style="gap:0.375rem;">
-          ${RPT_ASK_EXAMPLES.map(q => `<button class="rpt-datechip" style="color:#334155;" onclick="rptAsk(${JSON.stringify(q).replace(/"/g, '&quot;')})">${escHtml(q)}</button>`).join('')}
-        </div>
-        <div id="rptAnswer" style="display:none;border-top:1px solid #f1f5f9;padding-top:0.5rem;"></div>
-      </div>
+// The report builder (dates, setup boxes, result). Shown inside Ask's
+// Edit sheet (askEdit); the old Reports page is retired.
+function _rptBuilderHtml() {
+  return `
+    <div style="display:flex;flex-direction:column;gap:0.75rem;">
       <div class="rpt-card rpt-datebar">
         <span style="font-size:0.72rem;font-weight:600;color:#475569;">Dates</span>
         <div id="rptDateChips" class="rpt-datechips"></div>
@@ -18466,13 +18632,6 @@ function renderReports(container) {
         </main>
       </div>
     </div>`;
-  _rptRenderFieldLibrary();
-  _rptRenderZones();
-  _rptRunReport();
-  _rptRefreshSavedDropdown();
-  _rptWireDragDrop();
-  const ai = document.getElementById('rptAskInput');
-  if (ai && _rptAnswer && _rptAnswer.question && !_rptAnswer.fromChat) ai.value = _rptAnswer.question;
 }
 
 function rptToggleLibrary() {
@@ -19186,7 +19345,6 @@ function _rptRenderResult() {
       </div>
       <div style="display:flex;gap:0.25rem;">
         <button onclick="rptExportCsv()" class="rpt-btn" style="font-size:0.7rem;">Export CSV</button>
-        <button onclick="rptShowSql()" class="rpt-btn rpt-hide-phone" style="font-size:0.7rem;">Show SQL</button>
       </div>
     </div>`;
 
@@ -19393,21 +19551,6 @@ function rptExportCsv() {
   URL.revokeObjectURL(url);
 }
 
-function rptShowSql() {
-  if (!_rptResult || !_rptResult.sql) return;
-  const bg = document.createElement('div');
-  bg.className = 'rpt-modal-bg';
-  bg.onclick = e => { if (e.target === bg) bg.remove(); };
-  bg.innerHTML = `<div class="rpt-modal" style="max-width:40rem;">
-    <div style="display:flex;align-items:center;justify-content:space-between;">
-      <h3 style="font-size:0.95rem;font-weight:600;color:#0f172a;margin:0;">The query behind this report</h3>
-      <button onclick="this.closest('.rpt-modal-bg').remove()" style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer;">&times;</button>
-    </div>
-    <pre style="font-size:0.75rem;background:#f8fafc;border:1px solid #e2e8f0;border-radius:0.375rem;padding:0.6rem;overflow:auto;max-height:50vh;white-space:pre-wrap;margin:0;">${escHtml(_rptResult.sql)}</pre>
-  </div>`;
-  document.body.appendChild(bg);
-}
-
 function _rptRefreshSavedDropdown() {
   const sel = document.getElementById('rptSavedDropdown');
   if (!sel) return;
@@ -19423,67 +19566,6 @@ function _rptUpdateSavedLabel() {
   const del = document.getElementById('rptDeleteBtn');
   if (lbl) lbl.textContent = _rptSavedId ? '— ' + _rptSavedName : '— Unsaved';
   if (del) del.style.display = _rptSavedId ? '' : 'none';
-}
-
-function rptSave() {
-  if (!_rptConfig.values.length) { alert('Build a report (add at least one Value) before saving.'); return; }
-  if (_rptSavedId) {
-    try {
-      const now = new Date().toISOString();
-      db.run(`UPDATE SavedReport SET config = ?, updatedAt = ? WHERE id = ?`,
-        [JSON.stringify(_rptConfig), now, _rptSavedId]);
-      syncAfterWrite();
-      showToast('Saved "' + _rptSavedName + '"');
-    } catch (e) { alert('Save failed: ' + e.message); }
-  } else { rptSaveAs(); }
-}
-
-function rptSaveAs() {
-  if (!_rptConfig.values.length) { alert('Build a report (add at least one Value) before saving.'); return; }
-  const name = prompt('Name this report:', _rptSavedName || '');
-  if (!name || !name.trim()) return;
-  try {
-    const now = new Date().toISOString();
-    const id  = genId();
-    db.run(`INSERT INTO SavedReport (id, name, config, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`,
-      [id, name.trim(), JSON.stringify(_rptConfig), now, now]);
-    syncAfterWrite();
-    _rptSavedId = id; _rptSavedName = name.trim();
-    _rptRefreshSavedDropdown();
-    showToast('Saved as "' + name.trim() + '"');
-  } catch (e) { alert('Save failed: ' + e.message); }
-}
-
-function rptLoad(id) {
-  if (!id) { _rptSavedId = null; _rptSavedName = ''; _rptUpdateSavedLabel(); return; }
-  try {
-    const row = query(`SELECT name, config FROM SavedReport WHERE id = '${id.replace(/'/g, "''")}'`)[0];
-    if (!row) return;
-    _rptConfig = JSON.parse(row.config);
-    if (!_rptConfig.filters) _rptConfig.filters = [];
-    if (!_rptConfig.rows)    _rptConfig.rows = [];
-    if (!_rptConfig.cols)    _rptConfig.cols = [];
-    if (!_rptConfig.values)  _rptConfig.values = [];
-    _rptSavedId   = id;
-    _rptSavedName = row.name;
-    _rptAnswer = null;
-    _rptRenderZones();
-    _rptRunReport();
-    _rptUpdateSavedLabel();
-    showToast('Loaded "' + row.name + '"');
-  } catch (e) { alert('Load failed: ' + e.message); }
-}
-
-function rptDeleteSaved() {
-  if (!_rptSavedId) { alert('No saved report loaded.'); return; }
-  if (!confirm('Delete saved report "' + _rptSavedName + '"?')) return;
-  try {
-    db.run(`DELETE FROM SavedReport WHERE id = ?`, [_rptSavedId]);
-    syncAfterWrite();
-    _rptSavedId = null; _rptSavedName = '';
-    _rptRefreshSavedDropdown();
-    showToast('Deleted');
-  } catch (e) { alert('Delete failed: ' + e.message); }
 }
 
 // ════════════════════════════════════════════════════════════
