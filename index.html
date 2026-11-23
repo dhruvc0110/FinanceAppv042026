@@ -8645,7 +8645,8 @@ function aboutTab() {
           <tr><td class="py-1 pr-2 font-semibold">Ask chat</td><td class="py-1 pr-2">The Ask button opens a chat window (move, resize, minimize; full screen on phone). Follow-ups ("now just restaurants", "show it as a pie"), clarifying questions with tap-to-answer options, chart type per answer (bar / line / pie / table), Open in Reports, Save as report. Chart type picker on the Reports page too.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Ask as an analyst (phase 1)</td><td class="py-1 pr-2">Ask works out answers step by step: it runs the app's calculations (reports, period comparisons, monthly averages, transaction look-ups, name look-ups), checks the results, and writes a short answer with what it assumed, how it worked it out, and suggested follow-ups. Every number in the answer is checked against the calculations.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
           <tr><td class="py-1 pr-2 font-semibold">Reports folded into Ask</td><td class="py-1 pr-2">The Reports page is retired. Ask is now a page in the sidebar (same conversation as the pop-up). Saved reports became Pinned answers (rerun on the latest data; rename, remove). Each answer has Edit: the full report builder (dates, filters, rows, columns, values), chart / table / transactions, tap a bar or row for its transactions, Export CSV.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
-          <tr><td class="py-1 pr-2 font-semibold">Ask as an analyst (phase 2)</td><td class="py-1 pr-2">Balances and net worth, budget vs actual, cash flow, investments vs a benchmark (for example QQQ vs the S&amp;P 500), and remembered definitions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">Planned</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Ask: investment returns</td><td class="py-1 pr-2">Ask reads Buy-Vest-Sell: shares held, cost, saved or live price, value, gain or loss, gains from sales, dividends, total return (ROI) and annualized return per ticker and for the portfolio; "what if the price were $X".</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-medium">Shipped</span></td></tr>
+          <tr><td class="py-1 pr-2 font-semibold">Ask as an analyst (phase 2)</td><td class="py-1 pr-2">Balances and net worth, budget vs actual, cash flow, price history and investments vs a benchmark (for example QQQ vs the S&amp;P 500), and remembered definitions.</td><td class="py-1"><span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">Planned</span></td></tr>
         </tbody>
       </table>
       <p class="text-xs text-slate-400 leading-relaxed">
@@ -17730,6 +17731,7 @@ function _askAnalystCardHtml(m) {
     tools += `<button class="ask-btn" onclick="askEdit('${m.id}')" title="Change dates, filters and breakdown, see it full size, export">Edit</button>
       ${_askPinBtnHtml(m)}`;
   } else if (m.cmp) viz = _askCmpHtml(m.cmp);
+  else if (m.inv) viz = _askInvHtml(m.inv);
   const steps = m.steps || [];
   return `<div class="ask-a" id="askCard-${m.id}">
     <div class="ask-text">${_askTextHtml(m.text)}</div>
@@ -18088,6 +18090,14 @@ function _askTools() {
         text: { type: 'string', description: 'A word or name to look for.' },
         where: { type: 'string', enum: ['accounts', 'descriptions'] },
       }, ['text', 'where']) },
+    { name: 'investment_returns',
+      description: 'Holdings and returns for investments recorded in Buy-Vest-Sell: per ticker the shares held, average cost, cost basis, current price (with its date), market value, unrealized gain, realized gain from sales, dividends received, total invested, total return and total return % (ROI), an annualized return, and the list of buys, sales and recent dividends. With several tickers it also gives portfolio totals. Use it for ROI, gain or loss, how an investment is doing, what holdings are worth, and dividends from a holding.',
+      input_schema: obj({
+        tickers: { type: 'array', items: { type: 'string' }, description: 'Ticker symbols, such as ["GPIQ"]. [] for every current holding.' },
+        include_closed: { type: 'boolean', description: 'With tickers [], also include holdings that were fully sold.' },
+        price_override: { anyOf: [{ type: 'number' }, { type: 'null' }], description: 'A price per share the person gave ("what if it were $50"), for one ticker only. null to use the saved price.' },
+        live_price: { type: 'boolean', description: 'Fetch the current price from the market instead of the saved one. Use when the saved price is more than a few days old or the person asks for the latest.' },
+      }, ['tickers']) },
     { name: 'give_answer',
       description: 'Your final answer to the person. Call it on its own, after you have seen the results you need.',
       input_schema: obj({
@@ -18127,7 +18137,9 @@ Writing give_answer:
 - chart: "auto" unless the person asked for a kind of chart or table. "line" suits trends over months, "pie" suits shares of one total, "table" suits lists.
 - followups: 2 or 3 short, natural next questions the person might ask, written as they would say them, that you could answer with these tools.
 
-What you can't answer yet: account balances, net worth, budgets versus actual, investment performance and price history, and forecasts. For these, use give_answer to say plainly that Ask can't do that yet, offer the closest thing you can answer, and set show_step to null.
+Investments: holdings bought and sold in the Buy-Vest-Sell section (shares, prices, sales, saved market prices) and their "Dividend - TICKER" payments are available through investment_returns. Use it for ROI, gain or loss, what a holding or the portfolio is worth, and dividends from a holding. Say which price you used and its date. If the person gives a price ("what if GPIQ were $55"), pass it as price_override. Explain total return as gain on shares held plus gains from sales plus dividends, compared with the money put in. When the money went in recently, say that the return covers a short time.
+
+What you can't answer yet: account balances, net worth, budgets versus actual, price history and comparisons with an index or another stock, and forecasts. For these, use give_answer to say plainly that Ask can't do that yet, offer the closest thing you can answer, and set show_step to null.
 
 This is a conversation. Earlier turns show the person's questions and your answers, with the calculations you ran. A follow-up ("what about last year", "just Amex", "show it as a pie", "why so high?") builds on the previous answer: keep its assumptions and change only what the follow-up asks for. An answer to your question completes the earlier question.
 
@@ -18325,6 +18337,16 @@ const ASK_TOOL_RUN = {
     return { out, cfg, label: 'Transactions: ' + _rptDescribeConfig(cfg) };
   },
 
+  async investment_returns(inp) {
+    const out = await _askInvestments(inp || {});
+    if (out.error) return { out };
+    const ps = out.positions || [];
+    const label = ps.length === 1
+      ? `Investments: ${ps[0].ticker}${ps[0].current_price !== null ? ` at ${fmtCurrency(ps[0].current_price, 2)} (${ps[0].price_source}${ps[0].price_as_of ? ', ' + ps[0].price_as_of : ''})` : ''}`
+      : `Investments: ${ps.map(x => x.ticker).join(', ')}`;
+    return { out, inv: out, label };
+  },
+
   find_names(inp) {
     const text = String(inp.text || '').trim();
     if (!text) return { out: { error: 'text is empty.' } };
@@ -18346,6 +18368,166 @@ const ASK_TOOL_RUN = {
       label: `Looked up accounts matching "${text}"` };
   },
 };
+
+// ── Investments (Buy-Vest-Sell data) ─────────────────────────
+// Holdings and returns per ticker, from EquityLot (buys), EquityLotSale
+// (sales), MarketPrice (current price) and "Dividend - TICKER"
+// transactions. Same maths as the Equity page: open shares = bought −
+// sold; cost basis = open shares × lot price; value = open shares × price.
+function _askXirr(flows) {
+  // flows: [{ t: days from first flow, v: amount }] ; returns annual rate or null
+  if (!flows.some(f => f.v < 0) || !flows.some(f => f.v > 0)) return null;
+  const npv = r => flows.reduce((s, f) => s + f.v / Math.pow(1 + r, f.t / 365), 0);
+  let lo = -0.9999, hi = 100, flo = npv(lo), fhi = npv(hi);
+  if (!isFinite(flo) || !isFinite(fhi) || flo * fhi > 0) return null;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2, fm = npv(mid);
+    if (Math.abs(fm) < 1e-7) return mid;
+    if (flo * fm < 0) { hi = mid; fhi = fm; } else { lo = mid; flo = fm; }
+  }
+  return (lo + hi) / 2;
+}
+function _askDividendsByTicker() {
+  const out = {};
+  query(`SELECT substr(trxDate, 1, 10) AS d, description, CAST(amount AS REAL) AS amount FROM "Transaction" WHERE description LIKE 'Dividend%'`).forEach(r => {
+    const m = String(r.description || '').match(/([A-Za-z0-9.\-]+)\s*$/);
+    if (!m) return;
+    const t = m[1].toUpperCase();
+    if (t === 'DIVIDEND' || t === 'DIVIDENDS') return;
+    (out[t] = out[t] || []).push({ date: r.d, amount: +r.amount || 0 });
+  });
+  return out;
+}
+async function _askInvestments(inp) {
+  const lots = query(`SELECT el.id, UPPER(el.ticker) AS ticker, el.stockName, substr(el.trxDate, 1, 10) AS d,
+      CAST(el.qty AS REAL) AS qty, CAST(el.price AS REAL) AS price, CAST(el.amount AS REAL) AS amount
+    FROM EquityLot el ORDER BY el.trxDate`);
+  if (!lots.length) return { error: 'There are no investment lots in Buy-Vest-Sell.' };
+  const sales = query(`SELECT s.lotId, UPPER(el.ticker) AS ticker, substr(s.trxDate, 1, 10) AS d, CAST(s.qty AS REAL) AS qty,
+      CAST(s.price AS REAL) AS price, CAST(s.proceeds AS REAL) AS proceeds, CAST(s.costBasis AS REAL) AS costBasis, CAST(s.gainLoss AS REAL) AS gainLoss
+    FROM EquityLotSale s JOIN EquityLot el ON el.id = s.lotId ORDER BY s.trxDate`);
+  const prices = {};
+  let mpCols = [];
+  try { mpCols = query(`PRAGMA table_info(MarketPrice)`).map(r => r.name); } catch (_) {}
+  query(`SELECT UPPER(ticker) AS ticker, CAST(price AS REAL) AS price, updatedAt${mpCols.includes('isManual') ? ', COALESCE(isManual,0) AS isManual' : ''} FROM MarketPrice`)
+    .forEach(r => { prices[r.ticker] = { price: +r.price || 0, at: r.updatedAt || '', manual: !!r.isManual }; });
+  const divs = _askDividendsByTicker();
+  const all = [...new Set(lots.map(l => l.ticker))];
+  const soldBy = {};
+  sales.forEach(s => { soldBy[s.lotId] = (soldBy[s.lotId] || 0) + (+s.qty || 0); });
+  const held = all.filter(t => lots.some(l => l.ticker === t && l.qty - (soldBy[l.id] || 0) > 0.00001));
+  let want = (Array.isArray(inp.tickers) ? inp.tickers : []).map(t => String(t || '').trim().toUpperCase()).filter(Boolean);
+  const missing = want.filter(t => !all.includes(t));
+  want = want.filter(t => all.includes(t));
+  if (!want.length) {
+    if (missing.length) return { error: `No lots for ${missing.join(', ')} in Buy-Vest-Sell. Tickers there: ${all.join(', ')}.` };
+    want = inp.include_closed ? all : held;
+  }
+  const override = want.length === 1 && +inp.price_override > 0 ? +inp.price_override : null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayStr = today.toLocaleDateString('en-CA');
+  const days = d => Math.round((new Date(d + 'T00:00:00') - today) / 864e5);
+  const notes = [];
+  const positions = [];
+  for (const t of want) {
+    const L = lots.filter(l => l.ticker === t);
+    const S = sales.filter(s => s.ticker === t);
+    const D = (divs[t] || []).filter(x => x.date <= todayStr);
+    let shares = 0, basisHeld = 0;
+    L.forEach(l => { const rem = l.qty - (soldBy[l.id] || 0); if (rem > 0.00001) { shares += rem; basisHeld += rem * l.price; } });
+    const invested = L.reduce((s, l) => s + (l.amount || l.qty * l.price), 0);
+    const proceeds = S.reduce((s, x) => s + (x.proceeds || x.qty * x.price), 0);
+    const realized = S.reduce((s, x) => s + (x.gainLoss || 0), 0);
+    const dividends = D.reduce((s, x) => s + x.amount, 0);
+    let p = prices[t] || { price: 0, at: '', manual: false };
+    let priceSource = p.manual ? 'set by hand in Buy-Vest-Sell' : 'saved in Buy-Vest-Sell';
+    if (override) { p = { price: override, at: todayStr }; priceSource = 'the price you gave'; }
+    else if (inp.live_price && shares > 0 && typeof _eqFetchTickerPrice === 'function') {
+      try { const lp = await _eqFetchTickerPrice(t); if (lp > 0) { p = { price: lp, at: new Date().toISOString() }; priceSource = 'fetched live just now'; } } catch (_) {}
+    }
+    const hasPrice = p.price > 0;
+    const value = hasPrice ? shares * p.price : null;
+    const unreal = hasPrice ? value - basisHeld : null;
+    const totalRet = (unreal || 0) + realized + dividends;
+    const pos = {
+      ticker: t, name: (L.find(l => l.stockName) || {}).stockName || t,
+      shares_held: Math.round(shares * 10000) / 10000,
+      avg_cost_per_share: shares > 0 ? _askNum(basisHeld / shares) : null,
+      cost_basis_held: _askNum(basisHeld),
+      current_price: hasPrice ? _askNum(p.price) : null,
+      price_as_of: hasPrice ? String(p.at).slice(0, 10) : null,
+      price_source: hasPrice ? priceSource : 'no price saved',
+      market_value: hasPrice ? _askNum(value) : null,
+      unrealized_gain: hasPrice ? _askNum(unreal) : null,
+      unrealized_gain_pct: hasPrice && basisHeld ? _askPct(unreal, basisHeld) : null,
+      total_invested: _askNum(invested), buys: L.length,
+      first_buy: L[0] ? L[0].d : null, last_buy: L.length ? L[L.length - 1].d : null,
+      shares_sold: Math.round(S.reduce((s, x) => s + x.qty, 0) * 10000) / 10000,
+      sale_proceeds: _askNum(proceeds), realized_gain: _askNum(realized),
+      dividends_received: _askNum(dividends), dividend_payments: D.length,
+      total_return: hasPrice || shares <= 0.00001 ? _askNum(totalRet) : null,
+      total_return_pct: (hasPrice || shares <= 0.00001) && invested ? _askPct(totalRet, invested) : null,
+      dividend_yield_on_cost_pct: invested ? _askPct(dividends, invested) : null,
+    };
+    // Annualized (money-weighted, like XIRR): buys out, sales and dividends in, today's value in.
+    if (hasPrice || shares <= 0.00001) {
+      const t0 = L[0] ? days(L[0].d) : 0;
+      const flows = L.map(l => ({ t: days(l.d) - t0, v: -(l.amount || l.qty * l.price) }))
+        .concat(S.map(x => ({ t: days(x.d) - t0, v: x.proceeds || x.qty * x.price })))
+        .concat(D.map(x => ({ t: days(x.date) - t0, v: x.amount })));
+      if (value) flows.push({ t: -t0, v: value });
+      const r = -t0 >= 30 ? _askXirr(flows) : null;
+      if (r !== null && isFinite(r)) pos.annualized_return_pct = Math.round(r * 1000) / 10;
+      if (-t0 < 365) pos.note = 'Held less than a year: an annualized figure exaggerates short-term moves, so prefer total_return_pct.';
+    }
+    pos.buy_list = L.slice(-15).map(l => ({ date: l.d, shares: Math.round(l.qty * 10000) / 10000, price: _askNum(l.price), amount: _askNum(l.amount || l.qty * l.price) }));
+    if (S.length) pos.sale_list = S.slice(-10).map(x => ({ date: x.d, shares: Math.round(x.qty * 10000) / 10000, price: _askNum(x.price), proceeds: _askNum(x.proceeds), gain: _askNum(x.gainLoss) }));
+    if (D.length) pos.recent_dividends = D.slice(-12).map(x => ({ date: x.date, amount: _askNum(x.amount) }));
+    if (!hasPrice && shares > 0) notes.push(`${t} has no saved market price, so its value and gain can't be worked out. The person can give a price, or you can call again with live_price true.`);
+    positions.push(pos);
+  }
+  const out = { as_of: todayStr, positions };
+  if (positions.length > 1) {
+    const priced = positions.filter(x => x.market_value !== null);
+    const sum = k => positions.reduce((s, x) => s + (+x[k] || 0), 0);
+    const inv = sum('total_invested'), tr = positions.reduce((s, x) => s + (x.total_return === null ? 0 : x.total_return), 0);
+    out.portfolio = {
+      holdings: positions.length, market_value: _askNum(priced.reduce((s, x) => s + x.market_value, 0)),
+      cost_basis_held: _askNum(sum('cost_basis_held')), unrealized_gain: _askNum(priced.reduce((s, x) => s + x.unrealized_gain, 0)),
+      realized_gain: _askNum(sum('realized_gain')), dividends_received: _askNum(sum('dividends_received')),
+      total_invested: _askNum(inv), total_return: _askNum(tr), total_return_pct: _askPct(tr, inv),
+    };
+    if (priced.length < positions.length) out.portfolio.note = 'Holdings without a price are left out of market value and gains.';
+    positions.forEach(x => { delete x.buy_list; delete x.sale_list; delete x.recent_dividends; });   // keep a multi-holding answer compact
+  }
+  if (missing.length) notes.push(`No lots for ${missing.join(', ')}.`);
+  if (notes.length) out.note = notes.join(' ');
+  return out;
+}
+function _askInvHtml(inv) {
+  const ps = inv.positions || [];
+  const money = v => v === null || v === undefined ? '—' : fmtCurrency(+v, 0);
+  const pct = v => v === null || v === undefined ? '' : ` (${v > 0 ? '+' : ''}${Math.round(v)}%)`;
+  const cls = v => (+v || 0) >= 0 ? 'color:#15803d;' : 'color:#b91c1c;';
+  if (ps.length === 1) {
+    const p = ps[0];
+    const row = (k, v, style) => `<tr><td>${k}</td><td class="n" style="${style || ''}">${v}</td></tr>`;
+    return `<table class="ask-tbl"><tbody>
+      ${row('Shares held', (+p.shares_held).toLocaleString(undefined, { maximumFractionDigits: 4 }))}
+      ${row('Average cost', p.avg_cost_per_share === null ? '—' : fmtCurrency(p.avg_cost_per_share, 2))}
+      ${row('Price' + (p.price_as_of ? ` (${escHtml(p.price_as_of)})` : ''), p.current_price === null ? '—' : fmtCurrency(p.current_price, 2))}
+      ${row('Market value', money(p.market_value))}
+      ${row('Gain on shares held', money(p.unrealized_gain) + pct(p.unrealized_gain_pct), cls(p.unrealized_gain))}
+      ${p.realized_gain ? row('Gain from sales', money(p.realized_gain), cls(p.realized_gain)) : ''}
+      ${row('Dividends received', money(p.dividends_received))}
+      ${row('Total return', money(p.total_return) + pct(p.total_return_pct), 'font-weight:600;' + cls(p.total_return))}
+    </tbody></table>`;
+  }
+  return `<div style="overflow-x:auto;"><table class="ask-tbl"><thead><tr><th>Ticker</th><th class="n">Value</th><th class="n">Gain</th><th class="n">Dividends</th><th class="n">Total return</th></tr></thead><tbody>
+    ${ps.map(p => `<tr><td>${escHtml(p.ticker)}</td><td class="n">${money(p.market_value)}</td><td class="n" style="${cls(p.unrealized_gain)}">${money(p.unrealized_gain)}</td><td class="n">${money(p.dividends_received)}</td><td class="n" style="${cls(p.total_return)}">${money(p.total_return)}${pct(p.total_return_pct)}</td></tr>`).join('')}
+    ${inv.portfolio ? `<tr style="font-weight:600;"><td>Total</td><td class="n">${money(inv.portfolio.market_value)}</td><td class="n" style="${cls(inv.portfolio.unrealized_gain)}">${money(inv.portfolio.unrealized_gain)}</td><td class="n">${money(inv.portfolio.dividends_received)}</td><td class="n" style="${cls(inv.portfolio.total_return)}">${money(inv.portfolio.total_return)}${pct(inv.portfolio.total_return_pct)}</td></tr>` : ''}
+  </tbody></table></div>`;
+}
 
 // ── Number check ─────────────────────────────────────────────
 // Every money amount, percentage and larger number in Claude's answer
@@ -18474,12 +18656,12 @@ async function _askRunAnalyst(question, onStep) {
       let r;
       if (!fn) r = { out: { error: `There is no tool called ${u.name}.` } };
       else if (rounds >= ASK_MAX_ROUNDS) r = { out: { error: 'No calculation steps left. Answer with what you have.' } };
-      else { try { r = fn(u.input || {}); } catch (e) { r = { out: { error: (e && e.message) || String(e) } }; } }
+      else { try { r = await fn(u.input || {}); } catch (e) { r = { out: { error: (e && e.message) || String(e) } }; } }
       const failed = !!r.out.error;
       if (!failed) {
         const n = steps.length + 1;
         r.out = Object.assign({ step: n }, r.out);
-        steps.push({ n, tool: u.name, label: r.label, cfg: r.cfg || null, cmp: r.cmp || null });
+        steps.push({ n, tool: u.name, label: r.label, cfg: r.cfg || null, cmp: r.cmp || null, inv: r.inv || null });
         outs.push(r.out);
         _askCollectNums(r.out, fresh);
         if (onStep) onStep(steps);
@@ -18534,6 +18716,9 @@ function _askReplyFromRun(run, question) {
     }
   } else if (step && step.cmp) {
     reply.cmp = step.cmp;
+    reply.showStep = step.n;
+  } else if (step && step.inv) {
+    reply.inv = step.inv;
     reply.showStep = step.n;
   }
   return reply;
