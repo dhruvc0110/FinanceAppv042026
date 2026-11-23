@@ -13,6 +13,7 @@ so you don't have to hunt through the history to find them.
 | `snapshot/2026-11-22` | Live version from 22 Nov 2026 (clean-up + Reports with date shortcuts, charts and phone layout). Last version before the Ask box. |
 | `snapshot/2026-11-22b` | Live version from 22 Nov 2026 with the Ask box. Last version before the scheduled posting time setting and local-time fixes. |
 | `snapshot/2026-11-22c` | Live version from 22 Nov 2026 evening (scheduled posting time setting). Last version before Ask understood groups like "discretionary" and before the Ask chat window. |
+| `snapshot/2026-11-22d` | Live version from 22 Nov 2026 night (Ask chat window, groups like "discretionary"). Last version before Ask worked as an analyst. |
 
 Before each new change goes live, a new snapshot of the current live version
 is made first and added to this table.
