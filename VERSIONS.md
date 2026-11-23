@@ -15,6 +15,7 @@ so you don't have to hunt through the history to find them.
 | `snapshot/2026-11-22c` | Live version from 22 Nov 2026 evening (scheduled posting time setting). Last version before Ask understood groups like "discretionary" and before the Ask chat window. |
 | `snapshot/2026-11-22d` | Live version from 22 Nov 2026 night (Ask chat window, groups like "discretionary"). Last version before Ask worked as an analyst. |
 | `snapshot/2026-11-23` | Live version from 23 Nov 2026 (Ask as an analyst, phase 1). Last version with the separate Reports page. |
+| `snapshot/2026-11-23b` | Live version from 23 Nov 2026 (Reports folded into Ask). Last version before Ask could read investments. |
 
 Before each new change goes live, a new snapshot of the current live version
 is made first and added to this table.
