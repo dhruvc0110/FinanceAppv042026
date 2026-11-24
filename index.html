@@ -5880,7 +5880,7 @@ function _renderPLPage(container) {
           class="px-3 py-1.5 text-sm text-slate-700 text-right cursor-pointer hover:bg-blue-50 select-none"
           onclick="plEditProj('${item.id}',${projRSafe},${+bgt||0},${+act||0})"
           title="Click to edit projected close">
-          ${fmtCurrency(proj,2)}${isDefault?'<span class="text-slate-300 text-xs ml-1" title="Defaulting to Budget − Actuals (Remaining)">rem</span>':''}
+          ${fmtCurrency(proj,2)}${isDefault?'<span class="text-slate-300 text-xs ml-1" title="Defaulting to Budget − Actuals (Remaining)">rem</span>':`<button type="button" onclick="event.stopPropagation();plResetProj('${item.id}')" class="text-blue-500 hover:text-blue-700 hover:bg-blue-100 rounded text-xs ml-1 px-1" title="You changed this. Click to go back to the calculated value (Budget − Actuals = ${fmtCurrency(remaining,2)})" aria-label="Revert to calculated value">↺</button>`}
         </td>`:''}
       </tr>`;
     }
@@ -6056,7 +6056,7 @@ function plEditProj(accountId, currentProj, budget, actual) {
   inp.className = 'w-full border border-blue-400 rounded px-2 py-0.5 text-sm text-right bg-blue-50 focus:outline-none';
   inp.title = (currentProj === null || currentProj === undefined)
     ? 'Defaulting to Remaining (Budget − Actuals = ' + fmtCurrency(remaining, 2) + ')'
-    : 'Your custom projected close';
+    : 'Your custom projected close. Clear the box to go back to the calculated value (' + fmtCurrency(remaining, 2) + ')';
   cell.innerHTML = ''; cell.appendChild(inp); inp.focus(); inp.select();
 
   function save() {
@@ -6085,6 +6085,17 @@ function plEditProj(accountId, currentProj, budget, actual) {
     if (e.key === 'Enter')  { e.preventDefault(); inp.blur(); }
     if (e.key === 'Escape') { _renderPLPage(); }
   });
+}
+
+// Revert a Proj to Close override back to the calculated value (Budget − Actuals).
+// Clears the stored projectedClose; the budget amount on the row is left alone.
+function plResetProj(accountId) {
+  if (!plPeriod) return;
+  try {
+    db.run('UPDATE BudgetPlan SET projectedClose=NULL WHERE accountId=? AND period=?', [accountId, plPeriod]);
+    syncAfterWrite();
+  } catch(e) { alert('Revert failed: ' + e.message); }
+  _renderPLPage();
 }
 
 // ════════════════════════════════════════════════════════════
