@@ -16,6 +16,7 @@ so you don't have to hunt through the history to find them.
 | `snapshot/2026-11-22d` | Live version from 22 Nov 2026 night (Ask chat window, groups like "discretionary"). Last version before Ask worked as an analyst. |
 | `snapshot/2026-11-23` | Live version from 23 Nov 2026 (Ask as an analyst, phase 1). Last version with the separate Reports page. |
 | `snapshot/2026-11-23b` | Live version from 23 Nov 2026 (Reports folded into Ask). Last version before Ask could read investments. |
+| `snapshot/2026-11-23c` | Live version from 23 Nov 2026 (Ask reads investments, ROI and gains). Last version before Proj to Close was renamed Pending to Close, got a revert button, and Projected to Close was added to the P&L. |
 
 Before each new change goes live, a new snapshot of the current live version
 is made first and added to this table.
